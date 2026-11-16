@@ -26,6 +26,20 @@ async def test_cooldown_blocks_second_request():
     assert excinfo.value.retry_after > 0
 
 
+async def test_slot_without_cooldown_neither_checks_nor_starts_one():
+    gate = Admission(max_concurrent=2, max_queue=2, queue_timeout=1, cooldown=10)
+    for _ in range(3):
+        async with gate.slot("nguoi_a", cooldown=False):
+            pass
+    async with gate.slot("nguoi_a"):  # lần không cooldown không để lại mốc chờ
+        pass
+    async with gate.slot("nguoi_a", cooldown=False):  # và không bị mốc của lần thường chặn
+        pass
+    with pytest.raises(AdmissionDenied):
+        async with gate.slot("nguoi_a"):
+            pass
+
+
 async def test_cooldown_is_per_user():
     gate = Admission(max_concurrent=2, max_queue=2, queue_timeout=1, cooldown=10)
     async with gate.slot("nguoi_a"):

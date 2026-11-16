@@ -8,6 +8,8 @@ Tunnel trỏ tới, thay vì phải dựng thêm nginx.
 
 Các đường dẫn ứng dụng được khai báo nhận index.html để mở trực tiếp hoặc F5.
 Đường dẫn lạ và tài nguyên không tồn tại vẫn nhận 404; API và Docs giữ xử lý riêng.
+Khi Companion là bản AIRI (``PETO_AIRI_DIR``, xem ``core/airi_static.py``), ``/companion…`` không còn là trang của
+React: ``airi_static`` gắn trước và trả lời các đường dẫn đó.
 
 Riêng trang chủ không trả nguyên file: nó được chèn ảnh xem trước link
 (``og:image``) lúc phục vụ, xem ``_with_preview_image``. Ảnh đó là
@@ -29,6 +31,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse
 
 from features.agent.install import public_origin
+from core import airi_static
 from core.identity import get_app_identity
 
 logger = logging.getLogger("peto_web.static")
@@ -244,6 +247,11 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
                 else "no-cache"
             )
             return FileResponse(target, headers={"Cache-Control": cache})
+
+        # Companion là bản AIRI (PETO_AIRI_DIR, từ 15/11/2026): /companion… thuộc về airi_static, gắn trước route này.
+        # Tới được đây thì không bao giờ trả index.html của Companion React.
+        if airi_static.is_companion_path(full_path) and airi_static.active():
+            raise HTTPException(status_code=404, detail="Không tìm thấy trang")
 
         if _APP_PATH.fullmatch(full_path):
             return await index_page(request)

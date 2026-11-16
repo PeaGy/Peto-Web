@@ -908,7 +908,251 @@ page per company). Their calls the same day:
 - **Not checked:** none of the eight providers or Tavily has been called with a real key; request shapes follow each
   provider's docs as of 2026-10-13.
 
+### AIRI Companion: `/companion/` serving and gateway
+
+Part of the 2026-11-15 direction (Companion moves to a fork of AIRI's Vue stage-web; plan in `PETO_COMPANION_PLAN.md`,
+"Hướng mới từ 15/11/2026"). AIRI's brain runs in the browser (prompt assembly, sessions, character cards, tool
+execution); the Peto server is only the model endpoint. The fork is at `C:\Users\binhb\Downloads\peto-airi`, branch
+`peto`, documented in its `PETO.md`.
+
+**One switch: `PETO_AIRI_DIR`** (since package 5a, 2026-11-15). Set to a fork build that has an `index.html`, the
+product path `/companion/` IS the AIRI app and the React Companion is never mounted. Unset (or pointing at a folder
+without `index.html`), everything is as before: `/companion` and `/companion/settings/…` are the React Companion, and the
+gateway answers 404. Nothing of the React Companion (code, backend Companion/voice APIs, data, tests) was removed; the
+switch is reversed by unsetting the variable and restarting. The YouTube Player and Peto's own voice sources are not in
+the AIRI build (postponed by the owner).
+
+- **Build being replaced**: when `index.html` disappears after startup (the fork is rebuilding or a new `dist` is being
+  copied in), pages under `/companion/` answer 503 with a short Vietnamese page ("Companion đang cập nhật", links to
+  reload and to Peto Web, `Retry-After: 30`) instead of a 500 (since 2026-11-16).
+- **Serving** (`core/airi_static.py`): only when `PETO_AIRI_DIR` points at a stage-web build made with
+  `--base=/companion/` (the fork's `apps/stage-web/peto/build.sh` default). `/companion` is a 308 to `/companion/`. Real
+  files are served (hashed `assets/` cached for a year), extensionless paths get AIRI's `index.html` (AIRI's own client
+  routes such as `/companion/settings/modules`, and every old React deep link such as
+  `/companion/settings/modules/voice`, which AIRI answers with its Vietnamese not-found page: "Không tìm thấy trang
+  này", a button back to the stage and a link to Peto Web). Missing assets are a real 404. Mounted before the SPA
+  catch-all in `main.py`. As a second guard, `core/static_files.py` refuses `/companion…` (404) whenever
+  `airi_static.active()` is true, so it can never answer those paths with the React `index.html`. `/airi/` no longer
+  exists (it was never deployed).
+- **Flag for the React app**: `GET /api/auth/me` carries `companion_airi` (boolean, signed in or not; no path, no
+  secret), from `airi_static.active()` (`config.AIRI_DIR` set and its `index.html` present). With the flag on, the React
+  app (`App.tsx`):
+  - the sidebar Companion item (desktop and the phone drawer) does `location.assign('/companion/')`;
+  - any React route that resolves to the Companion view (`/companion`, `/companion/settings/…`, legacy `/#companion`, a
+    `navigate()` from anywhere) is replaced at once with `location.replace('/companion/')` and a "Đang mở Companion"
+    loading screen, so Back returns to the page before it;
+  - the lazy React Companion and Companion settings chunks are never loaded (no hover/focus preload, no idle preload),
+    `companionVisited` stays false so `useLocalVoice` never probes `127.0.0.1`;
+  - Settings → Trí nhớ says Peto remembers what you tell it "trong Chat" (the AIRI build does not use the server memory);
+  - if React itself is running at exactly `/companion/` (only in dev, where Vite serves every path but `/api`), it shows
+    "Companion mới chỉ mở được qua máy chủ Peto…" instead of reloading forever.
+  Left as is: the Companion-related hooks that live in the main bundle (`useCompanionShell`: character list, cards
+  store, local voice state) still initialise but make no Companion request; the Docs pages and the Settings "Hướng dẫn
+  Peto" line still mention Companion; the `/api/companion/player` chip in Chat (YouTube link chips) still works.
+- **Deploy** (the fork's `dist` is about 370 MB; never build on the VPS):
+  1. On the owner's machine (or CI), in the fork: `sh apps/stage-web/peto/build.sh` (base `/companion/` by default).
+  2. Copy `apps/stage-web/dist/` to the VPS, for example
+     `rsync -a --delete apps/stage-web/dist/ <vps>:/home/ubuntu/peto-airi-dist/` (any folder outside the repository that
+     the service user can read; `deploy/peto-web.service` has `ProtectSystem=strict`, which still allows reading). To
+     keep an instant rollback to the previous build, copy into a new dated folder and point the variable at it.
+  3. Set `PETO_AIRI_DIR=/home/ubuntu/peto-airi-dist` in the repository-root `.env` that `config.py` loads, then
+     `sudo systemctl restart peto-web`. Check `curl -sI https://<site>/companion` (308 to `/companion/`) and that
+     `/api/auth/me` shows `"companion_airi":true`. The startup log says "Companion là bản AIRI từ …"; a folder without
+     `index.html` logs a warning and keeps the React Companion.
+  4. Rollback: remove or comment out `PETO_AIRI_DIR` and restart. `/companion` is the React Companion again and
+     `/api/companion/v1` answers 404. Visitors' AIRI data stays in their browsers (localStorage/IndexedDB under the
+     site origin); the server's Companion data was never touched.
+  This recipe lives here and not in `DEPLOY.md`.
+- **Gateway** (`features/companion/airi_gateway.py`, request parsing in `airi_request.py`): OpenAI Chat Completions at
+  `/api/companion/v1` (`GET /models`, `POST /chat/completions`), the shape `@xsai/stream-text` 0.5 sends. It only
+  answers when `PETO_AIRI_DIR` is set: otherwise every path is a 404 (`code: "not_found"`, "Cổng Companion AIRI chưa
+  được bật…"), checked at request time (`config.AIRI_DIR`), so nobody can spend the server's model through it before
+  the AIRI page is deployed.
+  - Auth is the Peto session cookie (same check as Chat); no cookie is a 401 with an OpenAI-shaped Vietnamese body. No
+    Agent device token, no Agent daily step budget, no Agent model catalogue, no per-account quota.
+  - Model: always Peto. `GET /models` lists only `peto`; the request's `model` is ignored. The call goes through
+    `ai.agent.agent_step(model="peto", effort="low", web_search=False)`, the Responses path with caller-declared tools
+    that Peto Agent uses, so it bills as Grok with `AGENT_MODEL` (`PETO_AGENT_MODEL`, default `XAI_MODEL`). Chat's
+    `ChatProvider.stream` was not used because its tool loop runs server tools only.
+  - System prompt: the caller's `system`/`developer` messages joined, then `COMPANION_CARD_RULE` always appended by the
+    server. Nothing is stored; logs carry only counts and timings (`airi_turn outcome=… continuation=… tools=… images=…
+    items=… first_text_ms=… total_ms=…`).
+  - Tools: the caller's `tools` (function schemas) and `tool_choice` (`auto`/`none`/`required` or a named function,
+    converted to the Responses form) are forwarded; the server never runs them. Caps: 128 tools (Agent gateway), names
+    `[A-Za-z0-9_-]{1,64}`, no duplicates, 32 KB per declaration, 256 KB in total. The model's calls come back as
+    `tool_calls` deltas: the first delta for a call carries `index`, `id`, `type: "function"`, the name and empty
+    arguments; the arguments follow in one delta taken from the final item (Responses argument pieces can be written
+    differently from the final JSON, and xsai concatenates every piece), then `finish_reason: "tool_calls"`. History
+    accepts assistant messages with `tool_calls` and `role: "tool"` results (text, or text and image parts) and
+    converts them to `function_call` / `function_call_output` items. A result with no matching earlier call is a 400; a
+    call that never got a result (the browser stopped mid-turn) is dropped before the model call.
+  - Images: `image_url` parts in user messages and tool results, data URLs only, checked by the Agent's `_check_image`
+    (PNG/JPEG/GIF/WebP, 3 MB each, real type sniffed). At most 50 images and a 32 MB body, the Agent desktop gateway's
+    limits. `http(s)` image URLs are refused with "Peto chỉ nhận ảnh gửi kèm dạng data URL…": the server fetches
+    nothing for the browser. Audio and file parts are refused. Images in tool results are lifted into a user message
+    and WebP/GIF become PNG for Grok (`features/agent/gateway_images.prepare`, as for the Agent gateway). Text caps only
+    stop abnormal requests: 2,000 messages and 1,000,000 characters per request. The real bounds are the 32 MB body
+    and the model's context window; a provider `context_overflow` reaches the browser before the first byte as HTTP
+    400 `context_length_exceeded`.
+  - Admission: the whole call runs in Chat's `admission.slot(owner, cooldown=False)`: Chat's concurrency and queue, no
+    cooldown. AIRI's brain issues back-to-back calls on its own (tool continuations, its tool-card side call after a
+    turn, later voice helpers). `Admission.slot` with `cooldown=False` neither checks the cooldown nor records the
+    turn as the owner's last accepted request, so a gateway turn never makes the same owner's next Chat message wait.
+  - Streaming: the gateway waits up to 15 s for the first event, so errors before any output are real HTTP statuses
+    with `{"error": {...}}` (404 when off, 401, 400/413 validation, 429 queue full, 503 queue timeout
+    or retryable provider error, 502 provider error, 504 silence, 500). AIRI retries 408/429/5xx up to three times
+    before the stream starts. After that, an error is one `data: {"error": …}` line, which xsai turns into a
+    `RemoteAPIError`, and no `[DONE]`. `: ping` comments every 15 s of silence keep Cloudflare from closing the
+    connection (xsai ignores comments). Timeouts are Chat's: `RESPONSE_TIMEOUTS["low"]` of silence (any event,
+    reasoning included, resets it) and `TURN_TIMEOUT_SECONDS` overall. `stream_options.include_usage` adds a final
+    chunk with `choices: []` and `usage`. Reasoning is never sent to the browser. `stream: false` returns one
+    `chat.completion`.
+  - Cancellation: when the browser disconnects or aborts (AIRI's stop button), the model call task is cancelled, the
+    provider stream closed and the admission slot released. After the headers Starlette notices the disconnect (uvicorn
+    reports ASGI spec 2.3, so Starlette listens for `http.disconnect`); before the headers the gateway polls
+    `request.is_disconnected()` every 0.5 s.
+  - Usage on `/admin`: every turn writes a `turn` row and, when the model finished, a `call` row with tokens, cached
+    tokens and xAI's `cost_ticks`, all with `surface="airi"`, `purpose="airi"`, `service="xai"`, `model="peto"`,
+    `effort="low"`. The dashboard lists `airi` among the Peto row's surfaces. A tool round trip is two turns and two
+    calls.
+- **Mock**: the Agent mock (`ai/agent.py`) answers `__congcu__` by calling the first declared tool with sample
+  arguments (one value per required property), then, once a tool result comes back, replies with that result.
+  `__error__` (502) and `__tamloi__` (503, retryable) fail before the first byte; `__loigiua__` (since 2026-11-16)
+  sends "Peto đang trả lời dở thì " and then fails, so the gateway sends its mid-stream `data: {"error": …}` line.
+- **Cache** (since 2026-11-16): xAI reuses a cache entry only when a WHOLE earlier request (instructions, tools, then
+  every input item) is an exact prefix of the new one; a shared prefix that ends before the previous request's end
+  earns nothing (measured by the owner through the gateway on 2026-11-16: an append-only history cached 6,528–6,656 of
+  about 6.6k tokens per turn, about 13M ticks; the same talk with a block that moved cached 1,152, about 43M ticks; an
+  exact chain of eight turns hit on six of seven follow-ups, so occasional misses are normal). The conversion is
+  therefore append-only across turns of one AIRI conversation:
+  - AIRI appends its runtime `[Context]` block (ACT/emotion rules, identical every turn) to the newest user message
+    only and stores history without it. `airi_request.split_context` strips it from every user message, and the
+    newest one's block goes into `instructions`: AIRI's system messages, then the block verbatim (from `[Context]`),
+    then `COMPANION_CARD_RULE`, always last. Without a block, `instructions` is system + rule as before. The model gets
+    the same words; only their place changed.
+  - Checked to resend byte-identically when AIRI resends the same history: tool rounds (`function_call` from the
+    assistant's `tool_calls`, `function_call_output`, the assistant text after it), an empty assistant message before a
+    `tool` message (never becomes an item, in any turn), dropped orphan tool calls (dropped the same way in every
+    later turn), images in user messages (kept as AIRI sends them; a PNG/JPEG data URL is not touched) and images in
+    tool results (`gateway_images.prepare` lifts them into a user item right after the run of results and turns
+    WebP/GIF into PNG deterministically; the lifted item lands at the same place in every later turn).
+  - What still breaks the chain, by design or outside the gateway: a change of AIRI's system prompt (for example the
+    memory index after a memory write, or a card edit), a change of the tool list, a changed `[Context]` block, or AIRI
+    resending a user image with a different data URL (not seen; not tested with the real page).
+  - Every call also sends `prompt_cache_key` = `peto-airi-` + the first 32 hex of HMAC-SHA256(`PETO_SESSION_SECRET`,
+    owner) (`airi_gateway.cache_key`, xAI's `x-grok-conv-id`, per account because AIRI sends no conversation id; the
+    HMAC keeps a Discord ID from being guessed). Alone it did not help; it stays as routing help. `agent_step` sends it
+    only on the xAI path when given, so Peto Agent requests are unchanged.
+- **Model calls besides the reply**: the fork's `PETO.md` lists every AIRI feature that can call the chat model on
+  its own, with its default. Tool cards (one or two extra calls after a new tool result) start off in the Peto build.
+- **Errors and retries in the AIRI page** (fork, `petoFetch` in the Peto provider, since 2026-11-16): every error
+  status of the gateway and its mid-stream error line reach the visitor as the gateway's Vietnamese `error.message` only
+  (an error bubble labelled "Hệ thống lõi"), and the chat returns to idle. AIRI's core-agent
+  (`packages/core-agent/src/runtime/llm-service.ts`, `streamWithTransientRetry`) retries an xsAI `APICallError` with
+  status 408, 429 or 5xx up to three times (3, 6, 12 s, or `Retry-After` up to 30 s) before the first stream event;
+  the Peto provider throws its own error class instead, so a Peto turn is never re-sent automatically. The gateway's
+  status codes are unchanged.
+- **CSP**: with the AIRI build on, `/companion` and `/companion/…` responses get their own report-only policy
+  (`core/security_headers.airi_policy`, see `admin-ops.md`, "Security headers"); `/api/companion/…` keeps the site
+  policy. With it off, the React Companion keeps the site policy (it needs YouTube and the rest).
+- **Tests**: `tests/test_airi_gateway.py` (auth, text, card rule, tool round trip, tool and request validation, images,
+  errors before and after the first byte, context overflow, pings, timeouts, 404 when off, no cooldown, text caps, disconnect before and after the
+  first byte via raw ASGI, usage rows), `tests/test_airi_static.py` (both states, old React deep links, path traversal,
+  the `static_files` guard, the `companion_airi` flag of `/api/auth/me`), the `/companion/` cases in
+  `tests/test_security_headers.py`; frontend `tests/AiriCompanion.test.tsx` (both states, Companion chunk never loaded
+  with the flag on).
+
 # Dated log (newest first)
+
+## AIRI page: append-only requests for xAI's cache (2026-11-16, after the real-Grok measurement of `52de441`)
+
+`52de441` did not help: seven AIRI turns in a row still had 1,152 cached tokens. The owner then measured xAI's rule
+directly through the gateway (current behaviour above): only a whole earlier request that is a prefix of the new one is
+reused. The trailing `[Context]` item of `52de441` was absent from the next request at that position, so no turn
+qualified. Now the block sits in `instructions` (same text every turn) and user items carry only the user's text, so
+each converted request is an exact prefix of the next. On the mock with the real AIRI page (four user turns, one tool
+round, 5 requests, 5 `airi_turn` lines) every request was an exact prefix of the next, with identical instructions and
+tools; tests cover text turns, a tool round with an empty assistant message and a GIF in the tool result, a user image
+turn and orphan tool calls. The Agent mock change of `52de441` (reading a run of user items) was reverted: no longer
+needed. The explanation in the entry below ("routing") was wrong.
+
+## AIRI page: cache key, context block placement, tool cards off (2026-11-16)
+
+The owner's real-Grok run: three messages 9–25 s apart had 9,273 / 9,349 / 9,432 input tokens with only 1,152 cached
+each (what a one-line prompt gets), while the tool continuation 2.8 s later had 9,344 of 9,476 cached; a tool result
+also caused two `tools=1` calls. Findings from dumping the gateway's parsed requests on the mock (scratch only):
+- Instructions and the 10 tools were byte-identical across turns. The only thing that changed before the new messages
+  was the previous user message, which lost AIRI's `[Context]` block (it rides only on the newest user message). By
+  characters of the converted request, consecutive turns already shared about 93 % before any change, and at token
+  level the old and new shapes share almost the same prefix. So the near-zero cache between turns is best explained by
+  routing: the gateway sent no `prompt_cache_key`, unlike Chat, and xAI documents that key as the way to reach the
+  server that holds the cache. Not proven without a real call.
+- Changes: per-account HMAC `prompt_cache_key`; the `[Context]` block split into its own trailing user item, so the
+  previous request is a byte-identical prefix of the next one (except that trailing block); a test checks this over
+  three turns, with images, and for a tool continuation. Measured on the mock after the change: 93.4–93.5 % of the
+  next request's characters shared between consecutive user turns, 99.1 % for the tool continuation, 4 user turns plus
+  one continuation gave 5 requests and 5 `airi_turn` lines, and no `tools=1` call.
+- The two `tools=1` calls were AIRI's tool cards (`packages/agents/src/tool-card`, store `stores/tool-cards.ts`): it
+  asks the chat model to design an openui-lang card for a new tool's result and asks again when the card fails to draw.
+  Its setting `settings/tool-cards/enabled` now starts off in the Peto build (fork `PETO.md`); a visitor sees a tool
+  call as its plain row unless they turn cards on.
+- `core/airi_static.py` answers 503 with a Vietnamese page instead of 500 when `index.html` vanishes after startup.
+
+## AIRI page: gateway errors as plain messages, no automatic retry (2026-11-16)
+
+A real-provider run with an expired login showed the gateway's correct 502 as `Remote sent 502 response: {"error":…}`
+in the AIRI chat, and the server logged the same turn three times in 11 seconds. Cause: core-agent's transient retry
+(`streamWithTransientRetry`, `APICallError` with 408/429/5xx, backoff 3 and 6 s matched the timestamps). Fixed in the
+fork's Peto provider (fork commit `4b81b80d3`, no upstream file edited); `__loigiua__` added to the Agent mock for the
+mid-stream case. Checked with the mock on one origin (desktop and phone): `__error__`, `__tamloi__` and `__loigiua__`
+each made 1 browser request and 1 `airi_turn` log line over 25 seconds, showed only the Vietnamese message, and left the
+chat idle; a normal message worked afterwards. After a mid-stream error AIRI keeps the text that arrived but dropped
+its last buffered word ("thì"); upstream behaviour.
+
+## Companion switches to the AIRI build at `/companion/`, package 5a (2026-11-15)
+
+The owner decided to finish the switch now and to postpone the Peto-only features (YouTube Player, Peto's own voice
+sources). `PETO_AIRI_DIR` now makes `/companion/` the AIRI app; `/airi/` is gone (never deployed). The fork builds for
+`/companion/` (`PETO_BASE` in `build.sh`) and has a Vietnamese not-found page for old React links. The React app gets
+`companion_airi` from `/api/auth/me` and sends every way into Companion to `/companion/` with a real navigation. Nothing
+was deleted. Current behaviour and the deploy/rollback recipe are in "AIRI Companion: `/companion/` serving and gateway"
+above.
+- Checked end to end on one origin (mock provider, temp DB, both builds served by the backend, headless Chromium with
+  SwiftShader): see the package 5a report for the step list, network and CSP numbers.
+- Not checked: the deployed site behind Cloudflare, a real phone, real Grok, a browser that has data of the React
+  Companion (nothing migrates; the old server-side Companion threads, cards and memory simply stop being shown).
+
+## AIRI gateway, package 1 review follow-ups (2026-11-15)
+
+After review of `b0656a1`: the gateway answers 404 unless `PETO_AIRI_DIR` is set; it no longer has a cooldown at all
+(the continuation exception is gone, which also closes the hole where a crafted request ending in a tool message
+skipped the cooldown); text caps raised to 2,000 messages and 1,000,000 characters. Finding: before this change
+`Admission.slot` recorded `_last_accepted` even with `cooldown=False`, so a gateway turn would have made the owner's next
+Chat message wait; it now records only when the cooldown applies.
+
+## AIRI gateway, package 1 (2026-11-15, branch from `companion-airi`)
+
+Turned the spike gateway (`64115d7`) into the real one: tools forwarded and streamed back as `tool_calls`, data-URL
+images, usage rows with `surface="airi"`, cancellation on disconnect, OpenAI-shaped errors before the first byte and
+error chunks after it, `: ping` keep-alives, and a report-only CSP for `/airi/`. Current behaviour is in "AIRI Companion:
+`/companion/` serving and gateway" above (it was "AIRI gateway and `/airi/` serving" until package 5a).
+- Checked against a running mock server (port 8767, temp DB, dev cookie): text turn with usage chunk, tool-call turn then
+  the immediate tool-result turn (cooldown skipped), image turn ("đã nhận 1 ảnh (PNG 1 KB)"), remote image refused with
+  400, 401 signed out, a second new message within 3 s refused with 429 cooldown, and a request aborted after the first
+  chunk (`outcome=cancelled total_ms=2`, the next turn ran normally).
+- Real AIRI page (the fork's spike `dist` of 16:56, headless Chromium): typing "Thử công cụ __congcu__" made the mock call
+  AIRI's first tool, `builtIn_debugRandomNumber`; AIRI ran it in the browser, sent the `role: "tool"` result at once
+  (200, continuation) and showed "Peto đã nhận kết quả công cụ (giả lập): 0.58…" under a "Debug random number" tool
+  card. AIRI sends 10 tools on every turn (`builtIn_debugRandomNumber`, `builtIn_emitSparkCommand`,
+  `configure_wake_words`, `builtIn_readMemory`, `builtIn_writeMemory`, `builtIn_forgetMemory`, `builtIn_useRecipe`,
+  `builtIn_proposeRecipe`, `builtIn_drawCard`, `builtIn_searchIcons`).
+- Finding: right after a turn AIRI makes a side call of its own (its tool-card renderer: two system messages, one user
+  message, one tool). It is a new request, so Chat's 3 s cooldown refused it three times; AIRI retried after
+  `Retry-After` and the fourth try succeeded. Whether AIRI's side calls should skip the cooldown is an open question for
+  the owner.
+- CSP: one visit to `/airi/` with the new policy produced 68 reports, all expected: 67 `font-src cdn.jsdelivr.net` (fonts
+  are being self-hosted in the fork, package 2) and 1 `connect-src ws://localhost` (the mods channel package 2 removes).
+  The spike's inline-script, `data:`/`blob:` connect and inline-handler reports are gone.
 
 ## Companion chat UI from AIRI (2026-10-26, in progress, committed `e96fd91`)
 

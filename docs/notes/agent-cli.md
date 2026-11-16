@@ -53,7 +53,9 @@ results in the next step. The server stores no conversation (`store=False`), and
   `MAX_STEP_IMAGE_BYTES` (3 MB) each. Rejected images cost no step. The instructions
   are always the server's: `english.CORE_PROMPT` + `english.agent_prompt(…)` + the search prompt for the current setting + time
   context + project/OS line. Tool schemas are server-owned (`features/agent/tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
-  `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back. The mock
+  `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back; since
+  2026-11-15 it also answers `__congcu__` by calling the caller's first declared tool (for the AIRI gateway, see
+  `companion.md`). The mock
   estimates usage at about 4 characters per token so the CLI's token display has numbers.
 - **Deleting and renaming are tools, not shell commands** (`delete_file`, `move_file`). They go through the CLI's
   checkpoint, so `/undo` restores them, which `del` or `move` in a terminal cannot; `AGENT_PROMPT` says so. Delete only

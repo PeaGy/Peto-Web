@@ -78,6 +78,14 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Real model behaviour with user-written character cards, on physical phones and with real provider keys — `companion.md`, "Companion character cards, stage (a): server (2026-10-25)" and "stage (d)".
 - [ ] Card packages against real AIRI, on physical phones — `companion.md`, "Companion character cards, stage (e): import/export (2026-10-26)".
 - [ ] Full frontend/backend runs and the Playwright companion/layout specs for the AIRI chat UI (`companion.png` baseline) — `companion.md`, "Companion chat UI from AIRI".
+- [ ] AIRI gateway with real Grok: a text turn, whether Grok accepts AIRI's 10 tool schemas and a forced `tool_choice` object, a real tool round trip, `cost_ticks` on `/admin` — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] AIRI gateway with a real image from AIRI's chat (only a generated 8×8 PNG and the mock were used) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] AIRI's stop button during a real streamed reply behind Cloudflare: provider stream closed and slot freed (checked only with httpx closing the stream and raw ASGI disconnects in tests) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] `/companion/` (AIRI build) CSP reports on the deployed site after the fork's package 2 build (self-hosted fonts, no `localhost:6121`), phone included — `admin-ops.md`, "Security headers".
+- [ ] The `/companion/` switch (package 5a) on the deployed site: `PETO_AIRI_DIR` on the VPS with a copied `dist`, sidebar and phone drawer into AIRI behind Cloudflare, a real phone, the rollback (unset and restart) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] The AIRI page's error message and no-retry rule with a real provider error (expired login, real 429/503) behind Cloudflare; checked only with the mock words on a local server — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] AIRI gateway cache with real Grok after the append-only change (`[Context]` in instructions): cached share between user turns (expected close to the previous request's full length, with an occasional miss), a user image turn and a tool round from the real page — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] A browser that already used the React Companion, after the switch: old bookmarks, its local Companion settings, and what visitors expect of their old server-side Companion threads, cards and memory (no migration was built) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
 
 ## Player (`player.md`)
 

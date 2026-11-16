@@ -485,10 +485,15 @@ async def github_callback(
 @router.get("/me")
 async def me(request: Request) -> dict:
     providers = available_providers()
+    # Companion là bản AIRI ở /companion/ (PETO_AIRI_DIR): giao diện React mở Companion bằng điều hướng thật thay vì
+    # dựng Companion React. Chỉ là một cờ, không có đường dẫn hay bí mật nào.
+    from core import airi_static
+    companion_airi = airi_static.active()
     anonymous = {
         "authenticated": False,
         "login_configured": any(providers.values()),
         "providers": providers,
+        "companion_airi": companion_airi,
     }
 
     owner = session_owner(request.cookies.get(SESSION_COOKIE))
@@ -505,6 +510,7 @@ async def me(request: Request) -> dict:
         "authenticated": True,
         "login_configured": True,
         "providers": providers,
+        "companion_airi": companion_airi,
         "user": {
             # Không gửi khóa owner xuống trình duyệt; đây là mã băm ổn định,
             # đủ để frontend biết "vẫn là tài khoản đó" khi đổi phiên.

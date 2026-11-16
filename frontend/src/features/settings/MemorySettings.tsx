@@ -290,9 +290,11 @@ function EntryDetail({ entry, enabled, startEditing, fresh, onBack, onSave, onDe
  * Mục Trí nhớ. `open`: mục đang được xem; lúc đó mới tải danh sách (mở lại là tải lại, vì lượt vừa xong có thể vừa ghi
  * thêm).
  */
-export default function MemorySettings({ open, onUnauthorized }: {
+export default function MemorySettings({ open, onUnauthorized, companionUsesMemory = true }: {
   open: boolean;
   onUnauthorized: () => void;
+  /** Companion React đọc và ghi trí nhớ này; Companion bản AIRI (từ 15/11/2026) thì không, nó nhớ trong trình duyệt. */
+  companionUsesMemory?: boolean;
 }) {
   const [state, setState] = useState<CompanionMemoryState | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -473,7 +475,7 @@ export default function MemorySettings({ open, onUnauthorized }: {
   const dismissToast = useCallback(() => setToast(null), []);
   const memories = state?.memories ?? [];
   const ideas = memories.reduce((sum, item) => sum + item.details.length, 0);
-  const intro = "Peto ghi lại điều bạn kể trong Chat và Companion, kể cả cách bạn muốn được xưng hô, để lần sau nhớ.";
+  const intro = `Peto ghi lại điều bạn kể trong ${companionUsesMemory ? 'Chat và Companion' : 'Chat'}, kể cả cách bạn muốn được xưng hô, để lần sau nhớ.`;
   const hint = !state ? intro
     : !state.available ? "Chủ web đã tắt trí nhớ trên máy chủ này."
     : state.enabled ? `${intro} Chỉ bạn thấy trang này; xóa điều gì là Peto quên điều đó.`

@@ -298,6 +298,9 @@ DESKTOP_UPDATES = os.getenv("PETO_DESKTOP_UPDATES", "true").strip().lower() in {
 STATIC_DIR = Path(
     os.getenv("PETO_STATIC_DIR", str(BASE_DIR.parent / "frontend" / "dist"))
 )
+# Bản build AIRI stage-web (thử nghiệm, 15/11/2026): đặt thì phục vụ dưới /airi/ (core/airi_static.py); để trống thì
+# không có gì thay đổi.
+AIRI_DIR = Path(os.environ["PETO_AIRI_DIR"]) if os.getenv("PETO_AIRI_DIR", "").strip() else None
 
 # --- CORS ----------------------------------------------------------------
 # Chỉ cho phép dev server của Vite. Không dùng "*" — mở rộng khi deploy thật.

@@ -237,6 +237,9 @@ export interface AuthState {
   login_configured: boolean;
   /** Cách đăng nhập nào đang dùng được. Thiếu cấu hình thì nút tự ẩn. */
   providers?: Record<AuthProvider, boolean>;
+  /** Máy chủ phục vụ Companion bản AIRI ở /companion/ (PETO_AIRI_DIR, từ 15/11/2026): mở Companion là điều hướng thật
+   * sang trang đó, không dựng Companion React. Thiếu (máy chủ cũ) nghĩa là không. */
+  companion_airi?: boolean;
   user?: AccountUser;
 }
 

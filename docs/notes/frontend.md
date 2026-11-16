@@ -31,6 +31,16 @@ files; missing API paths, assets, unknown Docs articles and other paths remain 4
 `playwright.routing.config.ts` verifies browser history/F5/deep links against the production build with this real
 fallback, using mocked user/AI data and a loopback-only server without database access.
 
+**Companion as the AIRI build (since 2026-11-15, package 5a).** When `PETO_AIRI_DIR` is set, `core/airi_static.py`
+registers `/companion` (308 to `/companion/`) and `/companion/{path}` before the catch-all, so the AIRI app answers every
+`/companion…` path, and the catch-all itself refuses `/companion…` with a 404 while `airi_static.active()` is true. The
+React app learns it from `companion_airi` in `/api/auth/me` and leaves the router for Companion: the sidebar item does
+`location.assign('/companion/')`, and any route that resolves to the Companion view is replaced by
+`location.replace('/companion/')` (helpers `AIRI_COMPANION_URL` and `openAiriCompanion` in `app/routes.ts`). Without the
+variable, routing is exactly as described above. Details: `companion.md`, "AIRI Companion: `/companion/` serving and
+gateway". In dev (Vite on 5173), Vite serves `/companion/` itself, so the AIRI app is only reachable through the
+backend's own port; React shows a short notice instead of reloading.
+
 The index page is not served verbatim: the handler inserts `og:image` (plus alt text)
 from `app_identity.get_app_identity()` — the bot's Discord CDN icon, already the absolute
 URL Open Graph requires. That keeps the domain out of the build and makes link previews

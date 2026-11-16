@@ -76,6 +76,19 @@ the proxy (its data goes to `cloudflareinsights.com`, covered by `connect-src ht
 voice and hearing providers are called from the browser, custom base URLs included. Middleware is pure ASGI (headers only,
 bodies stream untouched).
 
+When `PETO_AIRI_DIR` is set (to a build with an `index.html`), Companion is the AIRI build and `/companion` and
+`/companion/…` responses (pages, assets and worker scripts) get a separate report-only policy, `airi_policy` (since
+2026-11-15, at `/airi/` until package 5a); the rest of the site, `/api/companion/…` included, keeps the policy above.
+Without it, the React Companion at `/companion` keeps the site policy. It is built from what
+the AIRI stage-web build uses: the inline scripts of AIRI's `index.html` by hash, its inline `onclick` by hash with
+`'unsafe-hashes'`, `'wasm-unsafe-eval'` (onnxruntime, Silero VAD) and `'unsafe-eval'` (`new Function` in the PixiJS and
+onnxruntime bundles), `style-src 'self' 'unsafe-inline'`, `img-src`/`media-src` `'self' data: blob:`, `font-src 'self'
+data:`, `connect-src 'self' data: blob:`, `worker-src 'self' blob:`, plus the Cloudflare beacon. It allows no AIRI cloud
+host, no font CDN (`cdn.jsdelivr.net` stays reported until the fork self-hosts its fonts) and no blanket `https:`, so a
+user who points AIRI at another provider from the browser shows up as `connect-src` reports. Reports from these pages
+log `page=/companion`. The AIRI gateway's turns appear on `/admin` under surface `airi` (`companion.md`, "AIRI
+Companion: `/companion/` serving and gateway").
+
 ### Configuration
 
 `core/config.py` is where environment variables are read. Every numeric knob goes through

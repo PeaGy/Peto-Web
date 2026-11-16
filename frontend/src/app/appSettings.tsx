@@ -135,7 +135,7 @@ export function renderAppSettings(section: SettingsSection, active: boolean, ctx
     case "tri-nho":
       return (
         <LazyBoundary><Suspense fallback={settingsLoading}>
-          <MemorySettings open={active} onUnauthorized={handleUnauthorized} />
+          <MemorySettings open={active} onUnauthorized={handleUnauthorized} companionUsesMemory={!auth.companion_airi} />
         </Suspense></LazyBoundary>
       );
   }

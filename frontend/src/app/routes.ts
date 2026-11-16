@@ -5,6 +5,19 @@ export const VIEW_PATHS: Record<AppView, string> = { chat: '/', companion: '/com
 const IMAGE_PATTERN = '/imagine/:rootId/:imageId';
 const CHAT_PATTERN = '/chat/:conversationId';
 
+/**
+ * Companion bản AIRI (từ 15/11/2026, khi máy chủ đặt PETO_AIRI_DIR; cờ `companion_airi` của /api/auth/me): một ứng dụng
+ * Vue riêng ở /companion/, nên mọi lối vào Companion là điều hướng thật của trình duyệt, không phải route của React.
+ */
+export const AIRI_COMPANION_URL = '/companion/';
+
+/** Rời ứng dụng React sang Companion bản AIRI. `replace`: thay mục lịch sử hiện tại (một route /companion… vừa được đẩy
+ * vào), để nút Back không quay về đường dẫn đó. */
+export function openAiriCompanion(replace = false) {
+  if (replace) window.location.replace(AIRI_COMPANION_URL);
+  else window.location.assign(AIRI_COMPANION_URL);
+}
+
 export function chatRoute(id: string) { return `/chat/${encodeURIComponent(id)}`; }
 
 export function chatId(pathname: string): string | null {

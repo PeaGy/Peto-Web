@@ -18,10 +18,12 @@ from features.accounts import profile as profile_api
 from features.accounts import discord_memory_api
 from features.voice import api as voice_api
 from core import static_files
+from core import airi_static
 from core import security_headers
+from features.companion import airi_gateway
 from ai import get_provider
 from core.identity import get_app_identity
-from core.config import ALLOWED_ORIGINS, STATIC_DIR
+from core.config import AIRI_DIR, ALLOWED_ORIGINS, STATIC_DIR
 from features.docs import api as docs_api
 from core.lifespan import lifespan
 from features.chat import api as chat_api
@@ -58,7 +60,7 @@ app.include_router(desktop_release.policy_router)
 app.include_router(desktop_update.router)
 # Header bảo mật cho mọi phản hồi, kể cả trang tĩnh và SSE (G3.4): bắt buộc nosniff, referrer, chống nhúng khung; CSP
 # đầy đủ mới ở chế độ chỉ báo cáo, báo cáo về /api/csp-report.
-app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR)
+app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR, airi_dir=AIRI_DIR)
 app.include_router(security_headers.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)
@@ -69,6 +71,11 @@ app.include_router(project_api.router)
 app.include_router(connector_api.router)
 app.include_router(companion_api.router)
 app.include_router(admin_api.router)
+# Companion bản AIRI (15/11/2026): cổng Chat Completions cho bộ não AIRI trong trình duyệt, và bản build AIRI làm
+# Companion ở /companion/ khi PETO_AIRI_DIR được đặt (không đặt thì /companion vẫn là Companion React). /companion/ của
+# AIRI phải gắn trước static_files.mount ở cuối tệp.
+app.include_router(airi_gateway.router)
+airi_static.mount(app, AIRI_DIR)
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health() -> dict:
