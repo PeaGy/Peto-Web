@@ -64,6 +64,9 @@ class Parsed:
     # Tin cuối là kết quả công cụ: lượt tiếp nối của cùng một câu trả lời, không phải tin mới của người dùng.
     continuation: bool
     images: int
+    # Trang AIRI bật "Peto tra web" (Cài đặt → Mô-đun → Tìm kiếm trên web, nguồn Peto): thân yêu cầu có
+    # ``peto_web_search: true``. Model tự quyết có tra hay không; máy chủ vẫn có thể tắt hẳn (PETO_WEB_SEARCH_ENABLED).
+    web_search: bool = False
 
 
 def _text_parts(content: object, allowed: set[str], what: str) -> str:
@@ -319,5 +322,5 @@ def parse(raw: bytes) -> Parsed:
         instructions=instructions, items=items, tools=tools, tool_choice=_tool_choice(payload.get("tool_choice"), tools),
         max_output_tokens=_max_tokens(payload), stream=payload.get("stream") is True,
         include_usage=isinstance(options, dict) and options.get("include_usage") is True,
-        continuation=continuation, images=images,
+        continuation=continuation, images=images, web_search=payload.get("peto_web_search") is True,
     )
