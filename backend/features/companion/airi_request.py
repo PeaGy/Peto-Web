@@ -37,6 +37,8 @@ TOOL_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 MAX_TOOL_SCHEMA_BYTES = 32 * 1024
 MAX_TOOLS_TOTAL_BYTES = 256 * 1024
 TOOL_CHOICES = {"auto", "none", "required"}
+# Đầu khối ngữ cảnh chạy mà AIRI nối vào tin người dùng mới nhất (xem ``split_context``).
+CONTEXT_MARK = "\n[Context]\n- "
 REMOTE_IMAGE = "Peto chỉ nhận ảnh gửi kèm dạng data URL (PNG, JPEG, GIF hoặc WebP), không tải ảnh từ địa chỉ web."
 
 
@@ -123,6 +125,28 @@ def _rich_parts(content: object, what: str) -> tuple[str | list[dict], int, int]
     return parts, chars, images
 
 
+def split_context(content: str | list[dict]) -> tuple[str | list[dict], str | None]:
+    """Tách khối ngữ cảnh chạy của AIRI khỏi tin người dùng, để tiền tố gửi model giữ nguyên giữa các lượt (cache).
+
+    AIRI (``packages/core-agent/src/messages/render-context.ts``) nối ``"\\n[Context]\\n- nguồn: …"`` (cách dùng token
+    cảm xúc ACT, danh sách cảm xúc…) vào cuối tin người dùng MỚI NHẤT, còn lịch sử thì lưu tin không có khối đó. Gửi
+    nguyên thì sang lượt sau tin cũ đổi chữ, mọi thứ từ tin đó trở đi mất cache. Tách khối ra thành một tin người dùng
+    riêng ngay sau tin của người dùng: tin của người dùng giống hệt bản trong lịch sử của lượt sau, khối ngữ cảnh luôn ở
+    cuối. Model nhận đúng những chữ ấy, chỉ khác chỗ đặt. Trả (nội dung còn lại, khối ngữ cảnh hoặc None).
+    """
+    if isinstance(content, str):
+        at = content.rfind(CONTEXT_MARK)
+        return (content, None) if at < 0 else (content[:at], content[at + 1:])
+    for index in range(len(content) - 1, -1, -1):
+        part = content[index]
+        text = part.get("text") if part.get("type") == "input_text" else None
+        at = text.rfind(CONTEXT_MARK) if isinstance(text, str) else -1
+        if at >= 0:
+            head = [{**part, "text": text[:at]}] if text[:at] else []
+            return [*content[:index], *head, *content[index + 1:]], text[at + 1:]
+    return content, None
+
+
 def _tool_calls(raw: object) -> list[dict]:
     if raw is None:
         return []
@@ -169,8 +193,11 @@ def _messages(raw: object) -> tuple[str, list[dict], int, bool]:
             content, chars, count = _rich_parts(message.get("content"), "tin của người dùng")
             total += chars
             images += count
-            if chars or count:
+            content, context = split_context(content)
+            if content or count:
                 items.append({"role": "user", "content": content})
+            if context:
+                items.append({"role": "user", "content": context})
         elif role == "assistant":
             text = _text_parts(message.get("content"), {"text", "output_text", "refusal"}, "tin của Peto")
             if not text and isinstance(message.get("refusal"), str):

@@ -152,6 +152,23 @@ async def test_disabled_without_dir(tmp_path, monkeypatch):
                 assert "AIRI" not in response.text
 
 
+async def test_missing_index_after_startup_is_503_page(tmp_path, monkeypatch):
+    """index.html biến mất sau khi khởi động (bản fork đang build lại): trang báo 503 tiếng Việt, không phải lỗi 500."""
+    airi, site = _build(tmp_path)
+    monkeypatch.setattr(config, "AIRI_DIR", airi)
+    app = FastAPI()
+    assert airi_static.mount(app, airi)
+    assert static_files.mount(app, site)
+    (airi / "index.html").unlink()
+    async with await _client(app) as client:
+        for path in ("/companion/", "/companion/settings/modules"):
+            response = await client.get(path)
+            assert response.status_code == 503, path
+            assert "Companion đang cập nhật" in response.text and response.headers["retry-after"] == "30"
+            assert response.headers["cache-control"] == "no-store"
+        assert (await client.get("/companion/assets/index-abc.js")).status_code == 200
+
+
 async def test_active_flag_follows_config(tmp_path, monkeypatch):
     airi, _ = _build(tmp_path)
     monkeypatch.setattr(config, "AIRI_DIR", airi)

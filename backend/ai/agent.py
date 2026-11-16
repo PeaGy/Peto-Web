@@ -48,9 +48,13 @@ class AgentEvent:
 async def agent_step(
     *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING,
     model: str = "peto", web_search: bool = False, final: bool = False, max_output_tokens: int | None = None,
-    tool_choice: str | None = None,
+    tool_choice: str | None = None, cache_key: str | None = None,
 ) -> AsyncIterator[AgentEvent]:
     """``model`` đã được ``ai_models.resolve`` kiểm quyền: chọn xAI, OpenAI hoặc Claude theo danh mục.
+
+    ``cache_key`` (16/11/2026, cổng Companion AIRI): gửi thành ``prompt_cache_key`` cho xAI (tài liệu xAI: thành
+    ``x-grok-conv-id``, định tuyến các lượt về máy chủ đang giữ cache), như Chat. Chỉ dùng cho model Peto; Peto Agent
+    không gửi, nên yêu cầu của Agent giữ nguyên.
 
     ``final``: lượt "wrapup" (CLI 0.25.0) không được gọi công cụ. OpenAI và Claude vẫn nhận danh sách công cụ, vì lịch
     sử còn lời gọi công cụ, kèm ``tool_choice`` none; xAI từ chối none khi không có công cụ (xem ai/xai.py), nên với
@@ -73,7 +77,8 @@ async def agent_step(
         if MODELS[model].service == "anthropic":
             events = _claude_step(instructions, input_items, tools, effort, model, web_search, tool_choice, max_output_tokens)
         else:
-            events = (_xai_step(instructions, input_items, tools, effort, web_search, max_output_tokens, tool_choice) if model == "peto"
+            events = (_xai_step(instructions, input_items, tools, effort, web_search, max_output_tokens, tool_choice,
+                                cache_key) if model == "peto"
                       else _openai_step(instructions, input_items, tools, effort, model, web_search, tool_choice, max_output_tokens))
     else:
         raise ProviderError("Nhà cung cấp AI hiện tại chưa hỗ trợ Peto Agent.")
@@ -163,13 +168,13 @@ async def xai_client():
 
 async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
                     web_search: bool = False, max_output_tokens: int | None = None,
-                    tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
+                    tool_choice: str | None = None, cache_key: str | None = None) -> AsyncIterator[AgentEvent]:
     client = await xai_client()
     async for event in _responses_step(
         client, "xAI", AGENT_MODEL, min(max_output_tokens or XAI_AGENT_MAX_OUTPUT_TOKENS, XAI_AGENT_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
         auth_message="Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.",
         rate_message="Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.",
-        web_search=web_search, tool_choice=tool_choice,
+        web_search=web_search, tool_choice=tool_choice, cache_key=cache_key,
     ):
         yield event
 
@@ -220,7 +225,7 @@ async def _claude_step(instructions: str, items: list[dict], tools: list[dict], 
 async def _responses_step(client, service: str, model: str, max_output_tokens: int, instructions: str,
                           items: list[dict], tools: list[dict], effort: str, *, auth_message: str,
                           rate_message: str, web_search: bool = False,
-                          tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
+                          tool_choice: str | None = None, cache_key: str | None = None) -> AsyncIterator[AgentEvent]:
     """Một lần gọi Responses API. xAI và OpenAI chỉ khác client, tên model và lời báo lỗi.
 
     Lỗi tạm thời (giới hạn lượt, mất kết nối, lỗi 5xx, luồng đứt) mang ``retryable``: CLI 0.25.0 tự thử lại khi máy
@@ -244,6 +249,7 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
             store=False,
             stream=True,
             **({"tool_choice": tool_choice} if tool_choice and tools else {}),
+            **({"prompt_cache_key": cache_key} if cache_key else {}),
         )
         signal_at = perf_counter()
         async for event in stream:
@@ -450,7 +456,12 @@ async def _mock_tool_round(task_items: list[dict], results: list[dict], tools: l
 async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool = False,
                      tools: list[dict] | None = None) -> AsyncIterator[AgentEvent]:
     last_user = max((index for index, item in enumerate(items) if item.get("role") == "user"), default=-1)
-    task = _text_of(items[last_user]) if last_user >= 0 else ""
+    # Yêu cầu là các tin người dùng liền nhau ở cuối (cổng AIRI tách khối ngữ cảnh thành một tin riêng sau tin của
+    # người dùng); Peto Agent chỉ có một tin.
+    first_user = last_user
+    while first_user > 0 and items[first_user - 1].get("role") == "user":
+        first_user -= 1
+    task = "\n".join(_text_of(item) for item in items[first_user:last_user + 1]) if last_user >= 0 else ""
     if "__error__" in task:
         raise ProviderError("Nhà cung cấp AI đang lỗi (giả lập). Thử lại sau nhé.")
     if "__tamloi__" in task:

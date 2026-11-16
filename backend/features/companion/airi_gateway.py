@@ -23,6 +23,8 @@ máy chủ chỉ là điểm gọi model. Cổng này nhận đúng hình dạng
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import time
@@ -82,6 +84,14 @@ def _error_response(err: GatewayError) -> JSONResponse:
     if err.retry_after is not None:
         headers["Retry-After"] = str(max(1, round(err.retry_after)))
     return JSONResponse(err.body(), status_code=err.status, headers=headers)
+
+
+def cache_key(owner: str) -> str:
+    """Khóa cache xAI của một tài khoản (``prompt_cache_key``, thành ``x-grok-conv-id``): các lượt của cùng người về một
+    máy chủ đang giữ cache, như khóa theo hội thoại của Chat. AIRI không gửi mã hội thoại nên khóa theo tài khoản.
+    HMAC bằng bí mật phiên, để mã băm không đoán ngược được ra ID Discord (không gian ID nhỏ, SHA-256 trơn dò được)."""
+    digest = hmac.new(config.SESSION_SECRET.encode("utf-8"), owner.encode("utf-8"), hashlib.sha256).hexdigest()
+    return "peto-airi-" + digest[:32]
 
 
 def _owner(request: Request) -> str:
@@ -210,7 +220,8 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
             async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
                 events = agent_step(instructions=parsed.instructions, input_items=parsed.items, tools=parsed.tools,
                                     effort=EFFORT, model=MODEL_ID, web_search=False,
-                                    max_output_tokens=parsed.max_output_tokens, tool_choice=parsed.tool_choice)
+                                    max_output_tokens=parsed.max_output_tokens, tool_choice=parsed.tool_choice,
+                                    cache_key=cache_key(owner))
                 try:
                     async for event in events:
                         # Mọi sự kiện, kể cả suy nghĩ và "pulse", cho biết dịch vụ AI còn sống.

@@ -204,6 +204,109 @@ async def test_stores_nothing(client):
     assert await db.list_conversations(TEST_OWNER) == before
 
 
+# --- Tiền tố ổn định cho cache (16/11/2026) -------------------------------------------------------------------------
+
+# Như AIRI gửi thật (bản build Peto, ghi lại ngày 16/11/2026): giờ đầu tin, khối "[Context]" chỉ ở tin người dùng mới
+# nhất, lịch sử lưu tin không có khối đó.
+AIRI_CONTEXT = ("\n[Context]\n- system:airi-runtime-prompt: Start every reply with an ACT token.\n\nThe available "
+                "emotions:\n- happy (Emotion for feeling Happy)\n\nDo not use emojis.")
+AIRI_SYSTEM = {"role": "system", "content": "You are Peto.\n- Use $$...$$ for inline math."}
+
+
+def _airi_turn(texts: list[str], replies: list[str]) -> list[dict]:
+    """Một yêu cầu của AIRI sau ``len(replies)`` lượt: tin người dùng mới nhất mang khối ngữ cảnh."""
+    messages = [AIRI_SYSTEM]
+    for index, text in enumerate(texts):
+        latest = index == len(texts) - 1
+        messages.append({"role": "user", "content": f"[2026-11-16 09:2{index}] {text}" + (AIRI_CONTEXT if latest else "")})
+        if not latest:
+            messages.append({"role": "assistant", "content": replies[index]})
+    return messages
+
+
+def test_consecutive_turns_share_the_prefix_up_to_the_new_messages():
+    texts, replies = ["xin chào", "hôm nay thế nào?", "kể chuyện đi"], ["Chào bạn!", "Vui lắm."]
+    turns = [airi_request.parse(json.dumps({"messages": _airi_turn(texts[:n], replies), "tools": [WEATHER]}).encode())
+             for n in (1, 2, 3)]
+    for before, after in zip(turns, turns[1:]):
+        assert after.instructions == before.instructions and after.tools == before.tools
+        # Mọi item của lượt trước trừ khối ngữ cảnh ở cuối có mặt nguyên vẹn, đúng thứ tự, ở đầu lượt sau.
+        kept = before.items[:-1]
+        assert after.items[:len(kept)] == kept
+        assert json.dumps(after.items[:len(kept)], ensure_ascii=False) == json.dumps(kept, ensure_ascii=False)
+    last = turns[-1].items
+    assert last[-1] == {"role": "user", "content": AIRI_CONTEXT[1:]}
+    assert last[-2] == {"role": "user", "content": "[2026-11-16 09:22] kể chuyện đi"}
+    # Model nhận đúng những chữ ấy: chỉ chỗ đặt khối ngữ cảnh đổi.
+    assert last[-2]["content"] + "\n" + last[-1]["content"] == _airi_turn(texts, replies)[-1]["content"]
+
+
+def test_context_split_keeps_images_and_the_tool_continuation_prefix():
+    image = _png()
+    first = [AIRI_SYSTEM, {"role": "user", "content": [{"type": "text", "text": "xem ảnh" + AIRI_CONTEXT},
+                                                       {"type": "image_url", "image_url": {"url": image}}]}]
+    parsed = airi_request.parse(json.dumps({"messages": first}).encode())
+    assert parsed.items == [
+        {"role": "user", "content": [{"type": "input_text", "text": "xem ảnh"}, {"type": "input_image", "image_url": image}]},
+        {"role": "user", "content": AIRI_CONTEXT[1:]},
+    ]
+    call = {"role": "assistant", "content": "", "tool_calls": [
+        {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]}
+    continuation = airi_request.parse(json.dumps({"messages": [*first, call, {
+        "role": "tool", "tool_call_id": "call_1", "content": "nắng"}], "tools": [WEATHER]}).encode())
+    assert continuation.items[:2] == parsed.items and continuation.continuation
+
+
+def test_text_that_only_looks_like_context_is_not_lost():
+    parsed = airi_request.parse(json.dumps({"messages": [
+        {"role": "user", "content": "[Context] ở đầu dòng, không phải khối của AIRI"}]}).encode())
+    assert parsed.items == [{"role": "user", "content": "[Context] ở đầu dòng, không phải khối của AIRI"}]
+
+
+async def test_cache_key_per_account_never_the_owner(client, spy, monkeypatch):
+    monkeypatch.setattr(config, "SESSION_SECRET", "bi-mat-thu")
+    for _ in range(2):
+        response = await client.post(URL, json={"messages": MESSAGES, "stream": False})
+        assert response.status_code == 200
+    keys = {call["cache_key"] for call in spy}
+    assert len(keys) == 1
+    key = keys.pop()
+    assert key.startswith("peto-airi-") and len(key) == len("peto-airi-") + 32
+    assert TEST_OWNER not in key and TEST_OWNER.split(":")[-1] not in key
+    assert airi_gateway.cache_key("google:khac") != key
+
+
+async def test_xai_step_sends_the_cache_key_only_when_given(monkeypatch):
+    sent: list[dict] = []
+
+    class Done:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+        async def close(self):
+            pass
+
+    async def create(**kwargs):
+        sent.append(kwargs)
+        return Done()
+
+    class Auth:
+        async def get_access_token(self):
+            return "token-thu"
+
+    from types import SimpleNamespace
+    monkeypatch.setattr(ai_agent, "_client", SimpleNamespace(api_key="", responses=SimpleNamespace(create=create)))
+    monkeypatch.setattr(ai_agent, "_auth", Auth())
+    for key in ("peto-airi-abc", None):
+        with pytest.raises(ProviderError):  # luồng rỗng: không có sự kiện "completed"
+            async for _ in ai_agent._xai_step("chỉ dẫn", [{"role": "user", "content": "chào"}], [], "low", cache_key=key):
+                pass
+    assert sent[0]["prompt_cache_key"] == "peto-airi-abc" and "prompt_cache_key" not in sent[1]
+
+
 # --- Công cụ --------------------------------------------------------------------------------------------------------
 
 async def test_tool_round_trip(client, spy):

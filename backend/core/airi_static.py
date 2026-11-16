@@ -25,6 +25,15 @@ from core import config
 logger = logging.getLogger("peto_web.airi")
 
 PREFIX = "/companion"
+# Trang báo khi bản build đang được thay (index.html tạm thời không có): không script, không tài nguyên ngoài.
+UNAVAILABLE_PAGE = ("<!doctype html><html lang=\"vi\"><head><meta charset=\"utf-8\">"
+                    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                    "<title>Companion đang cập nhật · Peto</title></head>"
+                    "<body style=\"font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 16px;"
+                    "line-height:1.5\"><h1 style=\"font-size:1.4rem\">Companion đang cập nhật</h1>"
+                    "<p>Peto đang thay bản Companion mới. Đợi chừng một phút rồi tải lại trang nhé.</p>"
+                    "<p><a href=\"/companion/\">Tải lại Companion</a> · <a href=\"/\">Về Peto Web</a></p>"
+                    "</body></html>")
 # Kiểu MIME mà bảng của hệ điều hành có thể thiếu (Windows): WebAssembly phải đúng application/wasm thì trình duyệt mới
 # biên dịch theo luồng; mô hình Live2D/VRM là nhị phân.
 _TYPES = {
@@ -76,7 +85,14 @@ def mount(app: FastAPI, airi_dir: Path | None) -> bool:
         return False
 
     async def index_page() -> HTMLResponse:
-        page = await anyio.Path(index).read_text(encoding="utf-8")
+        try:
+            page = await anyio.Path(index).read_text(encoding="utf-8")
+        except OSError:
+            # index.html biến mất sau khi khởi động (đang build lại hay chép bản mới vào thư mục): báo tạm thời không
+            # dùng được thay vì lỗi 500.
+            logger.warning("Không đọc được index.html của Companion bản AIRI ở %s.", root)
+            return HTMLResponse(UNAVAILABLE_PAGE, status_code=503,
+                                headers={"Cache-Control": "no-store", "Retry-After": "30"})
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     @app.api_route(PREFIX, methods=["GET", "HEAD"], include_in_schema=False)
