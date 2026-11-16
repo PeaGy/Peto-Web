@@ -1006,9 +1006,17 @@ the AIRI build (postponed by the owner).
   - Auth is the Peto session cookie (same check as Chat); no cookie is a 401 with an OpenAI-shaped Vietnamese body. No
     Agent device token, no Agent daily step budget, no Agent model catalogue, no per-account quota.
   - Model: always Peto. `GET /models` lists only `peto`; the request's `model` is ignored. The call goes through
-    `ai.agent.agent_step(model="peto", effort="low", web_search=False)`, the Responses path with caller-declared tools
+    `ai.agent.agent_step(model="peto", effort="low")`, the Responses path with caller-declared tools
     that Peto Agent uses, so it bills as Grok with `AGENT_MODEL` (`PETO_AGENT_MODEL`, default `XAI_MODEL`). Chat's
     `ChatProvider.stream` was not used because its tool loop runs server tools only.
+  - Web search (since 2026-11-17): `web_search=True` only when the body has `peto_web_search: true` (exactly `true`)
+    and `PETO_WEB_SEARCH_ENABLED` is not off. The fork sends it while the visitor has Settings → Mô-đun → Tìm kiếm trên
+    web on with the service "Peto" (the fork's default service; no key; the page mounts no browser search tool for it,
+    see the fork's `PETO.md`, "Web search"). xAI's search tool is added to the same call and Grok decides when to
+    search; `search` events only keep the call alive and never reach the browser, and sources are not shown apart from
+    links Grok writes in its text. The `call` row counts the completed searches in `search_calls` (empty when search
+    was off), and the `airi_turn` log line has `web_search=` and `searches=`. Turning it on adds xAI's search tool to the
+    request, so the first turn after the switch misses the cache.
   - System prompt: the caller's `system`/`developer` messages joined, then `COMPANION_CARD_RULE` always appended by the
     server. Nothing is stored; logs carry only counts and timings (`airi_turn outcome=… continuation=… tools=… images=…
     items=… first_text_ms=… total_ms=…`).
@@ -1100,6 +1108,30 @@ the AIRI build (postponed by the owner).
   with the flag on).
 
 # Dated log (newest first)
+
+## AIRI page: Peto web search and a new version notice (2026-11-17)
+
+The owner turned on web search in the AIRI page and nothing happened, and the module showed no green dot: AIRI's
+module searches from the browser with the visitor's own Tavily or DeepSeek key and counts as ready only with a key.
+The owner chose a keyless "Peto" service (option A of the 2026-11-16 report). Gateway side: the `peto_web_search` flag
+above, branch `companion-airi-search`. Fork side: the service, the default service for visitors without their own key,
+the flag in `petoFetch` (the fork's `PETO.md`, "Web search").
+
+The owner also asked about AIRI's "New version ready, reload now?" toast. It comes from AIRI's service worker, which
+the Peto build turns off, so a tab left open kept the old build silently. The fork now compares the entry script of
+`/companion/` (`index.html`, served `no-cache`) with its own, when the tab becomes visible, when the network returns
+and every 15 minutes, and shows AIRI's own toast ("Có phiên bản mới, tải lại ngay?"). Peto Web needs no change for it.
+
+## AIRI page: Peto theme colour, soft pink (2026-11-16)
+
+The fork used AIRI's default blue. The owner chose between three running variants, screenshotted from the real AIRI
+page against a mock backend (A: the logo pink at AIRI's strength, B: the same pink at 55% saturation, C: almost grey
+like Peto Web) and picked B, "hồng dịu". Built in the fork only; Peto Web is unchanged. The fork's `PETO.md` ("Theme
+colour") has the details: `apps/stage-web/src/modules/peto-theme.ts` is a Pinia plugin of AIRI's theme store that
+turns AIRI's default hue (220.44, also what a reset gives) into the hue of the logo pink `#ee9dad` (about 6.69) and
+sets `--chromatic-sat` to 0.55 while that hue is active. A colour the visitor picks keeps AIRI's full saturation.
+Visitors who never changed the colour move to the pink on their next visit. Settings → Hệ thống → Bảng màu shows the
+"Màu mặc định" preset as "Hồng Peto".
 
 ## AIRI Companion: GitHub release builds and one-command update on the VPS, package 6 (2026-11-16)
 

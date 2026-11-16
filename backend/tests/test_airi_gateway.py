@@ -730,3 +730,43 @@ async def test_turns_are_recorded_as_airi(client, recorder):
     assert response.status_code == 502
     rows = [dict(zip(usage_events.COLUMNS, row)) for row in usage_events._pending]
     assert [(row["kind"], row["outcome"], row["complete"]) for row in rows] == [("turn", "provider_error", 0)]
+
+
+# --- Peto tra web (mô-đun Tìm kiếm trên web của AIRI, nguồn Peto) ------------------------------------------------------
+
+SEARCH_MESSAGES = [{"role": "user", "content": "__search__ tin mới hôm nay"}]
+
+
+async def test_web_search_only_when_the_page_asks(client, spy):
+    status, items = await _stream(client, {"messages": SEARCH_MESSAGES, "peto_web_search": True})
+    assert status == 200 and spy[-1]["web_search"] is True
+    assert "vừa tra web" in _assemble(items)["text"]
+
+    status, items = await _stream(client, {"messages": SEARCH_MESSAGES})
+    assert status == 200 and spy[-1]["web_search"] is False
+    assert "vừa tra web" not in _assemble(items)["text"]
+
+
+@pytest.mark.parametrize("value", ["true", 1, {"on": True}])
+async def test_web_search_flag_must_be_true(client, spy, value):
+    status, _ = await _stream(client, {"messages": MESSAGES, "peto_web_search": value})
+    assert status == 200 and spy[-1]["web_search"] is False
+
+
+async def test_server_switch_turns_web_search_off(client, spy, monkeypatch):
+    monkeypatch.setattr(config, "WEB_SEARCH_ENABLED", False)
+    status, items = await _stream(client, {"messages": SEARCH_MESSAGES, "peto_web_search": True})
+    assert status == 200 and spy[-1]["web_search"] is False
+    assert "vừa tra web" not in _assemble(items)["text"]
+
+
+async def test_searches_are_counted_in_the_call_row(client, recorder):
+    status, _ = await _stream(client, {"messages": SEARCH_MESSAGES, "peto_web_search": True})
+    assert status == 200
+    rows = [dict(zip(usage_events.COLUMNS, row)) for row in usage_events._pending]
+    assert next(row for row in rows if row["kind"] == "call")["search_calls"] == 1
+
+    usage_events._pending.clear()
+    status, _ = await _stream(client, {"messages": MESSAGES})
+    rows = [dict(zip(usage_events.COLUMNS, row)) for row in usage_events._pending]
+    assert next(row for row in rows if row["kind"] == "call")["search_calls"] is None

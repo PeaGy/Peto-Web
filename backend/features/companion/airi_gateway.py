@@ -10,7 +10,9 @@ máy chủ chỉ là điểm gọi model. Cổng này nhận đúng hình dạng
 - Cả lượt chạy trong ``admission.slot(owner, cooldown=False)`` của Chat: cùng giới hạn đồng thời và hàng chờ, nhưng
   không có thời gian chờ giữa hai lần gọi, vì bộ não AIRI tự gửi nhiều lần liền nhau (kết quả công cụ, lần gọi phụ sau
   mỗi lượt). Lượt của cổng cũng không làm tin Chat kế tiếp của cùng người phải chờ.
-- Gọi model qua ``ai.agent.agent_step`` (đường Responses có công cụ do nơi gọi khai báo, như Peto Agent), không tra web.
+- Gọi model qua ``ai.agent.agent_step`` (đường Responses có công cụ do nơi gọi khai báo, như Peto Agent). Chỉ tra web
+  khi trang gửi ``peto_web_search: true`` (người dùng bật "Peto" trong mô-đun Tìm kiếm trên web) và máy chủ không tắt
+  ``PETO_WEB_SEARCH_ENABLED``; xAI tra trong cùng lần gọi, model tự quyết có tra hay không.
   Model gọi công cụ thì cổng trả ``tool_calls`` với ``finish_reason: "tool_calls"``; trình duyệt chạy rồi gửi lại.
 - System prompt là của AIRI gửi lên; máy chủ luôn nối thêm ``COMPANION_CARD_RULE`` (luật cố định dưới 18 tuổi).
 - Lỗi trước byte đầu tiên là mã HTTP thật với thân ``{"error": {...}}``; lỗi giữa chừng là một dòng ``data:
@@ -210,6 +212,9 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
     outcome = "cancelled"
     completed = False
     failure: GatewayError | None = None
+    # Tra web chạy ở phía xAI trong cùng lần gọi; công tắc chung của máy chủ thắng công tắc của trang.
+    web_search = parsed.web_search and config.WEB_SEARCH_ENABLED
+    searches = 0
     try:
         # Không có thời gian chờ giữa hai lần gọi: bộ não AIRI tự gửi liền nhau (kết quả công cụ, lần gọi phụ sau mỗi
         # lượt); chỉ giới hạn đồng thời và hàng chờ của Chat.
@@ -219,13 +224,15 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
             hard = loop.time() + TURN_TIMEOUT_SECONDS
             async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
                 events = agent_step(instructions=parsed.instructions, input_items=parsed.items, tools=parsed.tools,
-                                    effort=EFFORT, model=MODEL_ID, web_search=False,
+                                    effort=EFFORT, model=MODEL_ID, web_search=web_search,
                                     max_output_tokens=parsed.max_output_tokens, tool_choice=parsed.tool_choice,
                                     cache_key=cache_key(owner))
                 try:
                     async for event in events:
                         # Mọi sự kiện, kể cả suy nghĩ và "pulse", cho biết dịch vụ AI còn sống.
                         limit.reschedule(min(loop.time() + idle, hard))
+                        if event.kind == "search" and event.text == "completed":
+                            searches += 1
                         if event.kind == "done":
                             usage = dict(event.usage)
                             usage_events.record(
@@ -233,7 +240,8 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
                                 purpose=SURFACE, effort=EFFORT, complete=True,
                                 elapsed_ms=round((time.monotonic() - started) * 1000),
                                 input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
-                                cached_tokens=usage.get("cached_tokens"), cost_ticks=usage.pop("cost_ticks", None))
+                                cached_tokens=usage.get("cached_tokens"), cost_ticks=usage.pop("cost_ticks", None),
+                                search_calls=searches if web_search else None)
                             completed = True
                             outcome = "complete"
                             await queue.put(("event", AgentEvent("done", output=event.output, usage=usage)))
@@ -256,8 +264,9 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
         elapsed = round((time.monotonic() - started) * 1000)
         first_ms = round((first_at - started) * 1000) if first_at is not None else None
         # Chỉ số đo, không nội dung tin.
-        logger.info("airi_turn outcome=%s continuation=%s tools=%d images=%d items=%d first_text_ms=%s total_ms=%d",
-                    outcome, parsed.continuation, len(parsed.tools), parsed.images, len(parsed.items), first_ms, elapsed)
+        logger.info("airi_turn outcome=%s continuation=%s tools=%d images=%d items=%d web_search=%s searches=%d "
+                    "first_text_ms=%s total_ms=%d", outcome, parsed.continuation, len(parsed.tools), parsed.images,
+                    len(parsed.items), web_search, searches, first_ms, elapsed)
         usage_events.record("turn", service="xai", model=MODEL_ID, slug=AGENT_MODEL, surface=SURFACE, purpose=SURFACE,
                             effort=EFFORT, outcome=outcome, complete=completed, elapsed_ms=elapsed,
                             first_text_ms=first_ms)
