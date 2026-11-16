@@ -1014,6 +1014,15 @@ the AIRI build (postponed by the owner).
     calls.
 - **Mock**: the Agent mock (`ai/agent.py`) answers `__congcu__` by calling the first declared tool with sample
   arguments (one value per required property), then, once a tool result comes back, replies with that result.
+  `__error__` (502) and `__tamloi__` (503, retryable) fail before the first byte; `__loigiua__` (since 2026-11-16)
+  sends "Peto đang trả lời dở thì " and then fails, so the gateway sends its mid-stream `data: {"error": …}` line.
+- **Errors and retries in the AIRI page** (fork, `petoFetch` in the Peto provider, since 2026-11-16): every error
+  status of the gateway and its mid-stream error line reach the visitor as the gateway's Vietnamese `error.message` only
+  (an error bubble labelled "Hệ thống lõi"), and the chat returns to idle. AIRI's core-agent
+  (`packages/core-agent/src/runtime/llm-service.ts`, `streamWithTransientRetry`) retries an xsAI `APICallError` with
+  status 408, 429 or 5xx up to three times (3, 6, 12 s, or `Retry-After` up to 30 s) before the first stream event;
+  the Peto provider throws its own error class instead, so a Peto turn is never re-sent automatically. The gateway's
+  status codes are unchanged.
 - **CSP**: with the AIRI build on, `/companion` and `/companion/…` responses get their own report-only policy
   (`core/security_headers.airi_policy`, see `admin-ops.md`, "Security headers"); `/api/companion/…` keeps the site
   policy. With it off, the React Companion keeps the site policy (it needs YouTube and the rest).
@@ -1025,6 +1034,17 @@ the AIRI build (postponed by the owner).
   with the flag on).
 
 # Dated log (newest first)
+
+## AIRI page: gateway errors as plain messages, no automatic retry (2026-11-16)
+
+A real-provider run with an expired login showed the gateway's correct 502 as `Remote sent 502 response: {"error":…}`
+in the AIRI chat, and the server logged the same turn three times in 11 seconds. Cause: core-agent's transient retry
+(`streamWithTransientRetry`, `APICallError` with 408/429/5xx, backoff 3 and 6 s matched the timestamps). Fixed in the
+fork's Peto provider (fork commit `4b81b80d3`, no upstream file edited); `__loigiua__` added to the Agent mock for the
+mid-stream case. Checked with the mock on one origin (desktop and phone): `__error__`, `__tamloi__` and `__loigiua__`
+each made 1 browser request and 1 `airi_turn` log line over 25 seconds, showed only the Vietnamese message, and left the
+chat idle; a normal message worked afterwards. After a mid-stream error AIRI keeps the text that arrived but dropped
+its last buffered word ("thì"); upstream behaviour.
 
 ## Companion switches to the AIRI build at `/companion/`, package 5a (2026-11-15)
 

@@ -360,6 +360,14 @@ async def test_provider_error_before_first_byte_is_http_status(client, word, sta
     assert error["type"] == "server_error" and "giả lập" in error["message"]
 
 
+async def test_mock_word_fails_after_some_text(client):
+    """``__loigiua__`` của Agent giả lập: có chữ trước, rồi một dòng lỗi, không [DONE] (để thử lỗi giữa chừng ở AIRI)."""
+    status, items = await _stream(client, {"messages": [{"role": "user", "content": "thử __loigiua__"}]})
+    assert status == 200 and "[DONE]" not in items
+    assert _assemble(items)["text"] == "Peto đang trả lời dở thì "
+    assert items[-1]["error"]["message"] == "Nhà cung cấp AI ngắt giữa chừng (giả lập). Thử lại sau nhé."
+
+
 async def test_provider_error_mid_stream_is_an_error_chunk(client, fake_step):
     async def events():
         yield ai_agent.AgentEvent("delta", "Đang nói dở")

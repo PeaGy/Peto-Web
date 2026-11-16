@@ -352,8 +352,9 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
 
 # --- Giả lập -------------------------------------------------------------
 # Không gọi mạng. Yêu cầu có "__demo__" chạy một vòng đọc README.md → sửa dòng đầu → chạy lệnh → tóm tắt, dựa trên
-# kết quả công cụ CLI gửi lên; "__error__" giả lập lỗi nhà cung cấp; "__congcu__" (15/11/2026, cho cổng AIRI) gọi công
-# cụ đầu tiên mà nơi gọi khai báo, rồi trả lời bằng kết quả công cụ được gửi lại.
+# kết quả công cụ CLI gửi lên; "__error__" giả lập lỗi nhà cung cấp trước chữ đầu tiên; "__loigiua__" (16/11/2026, cho
+# cổng AIRI) trả một đoạn chữ rồi mới lỗi, để thử lỗi giữa chừng; "__congcu__" (15/11/2026, cho cổng AIRI) gọi công cụ
+# đầu tiên mà nơi gọi khai báo, rồi trả lời bằng kết quả công cụ được gửi lại.
 
 _MOCK_DELAY = 0.01
 _MOCK_LONG_WRITE_DELAY = 0.25  # __viettep__: 60 đoạn, khoảng 15 giây
@@ -454,6 +455,10 @@ async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool
         raise ProviderError("Nhà cung cấp AI đang lỗi (giả lập). Thử lại sau nhé.")
     if "__tamloi__" in task:
         raise ProviderError("Nhà cung cấp AI lỗi tạm thời (giả lập). Thử lại nhé.", retryable=True)
+    if "__loigiua__" in task:
+        yield AgentEvent("delta", "Peto đang trả lời dở thì ")
+        await asyncio.sleep(_MOCK_DELAY)
+        raise ProviderError("Nhà cung cấp AI ngắt giữa chừng (giả lập). Thử lại sau nhé.")
     if final:
         # Lượt "wrapup": không có công cụ, chỉ tóm tắt việc đã làm.
         async for event in _speak("Peto đã chạm giới hạn bước của yêu cầu này (giả lập). Việc còn dở: phần còn lại "

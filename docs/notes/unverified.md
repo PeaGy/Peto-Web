@@ -83,6 +83,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] AIRI's stop button during a real streamed reply behind Cloudflare: provider stream closed and slot freed (checked only with httpx closing the stream and raw ASGI disconnects in tests) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
 - [ ] `/companion/` (AIRI build) CSP reports on the deployed site after the fork's package 2 build (self-hosted fonts, no `localhost:6121`), phone included — `admin-ops.md`, "Security headers".
 - [ ] The `/companion/` switch (package 5a) on the deployed site: `PETO_AIRI_DIR` on the VPS with a copied `dist`, sidebar and phone drawer into AIRI behind Cloudflare, a real phone, the rollback (unset and restart) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
+- [ ] The AIRI page's error message and no-retry rule with a real provider error (expired login, real 429/503) behind Cloudflare; checked only with the mock words on a local server — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
 - [ ] A browser that already used the React Companion, after the switch: old bookmarks, its local Companion settings, and what visitors expect of their old server-side Companion threads, cards and memory (no migration was built) — `companion.md`, "AIRI Companion: `/companion/` serving and gateway".
 
 ## Player (`player.md`)
