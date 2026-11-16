@@ -8,7 +8,9 @@ Moved out of `CLAUDE.md` on 2026-11-12 (G0.2). Write new notes for this area her
 
 ### Backend layout (2026-10-01)
 
-Operational tools live in `backend/ops/`; see `deploy/OPERATIONS.md`. `ops.backup` requires all writers stopped
+Operational tools live in `backend/ops/`; see `deploy/OPERATIONS.md`. `deploy/update-companion.sh` (2026-11-16)
+fetches the newest Companion AIRI build from the fork's GitHub Releases and switches to it without a restart
+(`companion.md`, "Deploy"). `ops.backup` requires all writers stopped
 (`--offline`), verifies archives and only restores into a new directory. Archives cover SQLite/uploads, not credentials.
 `ops.report` aggregates existing timing/provider usage logs; optional rates are operator-supplied, missing usage is
 not zero cost. Optional read-only DB aggregates cover Agent/TTS quota, not invoices. Startup configures the `peto_web`
@@ -96,6 +98,9 @@ Companion: `/companion/` serving and gateway").
 crashing. When adding a setting: declare it in `core/config.py` **and** document it in
 `.env.example`. Two exceptions exist: `XAI_API_KEY` is read directly in `ai/xai_auth.py`, and
 `PETO_VOICE_WORKER_TOKEN` is read on every worker request in `features/voice/api.py` (see the voice relay below).
+Variables that only a deploy script reads are documented in `.env.example` but are not in `core/config.py`:
+`PETO_AIRI_RELEASE_TOKEN`, `PETO_AIRI_RELEASE_REPO` and `PETO_AIRI_DIST_ROOT` belong to `deploy/update-companion.sh`
+(since 2026-11-16; the Companion AIRI build update, see `companion.md`, "Deploy").
 
 `XaiAuth` prefers OAuth tokens (`backend/data/xai_tokens.json`), refreshes them on expiry,
 and falls back to `XAI_API_KEY` if refresh fails or no token file exists.
