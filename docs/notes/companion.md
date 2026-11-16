@@ -1019,17 +1019,30 @@ the AIRI build (postponed by the owner).
   arguments (one value per required property), then, once a tool result comes back, replies with that result.
   `__error__` (502) and `__tamloi__` (503, retryable) fail before the first byte; `__loigiua__` (since 2026-11-16)
   sends "Peto đang trả lời dở thì " and then fails, so the gateway sends its mid-stream `data: {"error": …}` line.
-- **Cache** (since 2026-11-16): every gateway call sends xAI `prompt_cache_key` = `peto-airi-` + the first 32 hex of
-  HMAC-SHA256(`PETO_SESSION_SECRET`, owner) (`airi_gateway.cache_key`; documented by xAI as `x-grok-conv-id`, routing a
-  conversation to the server that holds its cache, as Chat does per conversation). AIRI sends no conversation id, so
-  the key is per account; the HMAC keeps a Discord ID from being guessed from the key. `agent_step` takes the key as
-  `cache_key` and sends it only on the xAI path when given, so Peto Agent requests are unchanged. AIRI appends its
-  runtime `[Context]` block (ACT/emotion rules, identical every turn) to the newest user message only and stores
-  history without it; `airi_request.split_context` moves that block into its own user item right after the user's
-  text, so every item of one request except that trailing block reappears byte-identical at the start of the next.
-  The model gets the same words. Instructions (AIRI system message + `COMPANION_CARD_RULE`) and the tool list were
-  already identical between turns. The Agent mock reads the trailing run of user items as the request, so mock words
-  still work after the split.
+- **Cache** (since 2026-11-16): xAI reuses a cache entry only when a WHOLE earlier request (instructions, tools, then
+  every input item) is an exact prefix of the new one; a shared prefix that ends before the previous request's end
+  earns nothing (measured by the owner through the gateway on 2026-11-16: an append-only history cached 6,528–6,656 of
+  about 6.6k tokens per turn, about 13M ticks; the same talk with a block that moved cached 1,152, about 43M ticks; an
+  exact chain of eight turns hit on six of seven follow-ups, so occasional misses are normal). The conversion is
+  therefore append-only across turns of one AIRI conversation:
+  - AIRI appends its runtime `[Context]` block (ACT/emotion rules, identical every turn) to the newest user message
+    only and stores history without it. `airi_request.split_context` strips it from every user message, and the
+    newest one's block goes into `instructions`: AIRI's system messages, then the block verbatim (from `[Context]`),
+    then `COMPANION_CARD_RULE`, always last. Without a block, `instructions` is system + rule as before. The model gets
+    the same words; only their place changed.
+  - Checked to resend byte-identically when AIRI resends the same history: tool rounds (`function_call` from the
+    assistant's `tool_calls`, `function_call_output`, the assistant text after it), an empty assistant message before a
+    `tool` message (never becomes an item, in any turn), dropped orphan tool calls (dropped the same way in every
+    later turn), images in user messages (kept as AIRI sends them; a PNG/JPEG data URL is not touched) and images in
+    tool results (`gateway_images.prepare` lifts them into a user item right after the run of results and turns
+    WebP/GIF into PNG deterministically; the lifted item lands at the same place in every later turn).
+  - What still breaks the chain, by design or outside the gateway: a change of AIRI's system prompt (for example the
+    memory index after a memory write, or a card edit), a change of the tool list, a changed `[Context]` block, or AIRI
+    resending a user image with a different data URL (not seen; not tested with the real page).
+  - Every call also sends `prompt_cache_key` = `peto-airi-` + the first 32 hex of HMAC-SHA256(`PETO_SESSION_SECRET`,
+    owner) (`airi_gateway.cache_key`, xAI's `x-grok-conv-id`, per account because AIRI sends no conversation id; the
+    HMAC keeps a Discord ID from being guessed). Alone it did not help; it stays as routing help. `agent_step` sends it
+    only on the xAI path when given, so Peto Agent requests are unchanged.
 - **Model calls besides the reply**: the fork's `PETO.md` lists every AIRI feature that can call the chat model on
   its own, with its default. Tool cards (one or two extra calls after a new tool result) start off in the Peto build.
 - **Errors and retries in the AIRI page** (fork, `petoFetch` in the Peto provider, since 2026-11-16): every error
@@ -1050,6 +1063,18 @@ the AIRI build (postponed by the owner).
   with the flag on).
 
 # Dated log (newest first)
+
+## AIRI page: append-only requests for xAI's cache (2026-11-16, after the real-Grok measurement of `52de441`)
+
+`52de441` did not help: seven AIRI turns in a row still had 1,152 cached tokens. The owner then measured xAI's rule
+directly through the gateway (current behaviour above): only a whole earlier request that is a prefix of the new one is
+reused. The trailing `[Context]` item of `52de441` was absent from the next request at that position, so no turn
+qualified. Now the block sits in `instructions` (same text every turn) and user items carry only the user's text, so
+each converted request is an exact prefix of the next. On the mock with the real AIRI page (four user turns, one tool
+round, 5 requests, 5 `airi_turn` lines) every request was an exact prefix of the next, with identical instructions and
+tools; tests cover text turns, a tool round with an empty assistant message and a GIF in the tool result, a user image
+turn and orphan tool calls. The Agent mock change of `52de441` (reading a run of user items) was reverted: no longer
+needed. The explanation in the entry below ("routing") was wrong.
 
 ## AIRI page: cache key, context block placement, tool cards off (2026-11-16)
 

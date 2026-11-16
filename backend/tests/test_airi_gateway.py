@@ -19,6 +19,7 @@ from core import config, usage_events
 from core.config import SESSION_COOKIE
 from core.rate_limit import Admission, AdmissionDenied
 from features.accounts import auth
+from features.agent.gateway_images import prepare as prepare_images
 from features.companion import airi_gateway, airi_request
 from main import app
 from prompts import COMPANION_CARD_RULE
@@ -213,48 +214,96 @@ AIRI_CONTEXT = ("\n[Context]\n- system:airi-runtime-prompt: Start every reply wi
 AIRI_SYSTEM = {"role": "system", "content": "You are Peto.\n- Use $$...$$ for inline math."}
 
 
-def _airi_turn(texts: list[str], replies: list[str]) -> list[dict]:
-    """Một yêu cầu của AIRI sau ``len(replies)`` lượt: tin người dùng mới nhất mang khối ngữ cảnh."""
-    messages = [AIRI_SYSTEM]
-    for index, text in enumerate(texts):
-        latest = index == len(texts) - 1
-        messages.append({"role": "user", "content": f"[2026-11-16 09:2{index}] {text}" + (AIRI_CONTEXT if latest else "")})
-        if not latest:
-            messages.append({"role": "assistant", "content": replies[index]})
-    return messages
+def _gif() -> str:
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), "blue").save(buffer, "GIF")
+    return "data:image/gif;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def test_consecutive_turns_share_the_prefix_up_to_the_new_messages():
-    texts, replies = ["xin chào", "hôm nay thế nào?", "kể chuyện đi"], ["Chào bạn!", "Vui lắm."]
-    turns = [airi_request.parse(json.dumps({"messages": _airi_turn(texts[:n], replies), "tools": [WEATHER]}).encode())
-             for n in (1, 2, 3)]
-    for before, after in zip(turns, turns[1:]):
-        assert after.instructions == before.instructions and after.tools == before.tools
-        # Mọi item của lượt trước trừ khối ngữ cảnh ở cuối có mặt nguyên vẹn, đúng thứ tự, ở đầu lượt sau.
-        kept = before.items[:-1]
-        assert after.items[:len(kept)] == kept
-        assert json.dumps(after.items[:len(kept)], ensure_ascii=False) == json.dumps(kept, ensure_ascii=False)
-    last = turns[-1].items
-    assert last[-1] == {"role": "user", "content": AIRI_CONTEXT[1:]}
-    assert last[-2] == {"role": "user", "content": "[2026-11-16 09:22] kể chuyện đi"}
-    # Model nhận đúng những chữ ấy: chỉ chỗ đặt khối ngữ cảnh đổi.
-    assert last[-2]["content"] + "\n" + last[-1]["content"] == _airi_turn(texts, replies)[-1]["content"]
-
-
-def test_context_split_keeps_images_and_the_tool_continuation_prefix():
-    image = _png()
-    first = [AIRI_SYSTEM, {"role": "user", "content": [{"type": "text", "text": "xem ảnh" + AIRI_CONTEXT},
-                                                       {"type": "image_url", "image_url": {"url": image}}]}]
-    parsed = airi_request.parse(json.dumps({"messages": first}).encode())
-    assert parsed.items == [
-        {"role": "user", "content": [{"type": "input_text", "text": "xem ảnh"}, {"type": "input_image", "image_url": image}]},
-        {"role": "user", "content": AIRI_CONTEXT[1:]},
+def _airi_requests() -> list[list[dict]]:
+    """Một hội thoại AIRI theo đúng cách AIRI gửi (ghi lại ngày 16/11/2026): mỗi yêu cầu là cả lịch sử đã lưu (không có
+    khối "[Context]"), riêng tin người dùng mới nhất mang khối đó, kể cả ở lượt tiếp nối công cụ. Có hai lượt chữ, một
+    vòng công cụ (tin assistant rỗng trước tin ``tool``, kết quả có ảnh GIF), một lượt gửi ảnh, rồi một lượt chữ."""
+    call = {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": '{"city":"Huế","days":1}'}}
+    history = [
+        {"role": "user", "content": "[2026-11-16 09:20] xin chào"},
+        {"role": "assistant", "content": "Chào bạn!"},
+        {"role": "user", "content": "[2026-11-16 09:21] hôm nay thế nào?"},
+        {"role": "assistant", "content": "Vui lắm."},
+        {"role": "user", "content": "[2026-11-16 09:22] thời tiết Huế?"},
+        {"role": "assistant", "content": "", "tool_calls": [call]},
+        {"role": "tool", "tool_call_id": "call_1", "content": [{"type": "text", "text": "nắng"},
+                                                               {"type": "image_url", "image_url": {"url": _gif()}}]},
+        {"role": "assistant", "content": "Huế nắng đẹp."},
+        {"role": "user", "content": [{"type": "text", "text": "[2026-11-16 09:23] ảnh này đẹp không?"},
+                                     {"type": "image_url", "image_url": {"url": _png()}}]},
+        {"role": "assistant", "content": "Đẹp lắm."},
+        {"role": "user", "content": "[2026-11-16 09:24] cảm ơn nhé"},
     ]
-    call = {"role": "assistant", "content": "", "tool_calls": [
-        {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]}
-    continuation = airi_request.parse(json.dumps({"messages": [*first, call, {
-        "role": "tool", "tool_call_id": "call_1", "content": "nắng"}], "tools": [WEATHER]}).encode())
-    assert continuation.items[:2] == parsed.items and continuation.continuation
+    # Độ dài lịch sử ở mỗi yêu cầu: các lượt người dùng, và lượt tiếp nối ngay sau kết quả công cụ.
+    ends = [1, 3, 5, 7, 9, 11]
+    requests = []
+    for end in ends:
+        messages = [dict(message) for message in history[:end]]
+        newest = max(index for index, message in enumerate(messages) if message["role"] == "user")
+        content = messages[newest]["content"]
+        messages[newest]["content"] = (content + AIRI_CONTEXT if isinstance(content, str) else
+                                       [{**content[0], "text": content[0]["text"] + AIRI_CONTEXT}, *content[1:]])
+        requests.append([AIRI_SYSTEM, *messages])
+    return requests
+
+
+def _converted(messages: list[dict]) -> tuple[str, list[dict], list[dict]]:
+    """Yêu cầu đúng như cổng gửi xAI: đọc, rồi chuẩn bị ảnh như ``chat_completions``."""
+    parsed = airi_request.parse(json.dumps({"messages": messages, "tools": [WEATHER]}).encode())
+    return parsed.instructions, parsed.tools, prepare_images(parsed.items, "xai")
+
+
+def test_each_request_is_an_exact_prefix_of_the_next():
+    """xAI chỉ dùng lại cache khi CẢ yêu cầu trước là tiền tố của yêu cầu sau (đo ngày 16/11/2026): instructions và
+    công cụ giống hệt, item của yêu cầu trước lặp lại nguyên byte ở đầu yêu cầu sau, qua lượt chữ, vòng công cụ có ảnh,
+    lượt gửi ảnh."""
+    converted = [_converted(messages) for messages in _airi_requests()]
+    for (instructions, tools, items), (next_instructions, next_tools, next_items) in zip(converted, converted[1:]):
+        assert next_instructions == instructions and next_tools == tools
+        assert len(next_items) > len(items)
+        assert json.dumps(next_items[:len(items)], ensure_ascii=False) == json.dumps(items, ensure_ascii=False)
+    instructions, _, items = converted[-1]
+    # Khối ngữ cảnh nằm trong instructions, giữa system của AIRI và luật cố định; không tin nào còn khối đó.
+    assert instructions == "\n\n".join([AIRI_SYSTEM["content"], AIRI_CONTEXT[1:], COMPANION_CARD_RULE])
+    assert "[Context]" not in json.dumps(items, ensure_ascii=False)
+    assert items[-1] == {"role": "user", "content": "[2026-11-16 09:24] cảm ơn nhé"}
+    # Tin assistant rỗng trước kết quả công cụ không thành item; ảnh GIF của kết quả thành PNG trong một tin user.
+    assert not any(item.get("role") == "assistant" and not item.get("content") for item in items)
+    lifted = next(item for item in items if item.get("role") == "user" and isinstance(item["content"], list)
+                  and item["content"][0].get("text", "").startswith("Images returned"))
+    assert lifted["content"][-1]["image_url"].startswith("data:image/png;base64,")
+
+
+def test_newest_context_block_wins_and_is_stripped_everywhere():
+    old = "\n[Context]\n- system:cu: khối cũ"
+    parsed = airi_request.parse(json.dumps({"messages": [
+        AIRI_SYSTEM, {"role": "user", "content": "một" + old}, {"role": "assistant", "content": "ừ"},
+        {"role": "user", "content": "hai" + AIRI_CONTEXT}]}).encode())
+    assert parsed.items == [{"role": "user", "content": "một"}, {"role": "assistant", "content": "ừ"},
+                            {"role": "user", "content": "hai"}]
+    assert AIRI_CONTEXT[1:] in parsed.instructions and "khối cũ" not in parsed.instructions
+    assert parsed.instructions.endswith(COMPANION_CARD_RULE)
+    without = airi_request.parse(json.dumps({"messages": [AIRI_SYSTEM, {"role": "user", "content": "chào"}]}).encode())
+    assert without.instructions == AIRI_SYSTEM["content"] + "\n\n" + COMPANION_CARD_RULE
+
+
+def test_orphan_tool_calls_are_dropped_the_same_way_in_every_turn():
+    """Trình duyệt dừng giữa vòng công cụ: lời gọi không có kết quả bị bỏ ở lượt đó và ở mọi lượt sau, nên tiền tố
+    vẫn nối thêm."""
+    orphan = {"role": "assistant", "content": "Để xem…", "tool_calls": [
+        {"id": "call_x", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]}
+    first = [AIRI_SYSTEM, {"role": "user", "content": "một"}, orphan, {"role": "user", "content": "hai" + AIRI_CONTEXT}]
+    second = [*first[:-1], {"role": "user", "content": "hai"}, {"role": "assistant", "content": "ừ"},
+              {"role": "user", "content": "ba" + AIRI_CONTEXT}]
+    (i1, t1, a), (i2, t2, b) = _converted(first), _converted(second)
+    assert i1 == i2 and t1 == t2 and b[:len(a)] == a
+    assert not any(item.get("type") == "function_call" for item in b)
 
 
 def test_text_that_only_looks_like_context_is_not_lost():

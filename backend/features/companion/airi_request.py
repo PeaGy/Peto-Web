@@ -126,13 +126,13 @@ def _rich_parts(content: object, what: str) -> tuple[str | list[dict], int, int]
 
 
 def split_context(content: str | list[dict]) -> tuple[str | list[dict], str | None]:
-    """Tách khối ngữ cảnh chạy của AIRI khỏi tin người dùng, để tiền tố gửi model giữ nguyên giữa các lượt (cache).
+    """Tách khối ngữ cảnh chạy của AIRI khỏi tin người dùng, để yêu cầu gửi model chỉ nối thêm giữa các lượt (cache).
 
     AIRI (``packages/core-agent/src/messages/render-context.ts``) nối ``"\\n[Context]\\n- nguồn: …"`` (cách dùng token
-    cảm xúc ACT, danh sách cảm xúc…) vào cuối tin người dùng MỚI NHẤT, còn lịch sử thì lưu tin không có khối đó. Gửi
-    nguyên thì sang lượt sau tin cũ đổi chữ, mọi thứ từ tin đó trở đi mất cache. Tách khối ra thành một tin người dùng
-    riêng ngay sau tin của người dùng: tin của người dùng giống hệt bản trong lịch sử của lượt sau, khối ngữ cảnh luôn ở
-    cuối. Model nhận đúng những chữ ấy, chỉ khác chỗ đặt. Trả (nội dung còn lại, khối ngữ cảnh hoặc None).
+    cảm xúc ACT, danh sách cảm xúc…) vào cuối tin người dùng MỚI NHẤT, còn lịch sử thì lưu tin không có khối đó. xAI chỉ
+    dùng lại cache khi CẢ yêu cầu trước là tiền tố của yêu cầu sau (đo ngày 16/11/2026), nên khối này không được nằm ở
+    tin nào: ``_messages`` bỏ nó khỏi mọi tin người dùng và đặt khối của tin mới nhất vào instructions (giống nhau mọi
+    lượt). Model nhận đúng những chữ ấy, chỉ khác chỗ đặt. Trả (nội dung còn lại, khối ngữ cảnh hoặc None).
     """
     if isinstance(content, str):
         at = content.rfind(CONTEXT_MARK)
@@ -178,6 +178,7 @@ def _messages(raw: object) -> tuple[str, list[dict], int, bool]:
     total = images = 0
     open_calls: dict[str, dict] = {}  # call_id -> lời gọi chưa có kết quả
     answered: set[str] = set()
+    context: str | None = None  # khối "[Context]" của tin người dùng mới nhất có khối
     last_role = None
     for message in raw:
         if not isinstance(message, dict):
@@ -193,11 +194,11 @@ def _messages(raw: object) -> tuple[str, list[dict], int, bool]:
             content, chars, count = _rich_parts(message.get("content"), "tin của người dùng")
             total += chars
             images += count
-            content, context = split_context(content)
+            content, found = split_context(content)
+            if found:
+                context = found  # tin sau đè tin trước: khối của tin người dùng mới nhất
             if content or count:
                 items.append({"role": "user", "content": content})
-            if context:
-                items.append({"role": "user", "content": context})
         elif role == "assistant":
             text = _text_parts(message.get("content"), {"text", "output_text", "refusal"}, "tin của Peto")
             if not text and isinstance(message.get("refusal"), str):
@@ -233,7 +234,9 @@ def _messages(raw: object) -> tuple[str, list[dict], int, bool]:
     # Lời gọi không bao giờ có kết quả (trình duyệt dừng giữa chừng): dịch vụ AI từ chối lời gọi mồ côi, nên bỏ đi.
     if open_calls:
         items = [item for item in items if item.get("type") != "function_call" or item["call_id"] not in open_calls]
-    instructions = "\n\n".join([*system, COMPANION_CARD_RULE])
+    # Khối ngữ cảnh vào instructions, giữa system của AIRI và luật cố định (luôn đứng cuối): nó giống nhau mọi lượt, còn
+    # tin người dùng chỉ giữ chữ của người dùng, đúng như AIRI gửi lại trong lịch sử (xem ``split_context``).
+    instructions = "\n\n".join([*system, *([context] if context else []), COMPANION_CARD_RULE])
     return instructions, items, images, last_role == "tool"
 
 

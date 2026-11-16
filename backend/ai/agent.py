@@ -456,12 +456,7 @@ async def _mock_tool_round(task_items: list[dict], results: list[dict], tools: l
 async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool = False,
                      tools: list[dict] | None = None) -> AsyncIterator[AgentEvent]:
     last_user = max((index for index, item in enumerate(items) if item.get("role") == "user"), default=-1)
-    # Yêu cầu là các tin người dùng liền nhau ở cuối (cổng AIRI tách khối ngữ cảnh thành một tin riêng sau tin của
-    # người dùng); Peto Agent chỉ có một tin.
-    first_user = last_user
-    while first_user > 0 and items[first_user - 1].get("role") == "user":
-        first_user -= 1
-    task = "\n".join(_text_of(item) for item in items[first_user:last_user + 1]) if last_user >= 0 else ""
+    task = _text_of(items[last_user]) if last_user >= 0 else ""
     if "__error__" in task:
         raise ProviderError("Nhà cung cấp AI đang lỗi (giả lập). Thử lại sau nhé.")
     if "__tamloi__" in task:
