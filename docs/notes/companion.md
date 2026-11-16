@@ -949,19 +949,54 @@ the AIRI build (postponed by the owner).
   Left as is: the Companion-related hooks that live in the main bundle (`useCompanionShell`: character list, cards
   store, local voice state) still initialise but make no Companion request; the Docs pages and the Settings "Hướng dẫn
   Peto" line still mention Companion; the `/api/companion/player` chip in Chat (YouTube link chips) still works.
-- **Deploy** (the fork's `dist` is about 370 MB; never build on the VPS):
-  1. On the owner's machine (or CI), in the fork: `sh apps/stage-web/peto/build.sh` (base `/companion/` by default).
-  2. Copy `apps/stage-web/dist/` to the VPS, for example
-     `rsync -a --delete apps/stage-web/dist/ <vps>:/home/ubuntu/peto-airi-dist/` (any folder outside the repository that
-     the service user can read; `deploy/peto-web.service` has `ProtectSystem=strict`, which still allows reading). To
-     keep an instant rollback to the previous build, copy into a new dated folder and point the variable at it.
-  3. Set `PETO_AIRI_DIR=/home/ubuntu/peto-airi-dist` in the repository-root `.env` that `config.py` loads, then
-     `sudo systemctl restart peto-web`. Check `curl -sI https://<site>/companion` (308 to `/companion/`) and that
-     `/api/auth/me` shows `"companion_airi":true`. The startup log says "Companion là bản AIRI từ …"; a folder without
-     `index.html` logs a warning and keeps the React Companion.
-  4. Rollback: remove or comment out `PETO_AIRI_DIR` and restart. `/companion` is the React Companion again and
-     `/api/companion/v1` answers 404. Visitors' AIRI data stays in their browsers (localStorage/IndexedDB under the
-     site origin); the server's Companion data was never touched.
+- **Deploy** (since 2026-11-16: GitHub builds, one command on the VPS). The fork's build is about 370 MB, needs about
+  4.7 GB RAM and a 4 GB install, so it is never built on the VPS and never committed.
+  - **Build**: every push to branch `peto` of the private fork `PeaGy/peto-airi` runs its workflow "Peto build"
+    (`.github/workflows/peto-build.yml` in the fork, described in its `PETO.md`): install, package builds,
+    `apps/stage-web/peto/build.sh`, the output checks of `check-dist.sh`, then a GitHub Release tagged
+    `peto-<UTC yyyymmdd-hhmmss>-<commit 8>` marked latest, with one asset `peto-airi-<tag>.tar.gz` (the build without
+    `*.map`) and `peto-build.json` inside (tag, fork commit, upstream base, build time, base path). It keeps the newest
+    10 Peto releases. It can also be started by hand (Actions → Peto build → Run workflow).
+  - **First time on the VPS** (once):
+    1. Create a fine-grained GitHub token (Settings → Developer settings → Fine-grained tokens): resource owner the
+       owner's account, "Only select repositories" → `peto-airi` only, repository permission "Contents: Read-only",
+       nothing else. Put it in the repository-root `.env` as `PETO_AIRI_RELEASE_TOKEN=…` (the script reads that one line
+       and never prints it; `config.py` does not use it).
+    2. `cd /home/ubuntu/peto-web && bash deploy/update-companion.sh` — downloads the latest release, checks it,
+       extracts it to `/home/ubuntu/peto-airi-dist/<tag>/` and points the symlink `/home/ubuntu/peto-airi-dist/current`
+       at it. The root (`PETO_AIRI_DIST_ROOT`, default `/home/ubuntu/peto-airi-dist`) must be empty or the script's own
+       (it holds a `.peto-airi-dist` marker); a folder with other files, for example an earlier manual copy of `dist`,
+       is refused: move it away first (`mv /home/ubuntu/peto-airi-dist /home/ubuntu/peto-airi-dist-manual`).
+    3. Set `PETO_AIRI_DIR=/home/ubuntu/peto-airi-dist/current` in `.env`, then `sudo systemctl restart peto-web` (the
+       only restart). Check `curl -sI https://<site>/companion` (308 to `/companion/`),
+       `curl -s https://<site>/companion/peto-build.json` (the tag that is live) and that `/api/auth/me` shows
+       `"companion_airi":true`. The startup log says "Companion là bản AIRI từ …/current (hiện là …/<tag>)".
+  - **Later updates**: `bash deploy/update-companion.sh` (newest release; does nothing when it is already live, and
+    reuses a build still on disk without downloading). No restart: `core/airi_static.py` resolves `PETO_AIRI_DIR` again
+    on every request and the CSP hashes of `core/security_headers.py` follow the new `index.html` (its real path is
+    part of the change check). The script keeps the live build and the two newest others and deletes older ones.
+    `--tag <tag>` installs a specific release, `--list` shows the builds on disk (`*` = live, with commit and build
+    time), `--rollback` points `current` at the build just older than the live one (by tag, which starts with the
+    build time; nothing is deleted), and `--from-file <archive>` installs a local archive (for tests or a manual
+    copy).
+  - **How the switch is safe**: the archive is checked before anything changes (gzip intact, size and the SHA-256
+    digest GitHub reports when it reports one, no absolute or `..` paths, no links or special files, `index.html` and
+    `peto-build.json` present), extracted into a `.work-*` folder inside the root, renamed into place, then `current` is
+    replaced by renaming a new symlink over it (`mv -T`), so it always points at a complete build. A lock (`flock`)
+    stops two runs at once. It deletes only complete build folders that are direct children of its own root, never
+    the live one; it refuses roots inside the repository, the home folder itself or system folders. The token goes to
+    curl on stdin (not on the command line) and only to `api.github.com`: the asset's signed download address is
+    followed by hand without the token. Reading the release JSON uses `python3` (`PETO_PYTHON` overrides it).
+  - **Pages during a switch**: a request resolves `current` once and serves from that build; a page already open keeps
+    loading its hashed `assets/` from builds still on disk. If `current` points at a folder without `index.html`, pages
+    answer the 503 "Companion đang cập nhật" page; `airi_static.active()` is false meanwhile.
+  - **Manual fallback** (GitHub unavailable): build in the fork with `sh apps/stage-web/peto/build.sh`, make an
+    archive with a `peto-build.json` (see the fork's `PETO.md`), copy it to the VPS and run
+    `bash deploy/update-companion.sh --from-file <archive>`. Pointing `PETO_AIRI_DIR` at any plain build folder and
+    restarting still works as before.
+  - **Back to the React Companion**: remove or comment out `PETO_AIRI_DIR` and restart. `/companion` is the React
+    Companion again and `/api/companion/v1` answers 404. Visitors' AIRI data stays in their browsers
+    (localStorage/IndexedDB under the site origin); the server's Companion data was never touched.
   This recipe lives here and not in `DEPLOY.md`.
 - **Gateway** (`features/companion/airi_gateway.py`, request parsing in `airi_request.py`): OpenAI Chat Completions at
   `/api/companion/v1` (`GET /models`, `POST /chat/completions`), the shape `@xsai/stream-text` 0.5 sends. It only
@@ -1058,11 +1093,24 @@ the AIRI build (postponed by the owner).
 - **Tests**: `tests/test_airi_gateway.py` (auth, text, card rule, tool round trip, tool and request validation, images,
   errors before and after the first byte, context overflow, pings, timeouts, 404 when off, no cooldown, text caps, disconnect before and after the
   first byte via raw ASGI, usage rows), `tests/test_airi_static.py` (both states, old React deep links, path traversal,
-  the `static_files` guard, the `companion_airi` flag of `/api/auth/me`), the `/companion/` cases in
-  `tests/test_security_headers.py`; frontend `tests/AiriCompanion.test.tsx` (both states, Companion chunk never loaded
+  the `static_files` guard, the `companion_airi` flag of `/api/auth/me`, `peto-build.json` with `no-store`, a switched
+  `current` symlink followed without restart, traversal into the previous build, a symlink to an incomplete or missing
+  folder), the `/companion/` cases in `tests/test_security_headers.py` (also the hashes after a symlink switch between
+  two `index.html` of equal size and time); the symlink tests skip where the OS cannot create symlinks; frontend `tests/AiriCompanion.test.tsx` (both states, Companion chunk never loaded
   with the flag on).
 
 # Dated log (newest first)
+
+## AIRI Companion: GitHub release builds and one-command update on the VPS, package 6 (2026-11-16)
+
+The owner wanted "merge upstream AIRI into the fork, then deploy" to be as convenient as possible. Current behaviour is
+under "Deploy" in "AIRI Companion: `/companion/` serving and gateway" above. Changes here:
+`deploy/update-companion.sh` (new), `core/airi_static.py` resolves `PETO_AIRI_DIR` per request and serves
+`peto-build.json` with `Cache-Control: no-store`, `core/security_headers._AiriPage` includes the real path of
+`index.html` in its change check. In the fork: the workflow "Peto build", `apps/stage-web/peto/check.sh` (the checks
+after an upstream merge), `check-dist.sh` (build output) and `smoke.mjs` (browser smoke against a mock Peto backend),
+and the "Merging upstream" routine in its `PETO.md`. The workflow and the script's GitHub path have never run for
+real; the script was exercised locally with `--from-file` against a temporary root (see the package 6 report).
 
 ## AIRI page: append-only requests for xAI's cache (2026-11-16, after the real-Grok measurement of `52de441`)
 

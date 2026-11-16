@@ -3,6 +3,7 @@ endpoint báo cáo không ghi nội dung."""
 import base64
 import hashlib
 import logging
+import os
 
 import pytest
 from fastapi import FastAPI
@@ -208,3 +209,57 @@ async def test_react_companion_keeps_the_site_policy_without_airi(tmp_path, monk
             assert response.status_code == 200
             header = response.headers['content-security-policy-report-only']
             assert expected_hash(THEME) in header and 'frame-src https://www.youtube.com' in header
+
+
+def _symlink_or_skip(link, target):
+    """Symlink thư mục; Windows không bật Developer Mode thì không tạo được: bỏ qua thay vì báo hỏng."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f'Hệ điều hành không cho tạo symlink: {error}')
+
+
+def _switch(link, target):
+    """Đổi symlink như deploy/update-companion.sh: tạo link tạm rồi thay link cũ trong một bước."""
+    temp = link.with_name(link.name + '.moi')
+    temp.symlink_to(target, target_is_directory=True)
+    try:
+        os.replace(temp, link)
+    except PermissionError:
+        # Windows không thay được symlink thư mục bằng một lần đổi tên (Linux thì được, như mv -T của script):
+        # gỡ link cũ rồi đổi tên, chỉ trong bài kiểm tra.
+        os.rmdir(link)
+        os.replace(temp, link)
+
+
+async def test_airi_hashes_follow_a_switched_symlink(tmp_path, monkeypatch):
+    """PETO_AIRI_DIR là symlink current: đổi sang bản build khác thì chính sách đọc index.html mới, kể cả khi hai tệp
+    trùng cỡ và trùng giờ sửa."""
+    from core import airi_static
+
+    async def identity():
+        return {'name': 'Peto', 'avatar_url': None}
+    monkeypatch.setattr(static_files, 'get_app_identity', identity)
+    site = tmp_path / 'site'
+    site.mkdir()
+    (site / 'index.html').write_text(INDEX, encoding='utf-8')
+    first, second = "document.title = 'Peto 1';", "document.title = 'Peto 2';"
+    for name, script in (('b1', first), ('b2', second)):
+        (tmp_path / name).mkdir()
+        page = tmp_path / name / 'index.html'
+        page.write_text(f'<html><head><script>{script}</script></head></html>', encoding='utf-8')
+        os.utime(page, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    current = tmp_path / 'current'
+    _symlink_or_skip(current, tmp_path / 'b1')
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(security_headers.SecurityHeaders, static_dir=site, airi_dir=current)
+    assert airi_static.mount(app, current)
+    assert static_files.mount(app, site)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as web:
+        header = (await web.get('/companion/')).headers['content-security-policy-report-only']
+        assert expected_hash(first) in header and expected_hash(second) not in header
+        _switch(current, tmp_path / 'b2')
+        response = await web.get('/companion/')
+        assert 'Peto 2' in response.text
+        header = response.headers['content-security-policy-report-only']
+        assert expected_hash(second) in header and expected_hash(first) not in header

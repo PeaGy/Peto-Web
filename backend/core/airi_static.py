@@ -9,6 +9,11 @@ Tệp có thật thì trả tệp (``assets/`` có hash trong tên nên cache l�
 dấu chấm là một trang của router AIRI (``/companion/settings/modules``…): trả ``index.html`` để mở thẳng hay F5 vẫn
 được. Đường dẫn cũ của Companion React (``/companion/settings/modules/voice``…) cũng nhận ``index.html``; AIRI tự hiện
 trang "Không tìm thấy trang này" với lối về. Tài nguyên thiếu (có phần mở rộng) là 404 thật, không biến thành trang.
+
+``PETO_AIRI_DIR`` thường là symlink ``current`` mà ``deploy/update-companion.sh`` đổi sang bản build mới (từ 16/11/2026).
+Thư mục gốc được giải lại ở MỖI yêu cầu, nên đổi symlink là có hiệu lực ngay, không cần khởi động lại dịch vụ; chặn
+path traversal so với đúng bản build mà yêu cầu đó thấy. ``peto-build.json`` trong bản build (commit của bản fork, giờ
+build) được phục vụ ở ``/companion/peto-build.json``, không cache, để ai cũng xem được bản nào đang chạy.
 """
 
 from __future__ import annotations
@@ -64,6 +69,10 @@ def is_companion_path(path: str) -> bool:
     return path == PREFIX[1:] or path.startswith(PREFIX[1:] + "/")
 
 
+# Tệp mô tả bản build do workflow của bản fork ghi vào; phải luôn là bản đang chạy, không bao giờ lấy từ cache.
+BUILD_INFO = "peto-build.json"
+
+
 def _safe_file(root: Path, relative: str) -> Path | None:
     """Chặn path traversal: tệp phải nằm trong ``root``."""
     candidate = (root / relative).resolve()
@@ -78,18 +87,20 @@ def mount(app: FastAPI, airi_dir: Path | None) -> bool:
     """Gắn ``/companion/`` cho bản AIRI. Trả về True nếu đã bật."""
     if airi_dir is None:
         return False
-    root = airi_dir.resolve()
-    index = root / "index.html"
-    if not index.is_file():
-        logger.warning("PETO_AIRI_DIR=%s không có index.html — Companion giữ bản React.", root)
+    if not (airi_dir / "index.html").is_file():
+        logger.warning("PETO_AIRI_DIR=%s không có index.html — Companion giữ bản React.", airi_dir)
         return False
 
-    async def index_page() -> HTMLResponse:
+    def current_root() -> Path:
+        # Giải lại mỗi lần: PETO_AIRI_DIR có thể là symlink vừa được đổi sang bản build khác.
+        return airi_dir.resolve()
+
+    async def index_page(root: Path) -> HTMLResponse:
         try:
-            page = await anyio.Path(index).read_text(encoding="utf-8")
+            page = await anyio.Path(root / "index.html").read_text(encoding="utf-8")
         except OSError:
-            # index.html biến mất sau khi khởi động (đang build lại hay chép bản mới vào thư mục): báo tạm thời không
-            # dùng được thay vì lỗi 500.
+            # index.html biến mất sau khi khởi động (đang build lại, chép bản mới vào thư mục, hay symlink trỏ vào thư
+            # mục không dùng được): báo tạm thời không dùng được thay vì lỗi 500.
             logger.warning("Không đọc được index.html của Companion bản AIRI ở %s.", root)
             return HTMLResponse(UNAVAILABLE_PAGE, status_code=503,
                                 headers={"Cache-Control": "no-store", "Retry-After": "30"})
@@ -101,20 +112,23 @@ def mount(app: FastAPI, airi_dir: Path | None) -> bool:
 
     @app.api_route(PREFIX + "/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def airi(full_path: str) -> Response:
+        root = current_root()
         if full_path in ("", "index.html"):
-            return await index_page()
+            return await index_page(root)
         target = _safe_file(root, full_path)
         if target is not None:
-            immutable = target.relative_to(root).parts[0] == "assets" and len(target.relative_to(root).parts) > 1
-            return FileResponse(
-                target,
-                media_type=_TYPES.get(target.suffix.lower()),
-                headers={"Cache-Control": "public, max-age=31536000, immutable" if immutable else "no-cache"},
-            )
+            parts = target.relative_to(root).parts
+            if parts[0] == "assets" and len(parts) > 1:
+                cache = "public, max-age=31536000, immutable"
+            elif parts == (BUILD_INFO,):
+                cache = "no-store"
+            else:
+                cache = "no-cache"
+            return FileResponse(target, media_type=_TYPES.get(target.suffix.lower()), headers={"Cache-Control": cache})
         last = full_path.rstrip("/").rsplit("/", 1)[-1]
         if last and "." not in last and ".." not in full_path.split("/"):
-            return await index_page()
+            return await index_page(root)
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp")
 
-    logger.info("Companion là bản AIRI từ %s tại %s/", root, PREFIX)
+    logger.info("Companion là bản AIRI từ %s (hiện là %s) tại %s/", airi_dir, current_root(), PREFIX)
     return True

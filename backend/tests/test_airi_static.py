@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -167,6 +169,89 @@ async def test_missing_index_after_startup_is_503_page(tmp_path, monkeypatch):
             assert "Companion đang cập nhật" in response.text and response.headers["retry-after"] == "30"
             assert response.headers["cache-control"] == "no-store"
         assert (await client.get("/companion/assets/index-abc.js")).status_code == 200
+
+
+async def test_build_info_is_served_and_never_cached(airi_client, tmp_path):
+    """peto-build.json (ghi bởi workflow của bản fork) cho biết bản nào đang chạy: luôn đọc mới, không cache."""
+    (tmp_path / "airi" / "peto-build.json").write_text('{"commit": "abc"}', encoding="utf-8")
+    response = await airi_client.get("/companion/peto-build.json")
+    assert response.status_code == 200 and response.json() == {"commit": "abc"}
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def _symlink_or_skip(link, target):
+    """Symlink thư mục; Windows không bật Developer Mode thì không tạo được: bỏ qua thay vì báo hỏng."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"Hệ điều hành không cho tạo symlink: {error}")
+
+
+def _switch(link, target):
+    """Đổi symlink như deploy/update-companion.sh: tạo link tạm rồi thay link cũ trong một bước."""
+    temp = link.with_name(link.name + ".moi")
+    temp.symlink_to(target, target_is_directory=True)
+    try:
+        os.replace(temp, link)
+    except PermissionError:
+        # Windows không thay được symlink thư mục bằng một lần đổi tên (Linux thì được, như mv -T của script):
+        # gỡ link cũ rồi đổi tên, chỉ trong bài kiểm tra.
+        os.rmdir(link)
+        os.replace(temp, link)
+
+
+def _version(root, name: str, asset: str):
+    folder = root / name
+    (folder / "assets").mkdir(parents=True)
+    (folder / "index.html").write_text(f"<!doctype html><title>AIRI {name}</title>", encoding="utf-8")
+    (folder / "assets" / asset).write_text(f"console.log('{name}')", encoding="utf-8")
+    (folder / "peto-build.json").write_text(f'{{"commit": "{name}"}}', encoding="utf-8")
+    return folder
+
+
+async def test_switched_symlink_is_followed_without_restart(tmp_path, monkeypatch):
+    """PETO_AIRI_DIR là symlink current: đổi symlink là /companion/ đổi bản build ngay, không khởi động lại; tệp chỉ có
+    ở bản cũ thì 404, và đường dẫn vòng sang bản cũ bị chặn như mọi path traversal."""
+    _, site = _build(tmp_path)
+    dist = tmp_path / "dist"
+    _version(dist, "b1", "index-one.js")
+    _version(dist, "b2", "index-two.js")
+    current = dist / "current"
+    _symlink_or_skip(current, dist / "b1")
+    monkeypatch.setattr(config, "AIRI_DIR", current)
+    app = FastAPI()
+    assert airi_static.mount(app, current)
+    assert static_files.mount(app, site)
+    async with await _client(app) as client:
+        assert "AIRI b1" in (await client.get("/companion/")).text
+        assert (await client.get("/companion/peto-build.json")).json() == {"commit": "b1"}
+        assert (await client.get("/companion/assets/index-one.js")).status_code == 200
+
+        _switch(current, dist / "b2")
+        assert "AIRI b2" in (await client.get("/companion/")).text
+        assert "AIRI b2" in (await client.get("/companion/settings/modules")).text
+        assert (await client.get("/companion/peto-build.json")).json() == {"commit": "b2"}
+        assert (await client.get("/companion/assets/index-two.js")).status_code == 200
+        assert (await client.get("/companion/assets/index-one.js")).status_code == 404
+        for path in ("/companion/..%2fb1%2fassets%2findex-one.js", "/companion/%2e%2e/b1/peto-build.json",
+                     "/companion/assets/..%2f..%2fb1%2fpeto-build.json", "/companion/..%2f..%2fbi-mat.txt"):
+            response = await client.get(path)
+            assert "b1" not in response.text and "TOKEN_THAT" not in response.text, path
+
+        # Symlink trỏ vào thư mục không có index.html (hay đã bị xóa): trang 503 tạm thời, không lỗi 500.
+        broken = dist / "dang-giai-nen"
+        broken.mkdir()
+        _switch(current, broken)
+        response = await client.get("/companion/")
+        assert response.status_code == 503 and "Companion đang cập nhật" in response.text
+        assert airi_static.active() is False
+        _switch(current, dist / "khong-con")
+        assert (await client.get("/companion/settings")).status_code == 503
+
+        _switch(current, dist / "b1")
+        assert "AIRI b1" in (await client.get("/companion/")).text
+        assert airi_static.active() is True
 
 
 async def test_active_flag_follows_config(tmp_path, monkeypatch):

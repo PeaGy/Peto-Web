@@ -145,7 +145,9 @@ class _Pages:
 
 
 class _AiriPage:
-    """Như ``_Pages``, cho ``index.html`` của bản build AIRI; đọc lại khi bản build đổi."""
+    """Như ``_Pages``, cho ``index.html`` của bản build AIRI; đọc lại khi bản build đổi. ``PETO_AIRI_DIR`` có thể là
+    symlink ``current`` mà ``deploy/update-companion.sh`` đổi sang bản khác: dấu nhận biết gồm cả đường dẫn thật của
+    tệp, nên hai bản build trùng giờ sửa và cỡ tệp vẫn được đọc lại."""
 
     def __init__(self, airi_dir: Path):
         self.file = airi_dir / 'index.html'
@@ -153,9 +155,15 @@ class _AiriPage:
         self.value = airi_policy([], [])
 
     def current(self) -> str:
-        stamp = (self.file.stat().st_mtime_ns, self.file.stat().st_size) if self.file.is_file() else None
+        real = self.file.resolve()
+        if real.is_file():
+            info = real.stat()
+            stamp = (str(real), info.st_mtime_ns, info.st_size)
+        else:
+            stamp = None
         if stamp != self.stamp:
-            page = self.file.read_text(encoding='utf-8') if stamp is not None else ''
+            # Đọc đúng tệp vừa lấy dấu, không đi lại qua symlink (có thể vừa bị đổi lần nữa).
+            page = real.read_text(encoding='utf-8') if stamp is not None else ''
             self.value, self.stamp = airi_policy(inline_script_hashes(page), handler_hashes(page)), stamp
         return self.value
 
