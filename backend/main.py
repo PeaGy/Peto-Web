@@ -19,12 +19,12 @@ from features.accounts import discord_memory_api
 from features.voice import api as voice_api
 from core import static_files
 from core import airi_static
-from core import security_headers
+from core import canonical_host, security_headers
 from features.companion import airi_gateway
 from features.companion import airi_sync
 from ai import get_provider
 from core.identity import get_app_identity
-from core.config import AIRI_DIR, ALLOWED_ORIGINS, STATIC_DIR
+from core.config import AIRI_DIR, ALLOWED_ORIGINS, CANONICAL_ORIGIN, STATIC_DIR
 from features.docs import api as docs_api
 from core.lifespan import lifespan
 from features.chat import api as chat_api
@@ -61,6 +61,8 @@ app.include_router(desktop_release.policy_router)
 app.include_router(desktop_update.router)
 # Header bảo mật cho mọi phản hồi, kể cả trang tĩnh và SSE (G3.4): bắt buộc nosniff, referrer, chống nhúng khung; CSP
 # đầy đủ mới ở chế độ chỉ báo cáo, báo cáo về /api/csp-report.
+# Trang mở bằng tên miền phụ chuyển sang tên miền chính (PETO_CANONICAL_ORIGIN); đăng ký trước để header bảo mật bọc ngoài.
+app.add_middleware(canonical_host.CanonicalHost, origin=CANONICAL_ORIGIN)
 app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR, airi_dir=AIRI_DIR)
 app.include_router(security_headers.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
