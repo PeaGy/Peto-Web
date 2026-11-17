@@ -104,10 +104,10 @@ Ngày 21/10/2026, người dùng xác nhận đã commit/deploy và yêu cầu k
 kiểm thử** bằng Peto/Luna/Haiku qua trình duyệt in-app đã đăng nhập. Đây là số lần gửi từ UI; không đo được số API
 rounds, title calls, usage hay hóa đơn từ log server. Tắt saved memory khi thử, chỉ dùng nội dung tổng hợp.
 
-- [Chat A](https://peto.pearto.shop/chat/137d23f27dd6482c8318d8ad145c2111): Stop trước chữ đầu để lại một user và một
+- [Chat A](https://peto.peagy.com/chat/137d23f27dd6482c8318d8ad145c2111): Stop trước chữ đầu để lại một user và một
   placeholder stopped. F5 giữ bản nháp và nút Thử lại. Bấm Thử lại, nhận phần chữ thật rồi Stop: vẫn một user/assistant,
   F5 giữ phần trả lời dở và bản nháp. Luna sau đó trả đúng một dòng `REC3_NEW_58` theo yêu cầu mới.
-- [Chat B](https://peto.pearto.shop/chat/710d53122b404958ba8a4c73e707416f): F5 giữa khi Haiku đang trả lời giữ phần dở,
+- [Chat B](https://peto.peagy.com/chat/710d53122b404958ba8a4c73e707416f): F5 giữa khi Haiku đang trả lời giữ phần dở,
   nhãn chưa hoàn tất, draft và nút Thử lại; không gắn nhãn Stop theo yêu cầu. F5 lần nữa không nhân đôi tin hoặc
   tự tiếp tục bài viết. Hỏi `17 + 26 bằng bao nhiêu? Chỉ trả số.` thì Haiku trả đúng `43`, không cần nhắc bỏ việc cũ.
 - Cùng Chat B, Haiku tạo một tài liệu Word 1 trang. Sau F5, thẻ tài liệu và version 1 vẫn mở xem đúng mã

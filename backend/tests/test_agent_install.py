@@ -137,3 +137,20 @@ def test_pip_installs_the_wheel_and_the_cli_knows_its_server(tmp_path):
                             text=True, encoding="utf-8",
                             env={**os.environ, "PYTHONPATH": str(target), "PETO_AGENT_HOME": str(home)})
     assert listed.returncode == 1 and "Traceback" not in listed.stderr, listed.stderr[-2000:]
+
+
+async def test_old_domain_install_points_peto_at_the_main_domain(anon_client, monkeypatch):
+    """17/11/2026: lệnh cài cũ ở tên miền phụ vẫn chạy, nhưng peto cài ra trỏ về tên miền chính."""
+    from core import config
+    monkeypatch.setattr(config, "CANONICAL_ORIGIN", "https://peto.peagy.com")
+    script = (await anon_client.get("https://peto.pearto.shop/install.ps1")).text
+    assert script_value(script, "PetoServer") == "https://peto.peagy.com"
+    name = script_value(script, "WheelName")
+    assert script_value(script, "WheelUrl") == f"https://peto.peagy.com/api/agent/download/{name}"
+    wheel = await anon_client.get(f"https://peto.peagy.com/api/agent/download/{name}")
+    assert wheel.status_code == 200
+    files = zipfile.ZipFile(io.BytesIO(wheel.content))
+    assert files.read("peto_agent/default_server.txt").decode() == "https://peto.peagy.com\n"
+    # Máy chủ chạy trên chính máy này vẫn ghi địa chỉ đang gọi.
+    local = (await anon_client.get("http://127.0.0.1:8000/install.ps1")).text
+    assert script_value(local, "PetoServer") == "http://127.0.0.1:8000"

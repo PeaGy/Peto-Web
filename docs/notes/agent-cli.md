@@ -948,7 +948,9 @@ results in the next step. The server stores no conversation (`store=False`), and
 - **One-line install** (`irm https://<site>/install.ps1 | iex`). `features/agent/install.py` serves `GET /install.ps1`, which is
   outside `/api`, so its router must stay included before the static catch-all, plus `GET /api/agent/download/<wheel>`.
   The backend builds a pure-Python wheel of `agent-cli` itself with `zipfile` from `pyproject.toml` (no setuptools) and
-  adds `peto_agent/default_server.txt`, the last fallback `config.default_server()` gives `peto login`. Builds are
+  adds `peto_agent/default_server.txt`, the last fallback `config.default_server()` gives `peto login`. Since
+  2026-11-17 that address (and the one in the script) is `PETO_CANONICAL_ORIGIN` when set, whatever domain served the
+  script (`install_origin`; loopback servers keep their own address); see "One main domain" in `admin-ops.md`. Builds are
   byte-for-byte reproducible (fixed zip timestamps), so the SHA-256 filled into the script matches the download that
   follows. The origin comes from the request, because `PETO_FRONTEND_URL` is normally empty; it must be https or loopback
   http, which in production relies on uvicorn's `--proxy-headers` behind Cloudflare Tunnel.

@@ -8,7 +8,7 @@ không thay mã sản phẩm, database, model, prompt hoặc cấu hình triển
 
 Ba loại chứng cứ được tách riêng:
 
-- **Bản deploy thật**: `https://peto.pearto.shop/companion`, phiên đăng nhập có sẵn, YouTube/Data API thật.
+- **Bản deploy thật**: `https://peto.peagy.com/companion`, phiên đăng nhập có sẵn, YouTube/Data API thật.
   Chỉ thao tác Player; không gửi chat, gọi AI/TTS, bật micro, đổi cài đặt hay ghi/xóa yêu thích của chủ web.
   Một lượt tìm tên và một lượt nhập playlist; không tìm tự động theo từng phím. Đã dừng Player bằng X khi kết thúc,
   trả viewport về mặc định và khôi phục bản nháp chat.
