@@ -226,16 +226,20 @@ macOS thay cho dòng "Sắp có".
 Mỗi lần phát hành:
 
 1. Dựng bộ cài trong peto-harness (Windows, chưa ký). Lệnh đọc `apps/desktop/.env.windows` (Git bỏ qua, không chứa
-   khóa nào), lần dựng đầu tiên ngày 6/11/2026 dùng:
+   khóa nào), từ bản 0.2.2-rc.1.20261117.1 là:
 
    ```text
    DSH_DESKTOP_APP_ID=shop.pearto.peto.agent
    DSH_DESKTOP_AUTO_UPDATE_ENV=production
-   DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://peto.pearto.shop
+   DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://peto.peagy.com
    ```
 
-   Từ 17/11/2026 tên miền chính là `https://peto.peagy.com`: bản dựng sau đặt biến này (và địa chỉ API mặc định của
-   app) về tên miền đó. `/api/` của `peto.pearto.shop` vẫn chạy để các bản đã cài không hỏng.
+   Tên miền chính từ 17/11/2026 là `https://peto.peagy.com` (trước đó biến này là `https://peto.pearto.shop`). Máy chủ
+   "cập nhật bắt buộc" cũng là nơi app hỏi bản mới, nên các bản từ 0.2.2-rc.1.20261117.1 hỏi tên miền mới; địa chỉ
+   API mặc định của app đổi cùng lúc (peto-harness `packages/bundle/base/cordis.patch.yml`), và lần đăng nhập lưu với
+   tên miền cũ được chuyển sang tên miền mới khi app mở, không bắt đăng nhập lại. `/api/` của `peto.pearto.shop` vẫn
+   chạy để các bản đã cài không hỏng. App ID giữ `shop.pearto.peto.agent`: đổi thì Windows coi là app khác, bản cũ
+   không tự cập nhật sang được.
 
    App ID riêng để Peto Agent cài song song chứ không đè lên DeepSeek Harness. Máy chủ "cập nhật bắt buộc" là Peto Web
    (`GET /api/v0/check_client_update`, hiện luôn trả "không bắt buộc"). Số phiên bản phải nối dài phiên bản sản phẩm

@@ -7,8 +7,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Agent gateway and Peto Harness (`agent-gateway.md`)
 
-- [ ] Install and relaunch through desktop auto-update in the installed ph app (the next release should show Update) — `agent-gateway.md`, "Peto Agent auto-update".
+- [x] Install and relaunch through desktop auto-update in the installed ph app (2026-11-17, .20261107.1 → .20261117.1: works in ~42 s when left alone; the first try failed because the app was reopened mid-install; sign-in kept across the domain change) — `agent-gateway.md`, "First real auto-update".
 - [ ] Real Grok output for Agent web search: does it list sources and keep to JSON — `agent-gateway.md`, "Peto Agent web search".
+- [x] DSH's update status window and relaunch with the rc.3 installer, run as an update runs it over .20261117.2 (2026-11-17: window for the whole install, app reopened by itself, still signed in, steps card shown) — `agent-gateway.md`, "DSH 0.2.2-rc.3 merged into ph".
+- [ ] The rc.3 update through the Update button once v0.2.2-rc.3.20261117.1 is published, and the status window title reading Peto Agent in that rebuilt installer — `agent-gateway.md`, "DSH 0.2.2-rc.3 merged into ph".
 - [ ] `/download/` against real GitHub Releases and a real installer build (only a mock GitHub was used) — `agent-gateway.md`, "Peto Agent download page".
 - [ ] Whether Grok really refuses WebP/GIF images (the gateway converts them to PNG) — `agent-gateway.md`, "Agent gateway for Peto Harness".
 - [ ] A long file write in the installed ph app with real Grok/GPT/Claude: no cut at 5 minutes (Grok is silent while writing; empty keepalive deltas every 60 s keep ph waiting), GPT/Claude show tool-call pieces while writing, and a long output really completes behind Cloudflare. First try on `dc25fa0` with Grok: `stalled` after 300 s of silence — `agent-gateway.md`, "Grok goes silent while writing tool calls".

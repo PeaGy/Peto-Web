@@ -6,6 +6,43 @@ Moved out of `CLAUDE.md` on 2026-11-12 (G0.2). Write new notes for this area her
 
 # Dated log (newest first)
 
+## DSH 0.2.2-rc.3 merged into ph; update status window (2026-11-17)
+
+ph `peto` merged upstream `dsh-v0.2.2-rc.3` (merge `dc1091cd5a`, on `peto` from `2d6ed96254`; details in ph `PETO.md`).
+The release built from it is v0.2.2-rc.3.20261117.1; the version keeps upstream's `0.2.2-rc.3` and is newer than every
+`0.2.2-rc.1.*` build, so installed apps update to it.
+- Account: upstream's account service became one concrete class with Remote namespace `account`. ph's
+  `dsh-peto-account` now binds the same service key and namespace without Remote methods of its own, and the base
+  bundle has the typert loader register DeepSeek's account descriptors, which call the Peto service. Notifications are
+  empty. Peto Web needs no change: the plugin still calls `/api/agent/device/*`, `/api/agent/me` and
+  `/api/agent/logout`.
+- Upstream's web search and fetch billing can use "the signed-in account" for DeepSeek's own search; the Peto token is
+  never sent there, because the Peto account resolves its token only for Peto Web URLs.
+- Update window: ph first switched updates to the full installer window (`8c687c8fa2`; on test build
+  .20261117.2 the window showed for the whole install and the app reopened 1 s after it). DSH rc.2 had added a small
+  status window for silent updates, which ph's change kept from showing; the owner chose DSH's window, so ph reverts
+  its change (`69bea0b2c4`). The window's title was hardcoded "DeepSeek Harness"; ph `2781a91ec0` names it Peto Agent.
+- Checked on the owner's machine, running the rc.3 installer as an update runs it (`--updated /S --force-run`) over
+  .20261117.2: the status window showed from 19:06:08 to 19:07:45, the app reopened by itself at 19:07:47 on
+  rc.3.20261117.1, still signed in, Settings → Account showed the steps card, and the update check said up to date.
+  That build still had the "DeepSeek Harness" title; the release is rebuilt with the Peto title.
+
+## First real auto-update and the domain move (2026-11-17)
+
+ph `4f9f86ec53` moved the app to `https://peto.peagy.com` (bundle `server`/`baseURL`, packaging `.env.windows` policy
+origin and therefore the update feed) and added `formerServers` to the Peto account plugin, so a sign-in stored for
+`peto.pearto.shop` is rewritten to the new origin at mount instead of deleted. Release v0.2.2-rc.1.20261117.1 was the
+first update delivered through the feed, to the owner's installed .20261107.1 (which still polls the old domain).
+- First try failed: DSH runs the installer silently (`quitAndInstall(true, true)`); extracting 1.1 GB into
+  `Peto Agent.new-{guid}` took ~55 s with nothing on screen, the owner reopened the app after 44 s, and the final rename
+  of the old folder (`installer-directories.nsh`, 10 retries over ~11 s) failed on the folder the running app held.
+  The old version stayed; the complete new copy was left in `.new` (silent mode skips `.onGUIEnd` cleanup) and no
+  failure report was written. Evidence: folder and `%TEMP%\ns*.tmp` timestamps.
+- Second try, left alone (watched every 2 s): app closed within 2 s, `.new` created, swap at +34 s, app reopened by
+  itself at +42 s on the new version; still signed in, so the `formerServers` migration works with a real grant.
+- Follow-up: the silent install gives no sign of progress, so users can reopen mid-install and lose the update. Done
+  the same day with DSH's update status window (next entry).
+
 ## Grok goes silent while writing tool calls (2026-11-15, after deploying `dc25fa0`; not committed/deployed)
 
 The owner's first try after deploying `dc25fa0` (same request, model `peto`) ended with `stalled`: the session log shows
