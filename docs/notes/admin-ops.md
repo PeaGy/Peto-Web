@@ -99,7 +99,12 @@ any other domain (GET/HEAD, outside `/api/`, `Accept` with `text/html`) gets a 3
 domain. Not redirected: every `/api/…` (Peto Agent, the Peto Harness desktop app whose base is still the old domain,
 the voice machine, OAuth), requests that do not ask for HTML (`irm …/install.ps1`), other methods, and loopback hosts
 (checks on the VPS). 302 rather than 301 so browsers do not cache it forever; unset the variable to stop. A malformed
-value is ignored. It sits inside `SecurityHeaders`, so the redirect carries the same headers.
+value is ignored. It sits inside `SecurityHeaders`, so the redirect carries the same headers. The same setting makes
+the one-line installer (`features/agent/install.install_origin`) write the main domain into the script, the wheel URL
+and `peto_agent/default_server.txt`, even when `install.ps1` is fetched from the old domain; the `/docs/` install guide
+shows `irm https://peto.peagy.com/install.ps1 | iex`. CLIs installed earlier keep the server saved at login (the old
+domain), which still works because `/api/` is not redirected; the Peto Harness desktop app moves with its next release
+(peto-harness repo).
 
 ### Configuration
 

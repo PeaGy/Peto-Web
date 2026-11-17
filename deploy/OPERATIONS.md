@@ -234,6 +234,9 @@ Mỗi lần phát hành:
    DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://peto.pearto.shop
    ```
 
+   Từ 17/11/2026 tên miền chính là `https://peto.peagy.com`: bản dựng sau đặt biến này (và địa chỉ API mặc định của
+   app) về tên miền đó. `/api/` của `peto.pearto.shop` vẫn chạy để các bản đã cài không hỏng.
+
    App ID riêng để Peto Agent cài song song chứ không đè lên DeepSeek Harness. Máy chủ "cập nhật bắt buộc" là Peto Web
    (`GET /api/v0/check_client_update`, hiện luôn trả "không bắt buộc"). Số phiên bản phải nối dài phiên bản sản phẩm
    trong `apps/desktop/package.json`, dạng `<sản phẩm>.<ngày>.<thứ tự>`:

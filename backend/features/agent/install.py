@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
+from core import canonical_host, config
 from core.config import BASE_DIR
 
 logger = logging.getLogger("peto_web.agent_install")
@@ -72,6 +73,17 @@ def public_origin(request: Request) -> str | None:
     return f"{scheme}://{netloc}:{port}" if port else f"{scheme}://{netloc}"
 
 
+def install_origin(request: Request) -> str | None:
+    """Địa chỉ ghi vào bộ cài và lệnh cài: tên miền chính khi có ``PETO_CANONICAL_ORIGIN`` (17/11/2026), để lệnh cài cũ
+    ``irm https://peto.pearto.shop/install.ps1`` cũng cho ``peto`` trỏ về tên miền chính. Máy chủ trên chính máy này giữ
+    địa chỉ đang gọi."""
+    server = public_origin(request)
+    canonical = canonical_host.parse_origin(config.CANONICAL_ORIGIN)
+    if server is None or canonical is None or (request.url.hostname or "").lower() in LOOPBACK_HOSTS:
+        return server
+    return f"{canonical[0]}://{canonical[1]}"
+
+
 def cli_version() -> str:
     """Phiên bản ``peto`` máy chủ đang phát, để CLI cũ biết mà nhắc cập nhật; chuỗi rỗng khi không đọc được."""
     try:
@@ -83,7 +95,7 @@ def cli_version() -> str:
 
 def install_command(request: Request) -> str:
     """Lệnh cài một dòng cho đúng trang người dùng đang mở; chuỗi rỗng khi trang đó không cài qua mạng được."""
-    server = public_origin(request)
+    server = install_origin(request)
     return f"irm {server}/install.ps1 | iex" if server else ""
 
 
@@ -164,7 +176,7 @@ def _error_script(message: str) -> str:
 # Route đồng bộ: FastAPI chạy trong threadpool, nên đọc tệp và nén zip không chặn vòng sự kiện.
 @router.get("/install.ps1", include_in_schema=False)
 def install_script(request: Request) -> Response:
-    server = public_origin(request)
+    server = install_origin(request)
     if server is None:
         return _script(_error_script(NOT_HTTPS))
     try:
@@ -186,7 +198,7 @@ def install_script(request: Request) -> Response:
 
 @router.get(DOWNLOAD_PATH + "/{filename}", include_in_schema=False)
 def download_wheel(filename: str, request: Request) -> Response:
-    server = public_origin(request)
+    server = install_origin(request)
     if server is None:
         raise HTTPException(status_code=404, detail=NOT_HTTPS)
     try:
