@@ -1107,7 +1107,63 @@ the AIRI build (postponed by the owner).
   two `index.html` of equal size and time); the symlink tests skip where the OS cannot create symlinks; frontend `tests/AiriCompanion.test.tsx` (both states, Companion chunk never loaded
   with the flag on).
 
+### AIRI Companion: chat sync between devices
+
+Since 2026-11-17, at the owner's request ("không lưu trò chuyện session ở 2 thiết bị cùng tài khoản"). AIRI syncs
+chats with its own cloud for a signed-in AIRI account; the Peto build has none, so Peto Web plays that server
+(`features/companion/airi_sync.py`, `storage/airi_chats.py`), speaking AIRI's protocol unchanged. The owner agreed that
+the text of Companion chats is now stored on the server (before, the gateway stored nothing). The fork side is in its
+`PETO.md`, "Chat sync".
+
+- **What syncs** (AIRI's rule): the text of user and assistant messages, chat titles and the chat's character id. Not
+  images, tool calls, errors, cards, memory or settings. A chat appears on the other devices in the conversation list;
+  its messages are pulled when it is opened, and new messages reach open devices at once.
+- **Identity**: `GET /api/companion/sync/session` (Peto session cookie) returns `userId` = `peto-` + 24 hex of
+  HMAC-SHA256(`PETO_SESSION_SECRET`, `airi-sync:` + owner) (never the owner key or a Discord ID) and `token`, signed by
+  `features.accounts.auth.signer("peto-airi-chat-sync")` (same secret as the session cookie, its own salt, so neither
+  works as the other), valid 30 days (`TOKEN_MAX_AGE`), carrying only the owner. The page fetches it on every load and
+  keeps it in memory. The REST calls carry no cookie (AIRI's `authedFetch` uses `credentials: 'omit'`), only
+  `Authorization: Bearer <token>`. No origin check on the WebSocket: the token is the only key, and another site
+  cannot read it (`/sync/session` is same-origin JSON without CORS).
+- **REST** under `/api/companion/airi-cloud/api/v1/chats`, AIRI's JSON shapes (camelCase, ISO dates): `GET` (list with
+  members), `POST` (id from the browser, its session id, 1–64 characters, or a server one; type
+  `private|bot|group|channel`, default `group`; title up to 500; up to 20 character/bot members; 201, 409 when the id
+  exists, even deleted, as in AIRI), `GET /{id}`, `PATCH /{id}` (title), `DELETE /{id}`. Errors are
+  `{"error", "message"}` in Vietnamese; 401 for a missing or bad token, 404 for another account's chat.
+- **WebSocket** `/api/companion/airi-cloud/ws/v2/chat`, eventa 1.0 frames (`deliveryId`, `eventa: {id, type,
+  invokeType, body: {invokeId, content}}`, plus the older `id/type/payload` copy that eventa still reads). A request is
+  `<name>-send`, the reply `<name>-receive-<invokeId>` (`invokeType` 4), an error
+  `<name>-receive-error-<invokeId>` (`invokeType` 5, `content.error.message` in Vietnamese); a push is
+  `chat:new-messages`. The first call must be `chat:authenticate` with the token within 15 s; up to 4 frames that are
+  not calls are skipped first (eventa's own "connected" event when a client builds its context before the socket
+  opens); anything else closes with 4001, which makes AIRI stop reconnecting until its token changes. Then
+  `chat:send-messages` (user/assistant only; the reply is the new `seq`; the written rows go to every other socket of
+  the same account as `chat:new-messages`) and `chat:pull-messages` (`afterSeq`, `limit` default 100, at most 500).
+  Sockets are kept in process memory (Peto Web runs as one process), 20 per account, 100 waiting for authentication;
+  the AIRI page off (`PETO_AIRI_DIR` unset) refuses the handshake.
+- **Storage**: `airi_chats` (PK owner+id; type, title, members JSON, created/updated/deleted) and `airi_chat_messages`
+  (PK owner+id; chat_id, role, content, reply_to, seq, times; index owner+chat_id+seq). Every query filters on owner,
+  so the same chat or message id in two accounts never meets. A re-sent message id updates the text and gets a new
+  `seq` (AIRI's rule, so edits reach other devices); an id that belongs to another chat of the account is refused.
+  Deleting a chat marks the chat row deleted and deletes its messages (AIRI keeps them). Caps per account, only
+  against abuse: 1,000 live chats, 100,000 messages, about 1 GB of text (`storage/airi_chats.py`); per call 500
+  messages and 1,000,000 characters per message. A full account gets "Chỗ đồng bộ hội thoại của tài khoản đã đầy…";
+  editing existing messages still works. `ops/purge_guests.py` covers both tables (they have `owner`).
+- **Logs**: counts only (`airi_sync send_messages count=…`, `create_chat`, `delete_chat`, `open sockets=…`); never
+  message text (`test_logs_never_carry_message_text`).
+- **Tests**: `tests/test_airi_sync.py` (token and cookie separation, opaque id, REST life cycle and shapes, isolation
+  between accounts, validation, caps, WebSocket authentication and skipped frames, send/pull/fan-out, edits, errors
+  that keep the socket, delete dropping messages, no text in logs). Checked on 2026-11-17 with the real eventa 1.0.2
+  library from Node and with two real browsers of one account on the mock backend (a chat made before the sync moved
+  and uploaded with its history, opened on the second browser, a new message pushed live).
+
 # Dated log (newest first)
+
+## AIRI page: chat sync between devices (2026-11-17)
+
+Built on branch `companion-airi-sync` and the fork, as described in "AIRI Companion: chat sync between devices" above.
+The owner chose to store Companion chat text on the server for this. Nothing else of the AIRI page reads or writes the
+new tables.
 
 ## AIRI page: Peto web search and a new version notice (2026-11-17)
 

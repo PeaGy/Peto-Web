@@ -70,6 +70,14 @@ else:
 _serializer = URLSafeTimedSerializer(_secret, salt="peto-session")
 
 
+def signer(salt: str) -> URLSafeTimedSerializer:
+    """Bộ ký cùng bí mật với cookie phiên nhưng ``salt`` riêng, nên chữ ký của mục đích này không dùng được cho mục
+    đích khác (ví dụ mã đồng bộ hội thoại Companion không thành cookie phiên)."""
+    if salt == "peto-session":
+        raise ValueError("salt của cookie phiên chỉ dùng cho cookie phiên")
+    return URLSafeTimedSerializer(_secret, salt=salt)
+
+
 def is_configured() -> bool:
     """Discord đã cấu hình chưa."""
     return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET)

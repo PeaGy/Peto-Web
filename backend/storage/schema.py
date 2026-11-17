@@ -458,4 +458,6 @@ async def init_db() -> None:
         await init_player_tables(db)
         from storage.cards import init_tables as init_card_tables
         await init_card_tables(db)
+        from storage.airi_chats import init_tables as init_airi_chat_tables
+        await init_airi_chat_tables(db)
         await db.commit()
