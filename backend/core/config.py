@@ -134,6 +134,9 @@ SESSION_MAX_AGE = _env_int("PETO_SESSION_MAX_AGE", 60 * 60 * 24 * 30, 300, 60 * 
 SESSION_COOKIE_SECURE = os.getenv("PETO_COOKIE_SECURE", "").strip().lower() in {
     "1", "true", "yes",
 }
+# Tên miền chính, ví dụ https://peto.peagy.com: trang mở bằng tên miền khác được chuyển sang đây (core/canonical_host.py).
+# Để trống thì không chuyển gì.
+CANONICAL_ORIGIN = os.getenv("PETO_CANONICAL_ORIGIN", "").strip()
 
 # Ba cách đăng nhập. KHÔNG còn allowlist — đăng ký mở, ai vào cũng được. Đăng nhập khách bỏ ngày 6/10/2026 (ai cũng
 # tạo vô hạn tài khoản khách và tiêu hạn mức AI của web): khóa "guest:…" cũ không còn hợp lệ, cookie khách bị đăng xuất,

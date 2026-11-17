@@ -91,6 +91,16 @@ user who points AIRI at another provider from the browser shows up as `connect-s
 log `page=/companion`. The AIRI gateway's turns appear on `/admin` under surface `airi` (`companion.md`, "AIRI
 Companion: `/companion/` serving and gateway").
 
+### One main domain (`core/canonical_host.py`)
+
+Peto answers on `peto.peagy.com` and the older `peto.pearto.shop`. The session cookie belongs to one domain, so signing
+in on one leaves the other signed out. With `PETO_CANONICAL_ORIGIN=https://peto.peagy.com`, a browser opening a page on
+any other domain (GET/HEAD, outside `/api/`, `Accept` with `text/html`) gets a 302 to the same path and query on the main
+domain. Not redirected: every `/api/…` (Peto Agent, the Peto Harness desktop app whose base is still the old domain,
+the voice machine, OAuth), requests that do not ask for HTML (`irm …/install.ps1`), other methods, and loopback hosts
+(checks on the VPS). 302 rather than 301 so browsers do not cache it forever; unset the variable to stop. A malformed
+value is ignored. It sits inside `SecurityHeaders`, so the redirect carries the same headers.
+
 ### Configuration
 
 `core/config.py` is where environment variables are read. Every numeric knob goes through
@@ -131,6 +141,13 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 created (old databases keep it, unused).
 
 # Dated log (newest first)
+
+## One main domain (2026-11-17, branch `canonical-domain`, not merged)
+
+The owner kept getting signed out when switching between `peto.pearto.shop` and `peto.peagy.com` (each domain has its
+own cookie; since 2026-11-13 each also has its own OAuth callback, and the server never revokes sessions). Current
+behaviour is under "One main domain" above. Takes effect only after `PETO_CANONICAL_ORIGIN` is set on the VPS.
+Tests: `tests/test_canonical_host.py`.
 
 ## CSP: Cloudflare Web Analytics beacon (2026-11-13, branch `csp-cloudflare-insights`)
 
