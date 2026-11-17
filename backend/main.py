@@ -21,6 +21,7 @@ from core import static_files
 from core import airi_static
 from core import security_headers
 from features.companion import airi_gateway
+from features.companion import airi_sync
 from ai import get_provider
 from core.identity import get_app_identity
 from core.config import AIRI_DIR, ALLOWED_ORIGINS, STATIC_DIR
@@ -75,6 +76,8 @@ app.include_router(admin_api.router)
 # Companion ở /companion/ khi PETO_AIRI_DIR được đặt (không đặt thì /companion vẫn là Companion React). /companion/ của
 # AIRI phải gắn trước static_files.mount ở cuối tệp.
 app.include_router(airi_gateway.router)
+# Đồng bộ hội thoại của trang AIRI giữa các máy (17/11/2026): máy chủ Peto đóng vai máy chủ đám mây của AIRI.
+app.include_router(airi_sync.router)
 airi_static.mount(app, AIRI_DIR)
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])

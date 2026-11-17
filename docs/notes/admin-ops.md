@@ -121,7 +121,8 @@ directly; `ops/purge_guests.py` turns foreign keys on itself.
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`, `user_avatars`,
 `imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `voice_usage`,
 `companion_memory_entries`, `companion_memory_state` (`companion_memories`, the old one-line notes, stays empty after the
-startup migration; see "Memory (Brain)")
+startup migration; see "Memory (Brain)"), `airi_chats` and `airi_chat_messages` (chats of the AIRI Companion page synced
+between devices, since 2026-11-17; `companion.md`, "AIRI Companion: chat sync between devices")
 (`features/voice/cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
