@@ -132,7 +132,10 @@ async def retry_in_place(owner, conversation_id, message_id, text, quoted_source
             await connection.rollback()
             return None
         later = rows[1:]
-        if any(row['role'] != 'assistant' or row['status'] == 'complete' or json.loads(row['artifacts'] or '[]') for row in later):
+        # Câu trả lời đã xong nhưng rỗng (Peto im lặng, không tệp) không có gì để giữ: tạo lại thì thay ngay tại chỗ,
+        # không tách hội thoại mới (17/11/2026: Grok nghĩ 25 giây không viết chữ nào, bấm tạo lại thành hai chat trùng tên).
+        if any(row['role'] != 'assistant' or (row['status'] == 'complete' and (row['content'] or '').strip())
+               or json.loads(row['artifacts'] or '[]') for row in later):
             await connection.rollback()
             return None
         if not text.strip():

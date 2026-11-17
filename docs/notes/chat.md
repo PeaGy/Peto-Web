@@ -321,8 +321,10 @@ summary ticker, and a phase bar sized by time spent.
     new conversation version, so Stop and then resend left two chats with the same title (reported 2026-10-08).
     `conversation_actions.retry_in_place` now handles the case where the target is the last user message and everything
     after it is an unfinished assistant reply with no artifacts. It deletes that reply, updates the question's text, keeps
-    its attachments and answers in the same conversation. Anything else still forks
-    (`test_resending_a_stopped_last_question_stays_in_the_same_conversation`).
+    its attachments and answers in the same conversation. Since 2026-11-17 a finished but empty last reply (a silent
+    reply, no files) counts the same, so "Tạo lại" on it replaces it in place; editing that question still forks.
+    Anything else still forks (`test_resending_a_stopped_last_question_stays_in_the_same_conversation`,
+    `test_regenerating_a_silent_reply_stays_in_the_same_conversation`).
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
 - **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
@@ -476,6 +478,15 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Regenerating a silent reply stays in the same chat (2026-11-17, branch `retry-silent-in-place`, not merged)
+
+Reported 2026-11-17 with two chats titled "Death battle GER và Joker Persona 5". The production data showed no Stop
+request: Grok thought for 25 s (885 characters of reasoning) on an ordinary question and wrote nothing. Since the
+silent-reply change of 2026-11-13 that is saved as a finished, empty reply, and regenerating a finished reply forks a
+new conversation, so the second chat copied the whole history. `conversations.retry_in_place` now also accepts a
+finished reply with no text and no files after the last question, so regenerating it answers in place. The empty reply
+itself is unchanged (still shown as the muted silent note); why Grok wrote nothing for that question is not known.
 
 ## Chat turn and provider stream split into named steps (G3.2) (2026-11-13, committed on branch `g3.2-split-streams`, not deployed)
 

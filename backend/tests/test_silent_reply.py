@@ -34,6 +34,36 @@ async def test_an_empty_normal_reply_completes_and_is_left_out_of_later_history(
     assert [(m.role, m.content) for m in seen[1]] == [('user', 'intelligent test: do not reply'), ('user', 'Giờ thì chào đi')]
 
 
+async def test_regenerating_a_silent_reply_stays_in_the_same_conversation(client, monkeypatch):
+    """17/11/2026: Grok nghĩ 25 giây không viết chữ nào; bấm tạo lại tách ra hội thoại thứ hai trùng tên."""
+    calls = []
+
+    class Provider:
+        # Lượt đầu im lặng; mọi lần gọi sau (cả lúc đặt tiêu đề) đều có chữ.
+        async def stream(self, **kwargs):
+            calls.append(1)
+            if len(calls) > 1:
+                yield 'Trả lời lại đây.'
+    monkeypatch.setattr(service, 'get_provider', lambda _: Provider())
+    events = await read_events(await client.post('/api/chat', json={'message': 'Hex của jojo mạnh không?',
+                                                                     'effort': 'low', 'web_search': 'off'}))
+    cid = events[0]['conversation_id']
+    question = (await db.get_messages(TEST_OWNER, cid))[0]['id']
+    events = await read_events(await client.post('/api/chat', json={
+        'conversation_id': cid, 'branch_message_id': question, 'message': 'Hex của jojo mạnh không?',
+        'effort': 'low', 'web_search': 'off'}))
+    meta = next(e for e in events if e['type'] == 'meta')
+    assert meta['conversation_id'] == cid and events[-1]['type'] == 'done', events
+    rows = await db.get_messages(TEST_OWNER, cid)
+    assert [(r['role'], r['content']) for r in rows] == [('user', 'Hex của jojo mạnh không?'), ('assistant', 'Trả lời lại đây.')]
+    assert len((await client.get(f'/api/conversations/{cid}/versions')).json()['versions']) == 1
+    # Câu trả lời có chữ thì tạo lại vẫn tách phiên bản mới, giữ nguyên bản cũ như trước.
+    events = await read_events(await client.post('/api/chat', json={
+        'conversation_id': cid, 'branch_message_id': question, 'message': 'Hex của jojo mạnh không?',
+        'effort': 'low', 'web_search': 'off'}))
+    assert next(e for e in events if e['type'] == 'meta')['conversation_id'] != cid
+
+
 async def test_companion_still_treats_an_empty_reply_as_not_answered(client, monkeypatch):
     seen = []
     monkeypatch.setattr(service, 'get_provider', lambda _: provider(seen, ['']))
