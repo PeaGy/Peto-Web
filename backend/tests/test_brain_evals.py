@@ -149,6 +149,10 @@ async def test_actual_prompts_use_fake_context_without_database_or_gateway(monke
     assert prompts['luna', 'fake-companion', 0]['text'].startswith(COMPANION_SYSTEM_PROMPT)
     assert 'ĐènGiấy' in prompts['luna', 'fake-companion', 0]['text']
     assert 'từ-bí-mật-tương-lai' not in prompts['peto', 'fake-one', 0]['text']
+    # Bộ bài tắt công cụ: prompt Chat phải nói rõ như khối runtime của app (LIVE 18/11/2026 Peto hứa "sẽ lục file log").
+    for model in ('peto', 'luna', 'haiku'):
+        assert prompts[model, 'fake-one', 0]['text'].endswith(adapter.NO_TOOLS_NOTE)
+    assert adapter.NO_TOOLS_NOTE not in prompts['luna', 'fake-companion', 0]['text']
     assert '2026-10-09' in prompts['luna', 'fake-one', 0]['text']
     assert originals == [prompt_context.db.get_user, prompt_context.db.get_profile,
                          prompt_context.discord_memory.fetch, prompt_context.companion_memory.memory_block]
