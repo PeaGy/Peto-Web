@@ -1117,7 +1117,9 @@ the text of Companion chats is now stored on the server (before, the gateway sto
 
 - **What syncs** (AIRI's rule): the text of user and assistant messages, chat titles and the chat's character id. Not
   images, tool calls, errors, cards, memory or settings. A chat appears on the other devices in the conversation list;
-  its messages are pulled when it is opened, and new messages reach open devices at once.
+  its messages are pulled when it is opened, and new messages reach open devices at once. A deleted chat leaves the
+  other devices at their next reconcile (a reload or a reconnect), not at once: the protocol has no deletion push, and
+  upstream never removed such chats at all (fork patch since 2026-11-18).
 - **Identity**: `GET /api/companion/sync/session` (Peto session cookie) returns `userId` = `peto-` + 24 hex of
   HMAC-SHA256(`PETO_SESSION_SECRET`, `airi-sync:` + owner) (never the owner key or a Discord ID) and `token`, signed by
   `features.accounts.auth.signer("peto-airi-chat-sync")` (same secret as the session cookie, its own salt, so neither
