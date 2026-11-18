@@ -19,8 +19,6 @@ Chỉ bật khi đặt ``PETO_AIRI_DIR``, như cổng model. Nội dung tin khô
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import json
 import logging
 import time
@@ -61,10 +59,16 @@ SYNC_ROLES = ("user", "assistant")
 _tokens = signer("peto-airi-chat-sync")
 
 
-def sync_user_id(owner: str) -> str:
-    """Mã người dùng mà trang AIRI thấy: HMAC của owner, không đoán ngược ra ID Discord."""
-    digest = hmac.new(config.SESSION_SECRET.encode("utf-8"), f"airi-sync:{owner}".encode("utf-8"), hashlib.sha256)
-    return "peto-" + digest.hexdigest()[:24]
+_user_ids: dict[str, str] = {}
+
+
+async def sync_user_id(owner: str) -> str:
+    """Mã người dùng mà trang AIRI thấy (``storage.airi_chats.sync_user_id``): cố định cho mỗi tài khoản, không đoán
+    ngược ra owner hay ID Discord, không đổi khi đổi PETO_SESSION_SECRET. Giữ trong bộ nhớ sau lần đọc đầu."""
+    user_id = _user_ids.get(owner)
+    if user_id is None:
+        user_id = _user_ids[owner] = await airi_chats.sync_user_id(owner)
+    return user_id
 
 
 def issue_token(owner: str) -> str:
@@ -99,7 +103,7 @@ async def sync_session(request: Request):
     owner = session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         return _error(401, "Chưa đăng nhập Peto.")
-    return JSONResponse({"userId": sync_user_id(owner), "token": issue_token(owner), "expiresIn": TOKEN_MAX_AGE},
+    return JSONResponse({"userId": await sync_user_id(owner), "token": issue_token(owner), "expiresIn": TOKEN_MAX_AGE},
                         headers={"Cache-Control": "no-store"})
 
 
@@ -167,7 +171,7 @@ async def _rest(request: Request, action):
     if not owner:
         return _error(401, "Mã đồng bộ không hợp lệ hoặc đã hết hạn. Mở lại trang Companion nhé.")
     try:
-        status, payload = await action(owner, sync_user_id(owner))
+        status, payload = await action(owner, await sync_user_id(owner))
     except SyncError as error:
         return _error(error.status, error.message)
     return JSONResponse(payload, status_code=status, headers={"Cache-Control": "no-store"})
@@ -396,7 +400,7 @@ async def chat_socket(websocket: WebSocket):
     if len(peers) >= MAX_SOCKETS_PER_OWNER:
         await _close(websocket, CLOSE_TRY_AGAIN_LATER, "too many connections")
         return
-    user_id = sync_user_id(owner)
+    user_id = await sync_user_id(owner)
     peer = _Peer(websocket)
     peers[id(peer)] = peer
     logger.info("airi_sync open sockets=%d", len(peers))
