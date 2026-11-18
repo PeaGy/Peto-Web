@@ -7,7 +7,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Agent gateway and Peto Harness (`agent-gateway.md`)
 
-- [ ] G2.2 auto effort: after deploying, send on Tự động a greeting, "thanh toán hóa đơn", "so sánh ưu nhược…" and a message with a file, then read `effort` of the newest `turn` rows in `usage_events` (expect low, low, medium, medium) — `chat.md`, "Auto effort by whole words…".
+- [x] G2.2 auto effort (checked 2026-11-18 on `7e14586`: low, low, medium, medium as expected, from `meta` and `chat_timing`): after deploying, send on Tự động a greeting, "thanh toán hóa đơn", "so sánh ưu nhược…" and a message with a file, then read `effort` of the newest `turn` rows in `usage_events` (expect low, low, medium, medium) — `chat.md`, "Auto effort by whole words…".
 - [x] Install and relaunch through desktop auto-update in the installed ph app (2026-11-17, .20261107.1 → .20261117.1: works in ~42 s when left alone; the first try failed because the app was reopened mid-install; sign-in kept across the domain change) — `agent-gateway.md`, "First real auto-update".
 - [ ] Real Grok output for Agent web search: does it list sources and keep to JSON — `agent-gateway.md`, "Peto Agent web search".
 - [x] DSH's update status window and relaunch with the rc.3 installer, run as an update runs it over .20261117.2 (2026-11-17: window for the whole install, app reopened by itself, still signed in, steps card shown) — `agent-gateway.md`, "DSH 0.2.2-rc.3 merged into ph".

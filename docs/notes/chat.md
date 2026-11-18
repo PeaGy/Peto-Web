@@ -486,6 +486,26 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## First LIVE run of `chat-core`, Peto at low and medium (2026-11-18)
+
+Run on the VPS at `7e14586` with `--suite chat-core --models peto --effort low|medium --mode live --allow-paid
+--concurrency 3` (Grok only; Luna and Haiku were not run because they bill the owner). Outputs:
+`benchmark-output/g21-peto-{low,medium}-20261118/` on the VPS (report.md, results.json, review.json, not in Git).
+
+| Effort | Checks passed | First text p50 / p95 | Total p50 / p95 | Output tokens | Cache read |
+| --- | ---: | --- | --- | ---: | ---: |
+| low | 25/27 | 3.0 s / 6.8 s | 3.4 s / 10.7 s | 3,979 | 37.7% |
+| medium | 24/27 | 4.9 s / 13.5 s | 5.8 s / 18.5 s | 7,501 | 28.6% |
+
+- Both fail the critical `chat-log-mixin-root-cause` the same way: Peto answers "Mình sẽ lục cả file log…" and stops.
+  The suite turns tools off while the prompt still describes attachment search, so this is the harness, not the app
+  (in the app the turn goes on with `search_attachment`). The case needs tools or a prompt without them to mean
+  anything.
+- Medium also missed "Vẫn trung thực là AI" in `chat-gender-hypothetical` ("If I had to pick, guy."); low passed it.
+- Medium took about twice as long and twice the output for no better result on these checks, which supports G2.2
+  keeping `low` unless a real signal (math, code, files, long writing, comparisons) is present. One run each; nobody
+  has hand-scored `review.json` yet.
+
 ## Auto effort by whole words and non-keyword signals (G2.2) (2026-11-18, branch `g2.2-effort-pick`, not merged)
 
 Audit package G2.2; current behaviour is in the `effort` paragraph above. The audit's table now passes: the essay, the
