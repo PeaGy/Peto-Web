@@ -283,6 +283,46 @@ def test_message_of_another_chat_is_refused_and_delete_drops_messages(ws_client)
     assert asyncio.run(remaining()) == 0
 
 
+def test_identical_resend_keeps_the_place_of_old_messages(ws_client):
+    """A retry after a lost reply, or an old tab, sends old messages again. They must not move after newer ones."""
+    _create(TEST_OWNER, "order")
+    phone_cm, phone = open_socket(ws_client)
+    laptop_cm, laptop = open_socket(ws_client)
+    try:
+        old = [{"id": "o1", "role": "user", "content": "cũ"}, {"id": "o2", "role": "assistant", "content": "đáp cũ"}]
+        call(phone, "chat:send-messages", {"chatId": "order", "messages": old}, "1")
+        read(laptop)
+        call(phone, "chat:send-messages", {"chatId": "order", "messages": [
+            {"id": "n1", "role": "user", "content": "mới"}]}, "2")
+        read(laptop)
+
+        again = call(phone, "chat:send-messages", {"chatId": "order", "messages": old}, "3")
+        assert again["invokeType"] == 4 and again["body"]["content"] == {"seq": 3}
+
+        pulled = call(laptop, "chat:pull-messages", {"chatId": "order", "afterSeq": 0}, "4")["body"]["content"]
+        assert [(m["id"], m["seq"]) for m in pulled["messages"]] == [("o1", 1), ("o2", 2), ("n1", 3)]
+        assert pulled["seq"] == 3
+        # Nothing changed, so the other device gets nothing: its next frame answers its own call.
+        assert call(laptop, "chat:pull-messages", {"chatId": "order", "afterSeq": 3}, "5")["body"]["content"]["messages"] == []
+
+        # A real edit still moves forward, so other devices pull the new text.
+        edited = call(phone, "chat:send-messages", {"chatId": "order", "messages": [
+            {"id": "o2", "role": "assistant", "content": "đáp đã sửa"}]}, "6")
+        assert edited["body"]["content"] == {"seq": 4}
+        assert read(laptop)["body"]["messages"][0]["content"] == "đáp đã sửa"
+    finally:
+        for manager in (phone_cm, laptop_cm):
+            manager.__exit__(None, None, None)
+
+
+def test_a_browser_that_leaves_before_authenticating_is_no_error(ws_client):
+    # AIRI opens the socket and closes it at once when it has no token yet.
+    with ws_client.websocket_connect(PREFIX + "/ws/v2/chat"):
+        pass
+    manager, ws = open_socket(ws_client)
+    manager.__exit__(None, None, None)
+
+
 def test_message_cap(ws_client, monkeypatch):
     monkeypatch.setattr(airi_chats, "MAX_MESSAGES", 1)
     _create(TEST_OWNER, "c")
