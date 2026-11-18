@@ -1136,9 +1136,14 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   `<name>-receive-error-<invokeId>` (`invokeType` 5, `content.error.message` in Vietnamese); a push is
   `chat:new-messages`. The first call must be `chat:authenticate` with the token within 15 s; up to 4 frames that are
   not calls are skipped first (eventa's own "connected" event when a client builds its context before the socket
-  opens); anything else closes with 4001, which makes AIRI stop reconnecting until its token changes. Then
+  opens). A bad token, another call first or an oversized frame closes with 4001, which makes AIRI stop reconnecting
+  until its token changes; a timeout or a browser that left closes with 1013, so AIRI retries (since 2026-11-18; a
+  4001 on a slow authentication kept the owner's PC offline for an evening, its messages queued until a reload). Then
   `chat:send-messages` (user/assistant only; the reply is the new `seq`; the written rows go to every other socket of
-  the same account as `chat:new-messages`) and `chat:pull-messages` (`afterSeq`, `limit` default 100, at most 500).
+  the same account as `chat:new-messages`) and `chat:pull-messages` (`afterSeq`; with `limit` at most 500, without
+  one, as AIRI's browser always sends it, the whole rest of the chat up to 10,000; the reply's `seq` is the last
+  returned message when more remain, else the chat's highest, so the browser's cursor never skips unpulled messages.
+  AIRI's server returns 100 with the highest `seq`, and a device missed messages 101 onward of a long chat).
   Sockets are kept in process memory (Peto Web runs as one process), 20 per account, 100 waiting for authentication;
   the AIRI page off (`PETO_AIRI_DIR` unset) refuses the handshake.
 - **Storage**: `airi_chats` (PK owner+id; type, title, members JSON, created/updated/deleted) and `airi_chat_messages`
@@ -1161,6 +1166,17 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   and uploaded with its history, opened on the second browser, a new message pushed live).
 
 # Dated log (newest first)
+
+## AIRI page: chat sync fixes, round two (2026-11-18)
+
+After the first round the owner still saw no sync between the PC (where they chat) and the phone (a viewer); the phone
+showed another title for the same chat. The live data (read in the owner's signed-in browser, no write) showed the
+PC's messages of an evening reaching the server in one batch the next morning, and the phone lacking the first 66 of
+179 messages. Causes and fixes: the server closed a slow authentication with 4001, which stops AIRI's reconnects until
+a reload (now 1013); a pull without `limit` returned 100 messages with the chat's highest `seq` (now the whole rest,
+cursor-safe); in the fork, a push that starts after a gap merged and moved the cursor past history never pulled (now it
+pulls), and each load moved AIRI's empty anonymous chat into the account (now empty chats stay behind). A device that
+already lost history this way keeps its cursor: clearing the site data of that device once makes it pull everything.
 
 ## AIRI page: chat sync fixes (2026-11-18)
 
