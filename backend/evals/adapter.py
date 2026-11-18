@@ -11,6 +11,16 @@ from unittest.mock import AsyncMock, patch
 
 from .schema import Case, EvalError, Settings
 
+# App gửi kèm mỗi lượt một khối runtime nói lượt đó có công cụ gì (G1.1); bộ bài không gửi khối đó và luôn tắt công cụ,
+# nên model đọc phần hướng dẫn search_attachment trong prompt rồi hứa "sẽ lục cả file log" và dừng (LIVE 18/11/2026,
+# cả low lẫn medium). Câu này nói đúng điều khối runtime sẽ nói khi không có công cụ nào.
+NO_TOOLS_NOTE = (
+    '## Tools in this request\n'
+    'No native tools are available in this request, including search_attachment and read_attachment_lines. '
+    'Attached files are already in the conversation exactly as they were read; work from that text, and say which '
+    'parts you could not see instead of promising to search or read more.'
+)
+
 
 async def prepare_prompts(cases: list[Case], models: tuple[str, ...], clock: datetime) -> dict:
     from features.chat import prompt_context
@@ -45,6 +55,8 @@ async def prepare_prompts(cases: list[Case], models: tuple[str, ...], clock: dat
                         model=model, agent_question=question,
                         text_files=any(t.get('attachments') for t in case.turns[:index + 1]))
                     body += '\n\n' + time_context('Asia/Ho_Chi_Minh')
+                    if case.persona != 'companion':
+                        body += '\n\n' + NO_TOOLS_NOTE
                     prompts[model, case.id, index] = {'text': body, 'sha256': hashlib.sha256(body.encode()).hexdigest()}
     return prompts
 
