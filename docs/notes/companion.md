@@ -1120,8 +1120,13 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   its messages are pulled when it is opened, and new messages reach open devices at once. A deleted chat leaves the
   other devices at their next reconcile (a reload or a reconnect), not at once: the protocol has no deletion push, and
   upstream never removed such chats at all (fork patch since 2026-11-18).
-- **Identity**: `GET /api/companion/sync/session` (Peto session cookie) returns `userId` = `peto-` + 24 hex of
-  HMAC-SHA256(`PETO_SESSION_SECRET`, `airi-sync:` + owner) (never the owner key or a Discord ID) and `token`, signed by
+- **Identity**: `GET /api/companion/sync/session` (Peto session cookie) returns `userId` and `token`. `userId` is fixed
+  per account in `airi_sync_users` (since 2026-11-18): created once as `peto-` + 24 hex of
+  HMAC-SHA256(`PETO_SESSION_SECRET`, `airi-sync:` + owner) (never the owner key or a Discord ID), then read from the
+  table, so a new `PETO_SESSION_SECRET` no longer changes it (browsers keep their chats under it; a new id would look
+  like a new user and strand messages still waiting to upload). Startup fills the table for every account in `users`
+  and `airi_chats` with the id it already had. Changing `PETO_SESSION_SECRET` still signs everyone out and voids the
+  sync tokens: open pages reconnect after a reload. `token` is signed by
   `features.accounts.auth.signer("peto-airi-chat-sync")` (same secret as the session cookie, its own salt, so neither
   works as the other), valid 30 days (`TOKEN_MAX_AGE`), carrying only the owner. The page fetches it on every load and
   keeps it in memory. The REST calls carry no cookie (AIRI's `authedFetch` uses `credentials: 'omit'`), only

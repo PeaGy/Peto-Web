@@ -44,6 +44,11 @@ def bearer(owner: str = TEST_OWNER) -> dict:
     return {"Authorization": f"Bearer {airi_sync.issue_token(owner)}"}
 
 
+def uid(owner: str) -> str:
+    """The sync user id of an account, from a test that runs outside an event loop."""
+    return asyncio.run(airi_sync.sync_user_id(owner))
+
+
 def request_frame(name: str, content: object, invoke_id: str = "inv1") -> str:
     """Khung yêu cầu như eventa 1.0.2 của trình duyệt gửi (ghi lại từ thư viện thật)."""
     eventa = {"id": f"{name}-send", "type": "event", "invokeType": 0,
@@ -68,7 +73,7 @@ def open_socket(test_client: TestClient, owner: str = TEST_OWNER):
     socket = ws.__enter__()
     event = call(socket, "chat:authenticate", {"token": airi_sync.issue_token(owner)}, "auth")
     assert event["id"] == "chat:authenticate-receive-auth" and event["invokeType"] == 4
-    assert event["body"]["content"] == {"userId": airi_sync.sync_user_id(owner)}
+    assert event["body"]["content"] == {"userId": uid(owner)}
     return ws, socket
 
 
@@ -85,9 +90,35 @@ async def test_session_gives_an_opaque_user_and_a_token(client):
     response = await client.get("/api/companion/sync/session")
     assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
     body = response.json()
-    assert body["userId"] == airi_sync.sync_user_id(TEST_OWNER)
+    assert body["userId"] == await airi_sync.sync_user_id(TEST_OWNER)
     assert TEST_DISCORD_ID not in body["userId"] and TEST_OWNER not in json.dumps(body)
     assert airi_sync.token_owner(body["token"]) == TEST_OWNER
+
+
+async def test_sync_id_survives_a_change_of_the_session_secret(client, monkeypatch):
+    """Browsers keep their chats under this id, so a new PETO_SESSION_SECRET must not change it."""
+    airi_sync._user_ids.clear()
+    before = (await client.get("/api/companion/sync/session")).json()["userId"]
+    monkeypatch.setattr(config, "SESSION_SECRET", "a-new-secret-after-rotation-xxxxxxxx")
+    airi_sync._user_ids.clear()
+    assert await airi_sync.sync_user_id(TEST_OWNER) == before
+    # A new account gets an id that never changes afterwards either.
+    first = await airi_sync.sync_user_id(OTHER)
+    monkeypatch.setattr(config, "SESSION_SECRET", "another-secret-yyyyyyyyyyyyyyyyyyyyyy")
+    airi_sync._user_ids.clear()
+    assert await airi_sync.sync_user_id(OTHER) == first
+
+
+async def test_startup_keeps_the_ids_already_in_use(client):
+    """Each existing account keeps the id it had before ids were stored (the HMAC of the current secret)."""
+    async with db.connection.connect() as conn:
+        await conn.execute("DELETE FROM airi_sync_users WHERE owner=?", (TEST_OWNER,))
+        await conn.commit()
+    await db.init_db()
+    async with db.connection.connect() as conn:
+        row = await (await conn.execute("SELECT user_id FROM airi_sync_users WHERE owner=?", (TEST_OWNER,))).fetchone()
+    assert row[0] == airi_chats.derived_user_id(TEST_OWNER)
+    assert row[0].startswith("peto-") and TEST_DISCORD_ID not in row[0]
 
 
 async def test_session_needs_sign_in_and_the_airi_page(anon_client, client, monkeypatch):
@@ -168,7 +199,7 @@ async def test_chat_count_cap(client, monkeypatch):
 # --- WebSocket --------------------------------------------------------------------------------------------------------
 
 def _create(owner: str, chat_id: str) -> None:
-    asyncio.run(airi_chats.create_chat(owner, airi_sync.sync_user_id(owner), chat_id, "bot", None, []))
+    asyncio.run(airi_chats.create_chat(owner, uid(owner), chat_id, "bot", None, []))
 
 
 def test_socket_closes_without_a_valid_first_authenticate_frame(ws_client):
@@ -224,7 +255,7 @@ def test_send_pull_and_fanout_to_the_other_devices_of_the_account(ws_client):
         assert body["chatId"] == "chat-1" and body["fromSeq"] == 1 and body["toSeq"] == 2
         assert [(m["id"], m["role"], m["content"], m["seq"]) for m in body["messages"]] == [
             ("m1", "user", "chào", 1), ("m2", "assistant", "hi", 2)]
-        assert body["messages"][0]["senderId"] == airi_sync.sync_user_id(TEST_OWNER)
+        assert body["messages"][0]["senderId"] == uid(TEST_OWNER)
 
         # Sửa tin đã có: cùng mã, seq mới, máy kia nhận bản sửa.
         call(phone, "chat:send-messages", {"chatId": "chat-1", "messages": [

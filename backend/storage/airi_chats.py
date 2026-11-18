@@ -11,11 +11,14 @@ thoại vẫn giữ dấu xóa để máy khác biết và để mã đó không
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import time
 
 import aiosqlite
 
+from core import config
 from storage.connection import connect
 
 CHAT_TYPES = ('private', 'bot', 'group', 'channel')
@@ -50,6 +53,34 @@ async def init_tables(db: aiosqlite.Connection) -> None:
         reply_to TEXT, seq INTEGER NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
         PRIMARY KEY(owner, id))''')
     await db.execute('CREATE INDEX IF NOT EXISTS idx_airi_chat_messages_seq ON airi_chat_messages(owner, chat_id, seq)')
+    # Mã người dùng mà trang AIRI thấy (17–18/11/2026 tính lại mỗi lần bằng HMAC với PETO_SESSION_SECRET). Trình duyệt
+    # cất hội thoại theo mã này, nên mã phải giữ nguyên cả khi đổi PETO_SESSION_SECRET: lưu một lần cho mỗi tài khoản.
+    await db.execute('''CREATE TABLE IF NOT EXISTS airi_sync_users (
+        owner TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE)''')
+    # Mọi tài khoản đã có giữ đúng mã đang dùng. Chạy mỗi lần khởi động; hàng đã có không đổi.
+    rows = await (await db.execute(
+        'SELECT owner FROM users UNION SELECT owner FROM airi_chats EXCEPT SELECT owner FROM airi_sync_users')).fetchall()
+    await db.executemany('INSERT OR IGNORE INTO airi_sync_users (owner, user_id) VALUES (?, ?)',
+                         [(owner, derived_user_id(owner)) for (owner,) in rows])
+
+
+def derived_user_id(owner: str) -> str:
+    """Mã người dùng theo cách tính ban đầu: ``peto-`` + 24 hex của HMAC-SHA256(PETO_SESSION_SECRET, ``airi-sync:``
+    + owner). Không đoán ngược ra owner hay ID Discord. Chỉ dùng để tạo hàng lần đầu; sau đó đọc từ bảng."""
+    digest = hmac.new(config.SESSION_SECRET.encode('utf-8'), f'airi-sync:{owner}'.encode('utf-8'), hashlib.sha256)
+    return 'peto-' + digest.hexdigest()[:24]
+
+
+async def sync_user_id(owner: str) -> str:
+    """Mã người dùng cố định của tài khoản cho đồng bộ AIRI; tạo lần đầu."""
+    async with connect() as db:
+        row = await (await db.execute('SELECT user_id FROM airi_sync_users WHERE owner=?', (owner,))).fetchone()
+        if row:
+            return row[0]
+        await db.execute('INSERT OR IGNORE INTO airi_sync_users (owner, user_id) VALUES (?, ?)',
+                         (owner, derived_user_id(owner)))
+        await db.commit()
+        return (await (await db.execute('SELECT user_id FROM airi_sync_users WHERE owner=?', (owner,))).fetchone())[0]
 
 
 def _iso(seconds: float) -> str:
