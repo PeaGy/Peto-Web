@@ -43,24 +43,39 @@ class SyncError(Exception):
         self.message = message
 
 
+# Tên bảng trước ngày 18/11/2026 (mang chữ airi). Đổi tên tại chỗ lúc khởi động, dữ liệu giữ nguyên.
+_OLD_TABLES = (('airi_chats', 'companion_chats'), ('airi_chat_messages', 'companion_chat_messages'),
+               ('airi_sync_users', 'companion_sync_users'))
+
+
+async def _rename_old_tables(db: aiosqlite.Connection) -> None:
+    names = {row[0] for row in await (await db.execute("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    for old, new in _OLD_TABLES:
+        if old in names and new not in names:
+            await db.execute(f'ALTER TABLE {old} RENAME TO {new}')
+    await db.execute('DROP INDEX IF EXISTS idx_airi_chat_messages_seq')
+
+
 async def init_tables(db: aiosqlite.Connection) -> None:
-    await db.execute('''CREATE TABLE IF NOT EXISTS airi_chats (
+    await _rename_old_tables(db)
+    await db.execute('''CREATE TABLE IF NOT EXISTS companion_chats (
         owner TEXT NOT NULL, id TEXT NOT NULL, type TEXT NOT NULL, title TEXT, members TEXT NOT NULL DEFAULT '[]',
         created_at REAL NOT NULL, updated_at REAL NOT NULL, deleted_at REAL,
         PRIMARY KEY(owner, id))''')
-    await db.execute('''CREATE TABLE IF NOT EXISTS airi_chat_messages (
+    await db.execute('''CREATE TABLE IF NOT EXISTS companion_chat_messages (
         owner TEXT NOT NULL, id TEXT NOT NULL, chat_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
         reply_to TEXT, seq INTEGER NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
         PRIMARY KEY(owner, id))''')
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_airi_chat_messages_seq ON airi_chat_messages(owner, chat_id, seq)')
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_companion_chat_messages_seq '
+                     'ON companion_chat_messages(owner, chat_id, seq)')
     # Mã người dùng mà trang AIRI thấy (17–18/11/2026 tính lại mỗi lần bằng HMAC với PETO_SESSION_SECRET). Trình duyệt
     # cất hội thoại theo mã này, nên mã phải giữ nguyên cả khi đổi PETO_SESSION_SECRET: lưu một lần cho mỗi tài khoản.
-    await db.execute('''CREATE TABLE IF NOT EXISTS airi_sync_users (
+    await db.execute('''CREATE TABLE IF NOT EXISTS companion_sync_users (
         owner TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE)''')
     # Mọi tài khoản đã có giữ đúng mã đang dùng. Chạy mỗi lần khởi động; hàng đã có không đổi.
     rows = await (await db.execute(
-        'SELECT owner FROM users UNION SELECT owner FROM airi_chats EXCEPT SELECT owner FROM airi_sync_users')).fetchall()
-    await db.executemany('INSERT OR IGNORE INTO airi_sync_users (owner, user_id) VALUES (?, ?)',
+        'SELECT owner FROM users UNION SELECT owner FROM companion_chats EXCEPT SELECT owner FROM companion_sync_users')).fetchall()
+    await db.executemany('INSERT OR IGNORE INTO companion_sync_users (owner, user_id) VALUES (?, ?)',
                          [(owner, derived_user_id(owner)) for (owner,) in rows])
 
 
@@ -74,13 +89,13 @@ def derived_user_id(owner: str) -> str:
 async def sync_user_id(owner: str) -> str:
     """Mã người dùng cố định của tài khoản cho đồng bộ AIRI; tạo lần đầu."""
     async with connect() as db:
-        row = await (await db.execute('SELECT user_id FROM airi_sync_users WHERE owner=?', (owner,))).fetchone()
+        row = await (await db.execute('SELECT user_id FROM companion_sync_users WHERE owner=?', (owner,))).fetchone()
         if row:
             return row[0]
-        await db.execute('INSERT OR IGNORE INTO airi_sync_users (owner, user_id) VALUES (?, ?)',
+        await db.execute('INSERT OR IGNORE INTO companion_sync_users (owner, user_id) VALUES (?, ?)',
                          (owner, derived_user_id(owner)))
         await db.commit()
-        return (await (await db.execute('SELECT user_id FROM airi_sync_users WHERE owner=?', (owner,))).fetchone())[0]
+        return (await (await db.execute('SELECT user_id FROM companion_sync_users WHERE owner=?', (owner,))).fetchone())[0]
 
 
 def _iso(seconds: float) -> str:
@@ -106,7 +121,7 @@ def _wire(row: aiosqlite.Row, user_id: str) -> dict:
 
 
 async def _live_chat(db: aiosqlite.Connection, owner: str, chat_id: str) -> aiosqlite.Row:
-    row = await (await db.execute('SELECT * FROM airi_chats WHERE owner=? AND id=? AND deleted_at IS NULL',
+    row = await (await db.execute('SELECT * FROM companion_chats WHERE owner=? AND id=? AND deleted_at IS NULL',
                                   (owner, chat_id))).fetchone()
     if row is None:
         raise SyncError(404, 'Không tìm thấy cuộc trò chuyện này.')
@@ -120,15 +135,15 @@ async def create_chat(owner: str, user_id: str, chat_id: str, chat_type: str, ti
         db.row_factory = aiosqlite.Row
         await db.execute('BEGIN IMMEDIATE')
         try:
-            exists = await (await db.execute('SELECT 1 FROM airi_chats WHERE owner=? AND id=?',
+            exists = await (await db.execute('SELECT 1 FROM companion_chats WHERE owner=? AND id=?',
                                              (owner, chat_id))).fetchone()
             if exists:
                 raise SyncError(409, 'Cuộc trò chuyện này đã có trên máy chủ.')
-            count = (await (await db.execute('SELECT COUNT(*) FROM airi_chats WHERE owner=? AND deleted_at IS NULL',
+            count = (await (await db.execute('SELECT COUNT(*) FROM companion_chats WHERE owner=? AND deleted_at IS NULL',
                                              (owner,))).fetchone())[0]
             if count >= MAX_CHATS:
                 raise SyncError(413, f'Đã đồng bộ đủ {MAX_CHATS} cuộc trò chuyện. Xóa bớt cuộc cũ rồi thử lại nhé.')
-            await db.execute('INSERT INTO airi_chats (owner, id, type, title, members, created_at, updated_at) '
+            await db.execute('INSERT INTO companion_chats (owner, id, type, title, members, created_at, updated_at) '
                              'VALUES (?,?,?,?,?,?,?)', (owner, chat_id, chat_type, title, json.dumps(members), now, now))
             await db.commit()
         except BaseException:
@@ -142,7 +157,7 @@ async def list_chats(owner: str, user_id: str) -> list[dict]:
     async with connect() as db:
         db.row_factory = aiosqlite.Row
         rows = await (await db.execute(
-            'SELECT * FROM airi_chats WHERE owner=? AND deleted_at IS NULL ORDER BY created_at', (owner,))).fetchall()
+            'SELECT * FROM companion_chats WHERE owner=? AND deleted_at IS NULL ORDER BY created_at', (owner,))).fetchall()
     return [_chat(row, user_id) for row in rows]
 
 
@@ -156,7 +171,7 @@ async def update_chat(owner: str, user_id: str, chat_id: str, title: str | None)
     async with connect() as db:
         db.row_factory = aiosqlite.Row
         await _live_chat(db, owner, chat_id)
-        await db.execute('UPDATE airi_chats SET title=?, updated_at=? WHERE owner=? AND id=?',
+        await db.execute('UPDATE companion_chats SET title=?, updated_at=? WHERE owner=? AND id=?',
                          (title, time.time(), owner, chat_id))
         await db.commit()
         return _chat(await _live_chat(db, owner, chat_id), user_id)
@@ -168,9 +183,9 @@ async def delete_chat(owner: str, user_id: str, chat_id: str) -> dict:
     async with connect() as db:
         db.row_factory = aiosqlite.Row
         row = await _live_chat(db, owner, chat_id)
-        await db.execute('UPDATE airi_chats SET deleted_at=?, updated_at=? WHERE owner=? AND id=?',
+        await db.execute('UPDATE companion_chats SET deleted_at=?, updated_at=? WHERE owner=? AND id=?',
                          (now, now, owner, chat_id))
-        await db.execute('DELETE FROM airi_chat_messages WHERE owner=? AND chat_id=?', (owner, chat_id))
+        await db.execute('DELETE FROM companion_chat_messages WHERE owner=? AND chat_id=?', (owner, chat_id))
         await db.commit()
     chat = _chat(row, user_id)
     chat.update(deletedAt=_iso(now), updatedAt=_iso(now))
@@ -187,14 +202,14 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
         try:
             await _live_chat(db, owner, chat_id)
             max_seq = (await (await db.execute(
-                'SELECT COALESCE(MAX(seq), 0) FROM airi_chat_messages WHERE owner=? AND chat_id=?',
+                'SELECT COALESCE(MAX(seq), 0) FROM companion_chat_messages WHERE owner=? AND chat_id=?',
                 (owner, chat_id))).fetchone())[0]
             ids = [message['id'] for message in messages]
             existing = {}
             if ids:
                 marks = ','.join('?' * len(ids))
                 for row in await (await db.execute(
-                        f'SELECT id, chat_id, role, content, reply_to FROM airi_chat_messages '
+                        f'SELECT id, chat_id, role, content, reply_to FROM companion_chat_messages '
                         f'WHERE owner=? AND id IN ({marks})', (owner, *ids))).fetchall():
                     existing[row['id']] = dict(row)
             if any(row['chat_id'] != chat_id for row in existing.values()):
@@ -202,7 +217,7 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
             new_count = sum(1 for message_id in dict.fromkeys(ids) if message_id not in existing)
             if new_count:
                 total, chars = await (await db.execute(
-                    'SELECT COUNT(*), COALESCE(SUM(LENGTH(content)), 0) FROM airi_chat_messages WHERE owner=?',
+                    'SELECT COUNT(*), COALESCE(SUM(LENGTH(content)), 0) FROM companion_chat_messages WHERE owner=?',
                     (owner,))).fetchone()
                 added = sum(len(message['content']) for message in messages)
                 if total + new_count > MAX_MESSAGES or chars + added > MAX_CONTENT_CHARS:
@@ -219,25 +234,25 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
                     continue
                 seq += 1
                 if stored is not None:
-                    await db.execute('UPDATE airi_chat_messages SET content=?, reply_to=?, seq=?, updated_at=? '
+                    await db.execute('UPDATE companion_chat_messages SET content=?, reply_to=?, seq=?, updated_at=? '
                                      'WHERE owner=? AND id=?',
                                      (message['content'], message.get('replyToMessageId'), seq, now, owner,
                                       message['id']))
                 else:
-                    await db.execute('INSERT INTO airi_chat_messages (owner, id, chat_id, role, content, reply_to, '
+                    await db.execute('INSERT INTO companion_chat_messages (owner, id, chat_id, role, content, reply_to, '
                                      'seq, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
                                      (owner, message['id'], chat_id, message['role'], message['content'],
                                       message.get('replyToMessageId'), seq, now, now))
                 existing[message['id']] = {'chat_id': chat_id, 'role': message['role'], 'content': message['content'],
                                            'reply_to': message.get('replyToMessageId')}
             if seq > max_seq:
-                await db.execute('UPDATE airi_chats SET updated_at=? WHERE owner=? AND id=?', (now, owner, chat_id))
+                await db.execute('UPDATE companion_chats SET updated_at=? WHERE owner=? AND id=?', (now, owner, chat_id))
             await db.commit()
         except BaseException:
             await db.rollback()
             raise
         rows = await (await db.execute(
-            'SELECT * FROM airi_chat_messages WHERE owner=? AND chat_id=? AND seq>? ORDER BY seq',
+            'SELECT * FROM companion_chat_messages WHERE owner=? AND chat_id=? AND seq>? ORDER BY seq',
             (owner, chat_id, max_seq))).fetchall()
     return {'seq': seq, 'fromSeq': max_seq + 1, 'toSeq': seq, 'messages': [_wire(row, user_id) for row in rows]}
 
@@ -250,10 +265,10 @@ async def pull_messages(owner: str, user_id: str, chat_id: str, after_seq: int, 
         db.row_factory = aiosqlite.Row
         await _live_chat(db, owner, chat_id)
         rows = await (await db.execute(
-            'SELECT * FROM airi_chat_messages WHERE owner=? AND chat_id=? AND seq>? ORDER BY seq LIMIT ?',
+            'SELECT * FROM companion_chat_messages WHERE owner=? AND chat_id=? AND seq>? ORDER BY seq LIMIT ?',
             (owner, chat_id, after_seq, clamped))).fetchall()
         max_seq = (await (await db.execute(
-            'SELECT COALESCE(MAX(seq), 0) FROM airi_chat_messages WHERE owner=? AND chat_id=?',
+            'SELECT COALESCE(MAX(seq), 0) FROM companion_chat_messages WHERE owner=? AND chat_id=?',
             (owner, chat_id))).fetchone())[0]
     seq = rows[-1]['seq'] if rows and rows[-1]['seq'] < max_seq else max_seq
     return {'messages': [_wire(row, user_id) for row in rows], 'seq': seq}

@@ -1121,11 +1121,11 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   other devices at their next reconcile (a reload or a reconnect), not at once: the protocol has no deletion push, and
   upstream never removed such chats at all (fork patch since 2026-11-18).
 - **Identity**: `GET /api/companion/sync/session` (Peto session cookie) returns `userId` and `token`. `userId` is fixed
-  per account in `airi_sync_users` (since 2026-11-18): created once as `peto-` + 24 hex of
+  per account in `companion_sync_users` (since 2026-11-18): created once as `peto-` + 24 hex of
   HMAC-SHA256(`PETO_SESSION_SECRET`, `airi-sync:` + owner) (never the owner key or a Discord ID), then read from the
   table, so a new `PETO_SESSION_SECRET` no longer changes it (browsers keep their chats under it; a new id would look
   like a new user and strand messages still waiting to upload). Startup fills the table for every account in `users`
-  and `airi_chats` with the id it already had. Changing `PETO_SESSION_SECRET` still signs everyone out and voids the
+  and `companion_chats` with the id it already had. Changing `PETO_SESSION_SECRET` still signs everyone out and voids the
   sync tokens: open pages reconnect after a reload. `token` is signed by
   `features.accounts.auth.signer("peto-airi-chat-sync")` (same secret as the session cookie, its own salt, so neither
   works as the other), valid 30 days (`TOKEN_MAX_AGE`), carrying only the owner. The page fetches it on every load and
@@ -1153,8 +1153,10 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   AIRI's server returns 100 with the highest `seq`, and a device missed messages 101 onward of a long chat).
   Sockets are kept in process memory (Peto Web runs as one process), 20 per account, 100 waiting for authentication;
   the AIRI page off (`PETO_AIRI_DIR` unset) refuses the handshake.
-- **Storage**: `airi_chats` (PK owner+id; type, title, members JSON, created/updated/deleted) and `airi_chat_messages`
-  (PK owner+id; chat_id, role, content, reply_to, seq, times; index owner+chat_id+seq). Every query filters on owner,
+- **Storage**: `companion_chats` (PK owner+id; type, title, members JSON, created/updated/deleted) and
+  `companion_chat_messages`
+  (PK owner+id; chat_id, role, content, reply_to, seq, times; index owner+chat_id+seq). Named `airi_*` until
+  2026-11-18; startup renames the old tables in place, rows kept. Every query filters on owner,
   so the same chat or message id in two accounts never meets. A re-sent message id with a changed text updates it and
   gets a new `seq` (AIRI's rule, so edits reach other devices). A re-send that changes nothing (same role, text and
   reply) is skipped and keeps its `seq` (since 2026-11-18; AIRI's server bumps it anyway, which made old messages show
@@ -1173,6 +1175,15 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   and uploaded with its history, opened on the second browser, a new message pushed live).
 
 # Dated log (newest first)
+
+## AIRI page: sync tables renamed to companion_* (2026-11-18)
+
+At the owner's request (no "airi" in the database): `airi_chats`, `airi_chat_messages` and `airi_sync_users` are now
+`companion_chats`, `companion_chat_messages` and `companion_sync_users`, index `idx_companion_chat_messages_seq`.
+`storage/airi_chats.py` renames the old tables with `ALTER TABLE … RENAME TO` at startup when the new name does not
+exist yet, so rows and sync ids stay; `test_startup_renames_the_old_airi_tables_keeping_their_rows`. The code files
+keep their `airi_` names (they serve the AIRI page and protocol); the HMAC input `airi-sync:` is unchanged, since it
+gives the ids already in use.
 
 ## AIRI page: chat sync fixes, round two (2026-11-18)
 

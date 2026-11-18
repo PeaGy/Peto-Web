@@ -34,8 +34,8 @@ def empty_sync_tables():
     async def clear():
         await db.init_db()
         async with db.connection.connect() as conn:
-            await conn.execute("DELETE FROM airi_chat_messages")
-            await conn.execute("DELETE FROM airi_chats")
+            await conn.execute("DELETE FROM companion_chat_messages")
+            await conn.execute("DELETE FROM companion_chats")
             await conn.commit()
     asyncio.run(clear())
 
@@ -112,13 +112,42 @@ async def test_sync_id_survives_a_change_of_the_session_secret(client, monkeypat
 async def test_startup_keeps_the_ids_already_in_use(client):
     """Each existing account keeps the id it had before ids were stored (the HMAC of the current secret)."""
     async with db.connection.connect() as conn:
-        await conn.execute("DELETE FROM airi_sync_users WHERE owner=?", (TEST_OWNER,))
+        await conn.execute("DELETE FROM companion_sync_users WHERE owner=?", (TEST_OWNER,))
         await conn.commit()
     await db.init_db()
     async with db.connection.connect() as conn:
-        row = await (await conn.execute("SELECT user_id FROM airi_sync_users WHERE owner=?", (TEST_OWNER,))).fetchone()
+        row = await (await conn.execute("SELECT user_id FROM companion_sync_users WHERE owner=?", (TEST_OWNER,))).fetchone()
     assert row[0] == airi_chats.derived_user_id(TEST_OWNER)
     assert row[0].startswith("peto-") and TEST_DISCORD_ID not in row[0]
+
+
+async def test_startup_renames_the_old_airi_tables_keeping_their_rows(client):
+    """Bảng trước 18/11/2026 tên airi_*: khởi động đổi sang companion_* và giữ nguyên dữ liệu."""
+    async with db.connection.connect() as conn:
+        await conn.execute("INSERT INTO companion_chats (owner, id, type, members, created_at, updated_at) "
+                           "VALUES (?, 'old', 'bot', '[]', 1, 1)", (TEST_OWNER,))
+        await conn.execute("INSERT INTO companion_chat_messages (owner, id, chat_id, role, content, seq, created_at, "
+                           "updated_at) VALUES (?, 'm1', 'old', 'user', 'xin chào', 1, 1, 1)", (TEST_OWNER,))
+        user_id = (await (await conn.execute("SELECT user_id FROM companion_sync_users WHERE owner=?",
+                                             (TEST_OWNER,))).fetchone())[0]
+        await conn.execute("DROP INDEX idx_companion_chat_messages_seq")
+        await conn.execute("CREATE INDEX idx_airi_chat_messages_seq ON companion_chat_messages(owner, chat_id, seq)")
+        for old, new in airi_chats._OLD_TABLES:
+            await conn.execute(f"ALTER TABLE {new} RENAME TO {old}")
+        await conn.commit()
+    await db.init_db()
+    async with db.connection.connect() as conn:
+        tables = {r[0] for r in await (await conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'index')")).fetchall()}
+        message = await (await conn.execute(
+            "SELECT content FROM companion_chat_messages WHERE owner=? AND id='m1'", (TEST_OWNER,))).fetchone()
+        kept_id = (await (await conn.execute("SELECT user_id FROM companion_sync_users WHERE owner=?",
+                                             (TEST_OWNER,))).fetchone())[0]
+    assert not {name for name in tables if "airi" in name}
+    assert {"companion_chats", "companion_chat_messages", "companion_sync_users",
+            "idx_companion_chat_messages_seq"} <= tables
+    assert message[0] == "xin chào" and kept_id == user_id
+    assert (await client.get(f"{PREFIX}/api/v1/chats/old", headers=bearer())).status_code == 200
 
 
 async def test_session_needs_sign_in_and_the_airi_page(anon_client, client, monkeypatch):
@@ -312,7 +341,7 @@ def test_message_of_another_chat_is_refused_and_delete_drops_messages(ws_client)
     async def remaining():
         async with db.connection.connect() as conn:
             return (await (await conn.execute(
-                "SELECT COUNT(*) FROM airi_chat_messages WHERE owner=? AND chat_id='a'", (TEST_OWNER,))).fetchone())[0]
+                "SELECT COUNT(*) FROM companion_chat_messages WHERE owner=? AND chat_id='a'", (TEST_OWNER,))).fetchone())[0]
     assert asyncio.run(remaining()) == 0
 
 
