@@ -1143,8 +1143,11 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   the AIRI page off (`PETO_AIRI_DIR` unset) refuses the handshake.
 - **Storage**: `airi_chats` (PK owner+id; type, title, members JSON, created/updated/deleted) and `airi_chat_messages`
   (PK owner+id; chat_id, role, content, reply_to, seq, times; index owner+chat_id+seq). Every query filters on owner,
-  so the same chat or message id in two accounts never meets. A re-sent message id updates the text and gets a new
-  `seq` (AIRI's rule, so edits reach other devices); an id that belongs to another chat of the account is refused.
+  so the same chat or message id in two accounts never meets. A re-sent message id with a changed text updates it and
+  gets a new `seq` (AIRI's rule, so edits reach other devices). A re-send that changes nothing (same role, text and
+  reply) is skipped and keeps its `seq` (since 2026-11-18; AIRI's server bumps it anyway, which made old messages show
+  up as the newest on a device that pulled them: the browser retries an upload whose reply it lost, and an open tab of
+  an older build can upload old chats again). An id that belongs to another chat of the account is refused.
   Deleting a chat marks the chat row deleted and deletes its messages (AIRI keeps them). Caps per account, only
   against abuse: 1,000 live chats, 100,000 messages, about 1 GB of text (`storage/airi_chats.py`); per call 500
   messages and 1,000,000 characters per message. A full account gets "Chỗ đồng bộ hội thoại của tài khoản đã đầy…";
@@ -1158,6 +1161,15 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   and uploaded with its history, opened on the second browser, a new message pushed live).
 
 # Dated log (newest first)
+
+## AIRI page: chat sync fixes (2026-11-18)
+
+The owner saw old messages appear as the newest and sync trouble between two devices. Not reproduced with the mock in
+a plain run, but three causes were found and fixed: identical re-sends no longer move a message forward (above);
+closing a socket the browser already left no longer logs an exception; and in the fork the page gets its Peto
+identity only after it has loaded, token before user (it used to open a socket without a token on every load, and its
+first chat list could hit AIRI's 10-second timeout while the page still loaded, which skipped that sync round). Fork
+`PETO.md`, "Chat sync".
 
 ## AIRI page: chat sync between devices (2026-11-17)
 

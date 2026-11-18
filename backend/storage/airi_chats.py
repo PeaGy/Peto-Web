@@ -160,9 +160,9 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
             if ids:
                 marks = ','.join('?' * len(ids))
                 for row in await (await db.execute(
-                        f'SELECT id, chat_id, content FROM airi_chat_messages WHERE owner=? AND id IN ({marks})',
-                        (owner, *ids))).fetchall():
-                    existing[row['id']] = row
+                        f'SELECT id, chat_id, role, content, reply_to FROM airi_chat_messages '
+                        f'WHERE owner=? AND id IN ({marks})', (owner, *ids))).fetchall():
+                    existing[row['id']] = dict(row)
             if any(row['chat_id'] != chat_id for row in existing.values()):
                 raise SyncError(409, 'Tin nhắn này đã thuộc một cuộc trò chuyện khác.')
             new_count = sum(1 for message_id in dict.fromkeys(ids) if message_id not in existing)
@@ -176,8 +176,15 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
                                          'rồi thử lại nhé.')
             seq = max_seq
             for message in messages:
+                stored = existing.get(message['id'])
+                if stored is not None and (stored['role'], stored['content'], stored.get('reply_to')) == (
+                        message['role'], message['content'], message.get('replyToMessageId')):
+                    # Gửi lại y hệt (trình duyệt thử lại khi mất lời đáp, hay một tab bản cũ gửi lại tin cũ): không
+                    # đổi gì, giữ nguyên seq. Máy chủ AIRI cấp seq mới cả khi y hệt, nên tin cũ nhảy xuống cuối trên
+                    # máy kéo về (chủ web gặp ngày 18/11/2026).
+                    continue
                 seq += 1
-                if message['id'] in existing:
+                if stored is not None:
                     await db.execute('UPDATE airi_chat_messages SET content=?, reply_to=?, seq=?, updated_at=? '
                                      'WHERE owner=? AND id=?',
                                      (message['content'], message.get('replyToMessageId'), seq, now, owner,
@@ -187,8 +194,10 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
                                      'seq, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
                                      (owner, message['id'], chat_id, message['role'], message['content'],
                                       message.get('replyToMessageId'), seq, now, now))
-                    existing[message['id']] = message
-            await db.execute('UPDATE airi_chats SET updated_at=? WHERE owner=? AND id=?', (now, owner, chat_id))
+                existing[message['id']] = {'chat_id': chat_id, 'role': message['role'], 'content': message['content'],
+                                           'reply_to': message.get('replyToMessageId')}
+            if seq > max_seq:
+                await db.execute('UPDATE airi_chats SET updated_at=? WHERE owner=? AND id=?', (now, owner, chat_id))
             await db.commit()
         except BaseException:
             await db.rollback()

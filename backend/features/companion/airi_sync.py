@@ -414,7 +414,8 @@ async def chat_socket(websocket: WebSocket):
 
 
 async def _close(websocket: WebSocket, code: int, reason: str) -> None:
+    """Đóng kết nối; trình duyệt đã tự ngắt trước (ví dụ AIRI đóng khi chưa có mã) thì thôi, không ghi lỗi."""
     try:
         await websocket.close(code=code, reason=reason)
-    except RuntimeError:
+    except (RuntimeError, WebSocketDisconnect):
         pass
