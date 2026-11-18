@@ -208,8 +208,15 @@ message with no text (attachments only) skips it since the title call cannot see
 The mock provider recognises the request by `titles.TITLE_MARKER`; provider spies in tests
 must filter it out or they capture the title call instead of the chat call.
 
-`effort` is `auto` by default and resolved by `ai/routing.py`, which keyword-matches the
-user text (math/technical markers give `medium`, multi-step reasoning markers give `high`).
+`effort` is `auto` by default and resolved by `ai/routing.choose_effort`. Since G2.2 (2026-11-18) markers match
+whole words on lowercased, unaccented text ("thanh toán" is not math, "rapid" does not contain "api"; bare "toán" is
+no longer a marker, only "bài toán", "giải toán", "toán học"…). Order: a short greeting or thanks with no files is
+always `low`; multi-step reasoning markers give `high`; math (including expressions and trig, checked on the accented
+text so "và/hoặc" is not a division) or technical markers give `medium`; writing, comparing or reviewing markers
+("bài luận", "phân tích", "so sánh", "ưu nhược", "đánh giá", "review", "essay", "compare"…) or a length of
+500+ words ("1500 chữ") give `medium`; in the Chat tab only, any attached or selected project file, document mode,
+a message of 600+ characters or a code block (fence or indented line) give `medium`; otherwise `low`. Companion
+passes no files or document flag. Tests: `tests/test_effort_routing.py` (the audit's #8 table, greetings, signals).
 
 **Time limits stop a stuck turn, not a busy one** (2026-10-05). Before, `RESPONSE_TIMEOUTS` (180/300/480 s by effort)
 capped the whole turn, and an Excel edit was cut at 5 minutes while Peto was still working.
@@ -478,6 +485,14 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Auto effort by whole words and non-keyword signals (G2.2) (2026-11-18, branch `g2.2-effort-pick`, not merged)
+
+Audit package G2.2; current behaviour is in the `effort` paragraph above. The audit's table now passes: the essay, the
+business comparison and the lease review go to `medium`, "thanh toán hóa đơn" and "rapid prototyping" stay `low`.
+The plan wanted numbers from the G2.1 LIVE eval first; that eval was never run (it runs on the VPS, not through the
+app's request). The live check after deploying is cheaper: send a few messages on Tự động and read the resolved
+`effort` of their `turn` rows in `usage_events`.
 
 ## Regenerating a silent reply stays in the same chat (2026-11-17, branch `retry-silent-in-place`, not merged)
 

@@ -73,14 +73,14 @@ import logging
 
 logger = logging.getLogger("peto_web")
 
-def _resolve_effort(requested: str | None, text: str) -> str:
+def _resolve_effort(requested: str | None, text: str, *, attachments: int = 0, document: bool = False) -> str:
     value = (requested or "auto").strip().lower()
     if value not in ALLOWED_EFFORTS:
         raise HTTPException(
             status_code=400,
             detail="Mức suy nghĩ không hợp lệ.",
         )
-    return choose_effort(text) if value == "auto" else value
+    return choose_effort(text, attachments=attachments, document=document) if value == "auto" else value
 
 
 def _resolve_mode(requested: str) -> str:
@@ -248,8 +248,10 @@ async def _resolve_turn(request: ChatRequest, owner: str, http_request: Request 
     if not text and not files and not request.branch_message_id:
         raise HTTPException(status_code=400, detail="Tin nhắn trống")
 
-    effort = _resolve_effort(request.effort, text)
     mode = _resolve_mode(request.mode)
+    # Tab Trò chuyện: tệp gửi kèm, tệp dự án được chọn và chế độ tài liệu cũng là dấu hiệu cần nghĩ kỹ hơn (G2.2).
+    effort = _resolve_effort(request.effort, text, attachments=len(files) + len(request.project_file_ids)
+                             if mode == 'chat' else 0, document=bool(request.document_mode) and mode == 'chat')
     if request.player_control is not None and mode != 'companion':
         raise HTTPException(400, 'Player chỉ điều khiển từ Companion.')
     if request.quote_id is not None and (mode != 'companion' or request.branch_message_id):
