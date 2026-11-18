@@ -1,4 +1,4 @@
-"""6 Luna, 5.6 Terra và 6.1 Sol qua Responses API của OpenAI, dùng ``OPENAI_API_KEY`` của máy chủ.
+"""Các model GPT qua Responses API của OpenAI, dùng ``OPENAI_API_KEY`` của máy chủ.
 
 Vòng công cụ, tìm web và nguồn tham khảo dùng chung với Peto (``ResponsesProvider`` trong ``ai/xai.py``). Ai được
 chọn model nào thì ``ai_models.py`` kiểm trước khi tới đây.
@@ -12,7 +12,7 @@ from core.config import OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS
 
 from .base import ProviderError
 from .xai import ResponsesProvider
-from ai.models import OPENAI_EFFORTS
+from ai.models import OPENAI_EFFORTS, OPENAI_REASONING_REQUIRED
 
 
 class GPTProvider(ResponsesProvider):
@@ -26,8 +26,8 @@ class GPTProvider(ResponsesProvider):
 
     def __init__(self, slug: str, label: str) -> None:
         self.model = slug
-        if slug == "gpt-6.1-sol":
-            self.supported_efforts = ("low", "medium", "high", "xhigh", "max")
+        if slug in OPENAI_REASONING_REQUIRED:
+            self.supported_efforts = OPENAI_EFFORTS[1:]
         self.max_output_tokens = OPENAI_MAX_OUTPUT_TOKENS
         self.rate_limit_message = (f"{label} đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Chọn Peto để chat tiếp, "
                                    "hoặc thử lại sau nhé.")

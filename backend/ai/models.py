@@ -1,10 +1,10 @@
 """Các model người dùng chọn được: Peto, dòng GPT của OpenAI và Haiku/Sonnet 5.5 của Claude.
 
 Chủ web chốt:
-- Web có Peto, 6 Luna và Haiku 5.5 (nút chọn model cạnh nút Gửi). Peto Agent có thêm 5.6 Terra,
-  6.1 Sol và Sonnet 5.5 (lệnh /model).
-- 6 Luna dùng được với mọi tài khoản đã đăng nhập (Discord, Google, GitHub). 5.6 Terra và 6.1 Sol chỉ dành cho
-  tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``. Terra giữ slug 5.6 cho đến khi OpenAI có bản GPT-6.
+- Web có Peto, 6 Luna và Haiku 5.5 (nút chọn model cạnh nút Gửi). Peto Agent có thêm 6.1 Terra,
+  6.2 Sol và Sonnet 5.5 (lệnh /model).
+- 6 Luna dùng được với mọi tài khoản đã đăng nhập (Discord, Google, GitHub). 6.1 Terra và 6.2 Sol chỉ dành cho
+  tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``.
 - Trong Peto Agent, bước tính theo giá: Luna 1, Terra 2, Sol 4, nhân với mức suy nghĩ (mức cao tính gấp đôi).
 - Haiku dùng được với mọi tài khoản đã đăng nhập; Sonnet chỉ dành cho chủ web trong Agent. Cả hai nhận năm mức
   suy nghĩ của Claude và tính bước theo hạn mức Peto: Haiku 1, Sonnet 2 trước khi nhân mức suy nghĩ.
@@ -21,14 +21,16 @@ from core import config
 
 DEFAULT_MODEL = "peto"
 OPENAI_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+OPENAI_REASONING_REQUIRED = {"gpt-6.1-sol", "gpt-6.2-sol"}
 PETO_EFFORTS = ("low", "medium", "high")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 def supported_efforts(key: str) -> tuple[str, ...]:
-    if key == "sol":
-        return ("low", "medium", "high", "xhigh", "max")
-    return {"openai": OPENAI_EFFORTS, "anthropic": CLAUDE_EFFORTS}.get(MODELS[key].service, PETO_EFFORTS)
+    model = MODELS[key]
+    if model.slug in OPENAI_REASONING_REQUIRED:
+        return OPENAI_EFFORTS[1:]
+    return {"openai": OPENAI_EFFORTS, "anthropic": CLAUDE_EFFORTS}.get(model.service, PETO_EFFORTS)
 
 
 @dataclass(frozen=True)
@@ -49,9 +51,9 @@ class Model:
 MODELS: dict[str, Model] = {
     "peto": Model("peto", "Peto", "Mặc định", "xai", "", 1, web=True, owner_only=False),
     "luna": Model("luna", "6 Luna", "Nhanh, của OpenAI", "openai", "gpt-6-luna", 1, web=True, owner_only=False),
-    "terra": Model("terra", "5.6 Terra", "Cân bằng, của OpenAI", "openai", "gpt-5.6-terra", 2, web=False,
+    "terra": Model("terra", "6.1 Terra", "Cân bằng, của OpenAI", "openai", "gpt-6.1-terra", 2, web=False,
                    owner_only=True),
-    "sol": Model("sol", "6.1 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-6.1-sol", 4, web=False, owner_only=True),
+    "sol": Model("sol", "6.2 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-6.2-sol", 4, web=False, owner_only=True),
     "haiku": Model("haiku", "Haiku 5.5", "Nhanh, của Claude", "anthropic", "claude-haiku-5-5", 1,
                    web=True, owner_only=False),
     "sonnet": Model("sonnet", "Sonnet 5.5", "Cân bằng, của Claude", "anthropic", "claude-sonnet-5-5", 2,

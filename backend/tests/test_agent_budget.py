@@ -16,7 +16,9 @@ def test_catalog_limits_are_per_actual_model_and_deployment_cap(monkeypatch):
     monkeypatch.setattr(config, 'AGENT_MODEL', 'grok-4.7')
     assert budget.limits('peto')['context'] == 500000
     assert budget.limits('sol')['context'] == 1050000
-    assert budget.limits('sol')['identity'] == 'openai/gpt-6.1-sol'
+    assert budget.limits('sol')['identity'] == 'openai/gpt-6.2-sol'
+    assert budget.limits('terra')['identity'] == 'openai/gpt-6.1-terra'
+    assert budget.limits('terra')['context'] == 1050000
     assert budget.limits('sol')['output'] == config.OPENAI_AGENT_MAX_OUTPUT_TOKENS == 128000
     # Agent có trần riêng như các model lớn (15/11/2026), không bị trần đầu ra của Chat (8192 với Grok) chặn.
     assert budget.limits('peto')['output'] == config.XAI_AGENT_MAX_OUTPUT_TOKENS == 128000
@@ -78,13 +80,23 @@ async def test_sol_routes_new_api_id_with_supported_efforts_and_no_key_leak(clie
     monkeypatch.setattr(agent, '_openai_client', SimpleNamespace(responses=SimpleNamespace(create=create)))
     me = (await anon_client.get('/api/agent/me', headers=bearer(token))).json()
     sol = next(row for row in me['models'] if row['key'] == 'sol')
-    assert sol['label'] == '6.1 Sol' and sol['step_cost'] == 4 and 'none' not in sol['efforts']
+    assert sol['label'] == '6.2 Sol' and sol['step_cost'] == 4 and 'none' not in sol['efforts']
     assert 'fake-test-key' not in str(me)
     body = {'model':'sol', 'effort':'none', 'input':[{'type':'message','role':'user','content':'hi'}]}
     assert (await anon_client.post('/api/agent/step',headers=bearer(token),json=body)).status_code == 400
     body['effort'] = 'low'
     assert events_of(await anon_client.post('/api/agent/step',headers=bearer(token),json=body))[-1]['type'] == 'done'
-    assert calls[0]['model'] == 'gpt-6.1-sol' and calls[0]['reasoning']['effort'] == 'low'
+    assert calls[0]['model'] == 'gpt-6.2-sol' and calls[0]['reasoning']['effort'] == 'low'
+    listing = (await anon_client.get('/api/agent/v1/models', headers=bearer(token))).json()
+    listed = {row['id']: row for row in listing['data']}
+    assert listed['sol']['display_name'] == '6.2 Sol' and 'none' not in listed['sol']['reasoning_efforts']
+    assert listed['terra']['display_name'] == '6.1 Terra' and 'none' in listed['terra']['reasoning_efforts']
+    for key, slug in [('sol', 'gpt-6.2-sol'), ('terra', 'gpt-6.1-terra')]:
+        response = await anon_client.post('/api/agent/v1/responses', headers=bearer(token), json={
+            'model': key, 'stream': True, 'input': body['input'], 'reasoning': {'effort': 'low'},
+        })
+        assert response.status_code == 200 and 'response.completed' in response.text
+        assert calls[-1]['model'] == slug
     result = [event async for event in agent.agent_step(instructions='system', input_items=body['input'], tools=[],
                                                        model='sol', effort='low', max_output_tokens=2048)]
     assert result[-1].kind == 'done' and calls[-1]['max_output_tokens'] == 2048

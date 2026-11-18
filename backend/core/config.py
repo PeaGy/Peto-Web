@@ -60,7 +60,7 @@ XAI_TOKEN_PATH = Path(
 )
 
 # --- OpenAI (dòng GPT-6, xem ai_models.py) -------------------------------------
-# Khóa API cho 6 Luna, 5.6 Terra và 6.1 Sol, tính tiền vào billing OpenAI của chủ web; để trống thì chỉ còn Peto. Khóa chỉ
+# Khóa API cho 6 Luna, 6.1 Terra và 6.2 Sol, tính tiền vào billing OpenAI của chủ web. Khóa chỉ
 # dùng ở máy chủ, không bao giờ gửi xuống trình duyệt hay CLI.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 # Model suy luận tính cả token suy nghĩ vào giới hạn này, nên để rộng hơn của Grok.
@@ -83,7 +83,7 @@ def parse_owner_accounts(raw: str) -> frozenset[str]:
     return frozenset(item if ":" in item else f"discord:{item}" for item in items if item)
 
 
-# Tài khoản của chủ web, được dùng 5.6 Terra, 6.1 Sol và Sonnet 5.5 trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
+# Tài khoản của chủ web, được dùng 6.1 Terra, 6.2 Sol và Sonnet 5.5 trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
 # discord:<Discord ID>, google:<mã Google> hoặc github:<mã số GitHub>.
 OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 
