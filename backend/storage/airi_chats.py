@@ -24,8 +24,11 @@ MEMBER_TYPES = ('character', 'bot')
 MAX_CHATS = 1_000
 MAX_MESSAGES = 100_000
 MAX_CONTENT_CHARS = 1_000_000_000  # tổng chữ đã lưu của một tài khoản (khoảng 1 GB)
-PULL_DEFAULT = 100
+# Kéo tin: có ``limit`` thì tối đa 500 như AIRI; không có (trình duyệt AIRI luôn kéo không kèm limit) thì trả cả đoạn,
+# tới trần ``PULL_ALL_MAX``. Máy chủ AIRI trả 100 tin mà vẫn báo seq lớn nhất, nên trình duyệt nhảy con trỏ qua phần
+# còn lại và không bao giờ kéo nó (chủ web gặp ngày 18/11/2026 với hội thoại 179 tin).
 PULL_MAX = 500
+PULL_ALL_MAX = 10_000
 
 
 class SyncError(Exception):
@@ -209,8 +212,9 @@ async def push_messages(owner: str, user_id: str, chat_id: str, messages: list[d
 
 
 async def pull_messages(owner: str, user_id: str, chat_id: str, after_seq: int, limit: int | None) -> dict:
-    """Các tin có ``seq`` lớn hơn ``after_seq`` (tối đa ``limit``, mặc định 100, trần 500) và ``seq`` lớn nhất."""
-    clamped = PULL_DEFAULT if not limit or limit <= 0 else min(limit, PULL_MAX)
+    """Các tin có ``seq`` lớn hơn ``after_seq`` theo thứ tự, và ``seq``: seq lớn nhất của hội thoại, hoặc seq của tin
+    cuối đã trả khi còn tin chưa trả (để con trỏ của trình duyệt không vượt qua phần chưa kéo)."""
+    clamped = PULL_ALL_MAX if not limit or limit <= 0 else min(limit, PULL_MAX)
     async with connect() as db:
         db.row_factory = aiosqlite.Row
         await _live_chat(db, owner, chat_id)
@@ -220,4 +224,5 @@ async def pull_messages(owner: str, user_id: str, chat_id: str, after_seq: int, 
         max_seq = (await (await db.execute(
             'SELECT COALESCE(MAX(seq), 0) FROM airi_chat_messages WHERE owner=? AND chat_id=?',
             (owner, chat_id))).fetchone())[0]
-    return {'messages': [_wire(row, user_id) for row in rows], 'seq': max_seq}
+    seq = rows[-1]['seq'] if rows and rows[-1]['seq'] < max_seq else max_seq
+    return {'messages': [_wire(row, user_id) for row in rows], 'seq': seq}

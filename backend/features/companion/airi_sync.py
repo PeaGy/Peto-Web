@@ -344,9 +344,10 @@ async def _handle(peer: _Peer, owner: str, user_id: str, name: str, invoke_id: s
         await peer.send(reply_error(name, invoke_id, "Máy chủ Peto gặp lỗi khi đồng bộ. Thử lại sau nhé."))
 
 
-async def _authenticate(websocket: WebSocket) -> tuple[str, str, str] | None:
-    """Đợi lời gọi xác thực trong ``AUTH_TIMEOUT_SECONDS``. Trả (owner, tên lời gọi, invokeId), hoặc None nếu mã sai,
-    quá hạn, khung quá lớn, hay có lời gọi khác trước.
+async def _authenticate(websocket: WebSocket) -> tuple[str, str, str] | int:
+    """Đợi lời gọi xác thực trong ``AUTH_TIMEOUT_SECONDS``. Trả (owner, tên lời gọi, invokeId), hoặc mã đóng:
+    ``CLOSE_TRY_AGAIN_LATER`` khi quá hạn hay trình duyệt rời đi, ``CLOSE_UNAUTHORIZED`` khi mã sai, khung quá lớn hay
+    có lời gọi khác trước.
 
     Bỏ qua vài khung không phải lời gọi đến trước: eventa gửi sự kiện "đã kết nối" của chính nó khi ngữ cảnh được dựng
     trước lúc socket mở (trình duyệt AIRI dựng sau nên không gửi, một client eventa khác thì có thể)."""
@@ -356,19 +357,23 @@ async def _authenticate(websocket: WebSocket) -> tuple[str, str, str] | None:
             async with asyncio.timeout_at(deadline):
                 message = await websocket.receive()
         except (TimeoutError, WebSocketDisconnect, RuntimeError):
-            return None
+            # Quá hạn hay trình duyệt rời đi: thử lại được (như máy chủ AIRI). 4001 ở đây làm trình duyệt ngừng hẳn việc
+            # tự kết nối lại tới khi tải lại trang, và tin chỉ nằm chờ trên máy đó (chủ web gặp ngày 17–18/11/2026).
+            return CLOSE_TRY_AGAIN_LATER
+        if message.get("type") == "websocket.disconnect":
+            return CLOSE_TRY_AGAIN_LATER
         text = message.get("text")
         if not isinstance(text, str) or len(text) > MAX_AUTH_FRAME_BYTES:
-            return None
+            return CLOSE_UNAUTHORIZED
         request = parse_request(text)
         if request is None:
             continue
         name, invoke_id, content = request
         if name != "chat:authenticate":
-            return None
+            return CLOSE_UNAUTHORIZED
         owner = token_owner(content.get("token") if isinstance(content, dict) else None)
-        return (owner, name, invoke_id) if owner else None
-    return None
+        return (owner, name, invoke_id) if owner else CLOSE_UNAUTHORIZED
+    return CLOSE_UNAUTHORIZED
 
 
 @router.websocket(PREFIX + "/ws/v2/chat")
@@ -383,8 +388,8 @@ async def chat_socket(websocket: WebSocket):
         auth = await _authenticate(websocket)
     finally:
         _unauthenticated -= 1
-    if auth is None:
-        await _close(websocket, CLOSE_UNAUTHORIZED, "unauthorized")
+    if isinstance(auth, int):
+        await _close(websocket, auth, "unauthorized" if auth == CLOSE_UNAUTHORIZED else "authentication timeout")
         return
     owner, name, invoke_id = auth
     peers = _peers.setdefault(owner, {})

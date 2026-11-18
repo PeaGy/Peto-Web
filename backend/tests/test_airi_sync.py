@@ -234,7 +234,9 @@ def test_send_pull_and_fanout_to_the_other_devices_of_the_account(ws_client):
         pulled = call(laptop, "chat:pull-messages", {"chatId": "chat-1", "afterSeq": 1}, "p1")["body"]["content"]
         assert pulled["seq"] == 3 and [(m["id"], m["seq"]) for m in pulled["messages"]] == [("m2", 3)]
         limited = call(laptop, "chat:pull-messages", {"chatId": "chat-1", "afterSeq": 0, "limit": 1}, "p2")
-        assert len(limited["body"]["content"]["messages"]) == 1
+        # Cut short: the reported seq is the last one returned, so the cursor of the browser cannot skip the rest.
+        assert [m["seq"] for m in limited["body"]["content"]["messages"]] == [1]
+        assert limited["body"]["content"]["seq"] == 1
 
         # Tài khoản khác cùng mã hội thoại không thấy gì và không nhận tin.
         theirs = call(stranger, "chat:pull-messages", {"chatId": "chat-1", "afterSeq": 0}, "p3")
@@ -313,6 +315,31 @@ def test_identical_resend_keeps_the_place_of_old_messages(ws_client):
     finally:
         for manager in (phone_cm, laptop_cm):
             manager.__exit__(None, None, None)
+
+
+def test_a_pull_without_limit_returns_the_whole_chat(ws_client):
+    """AIRI's browser pulls without a limit. A long chat must come whole, not the first 100 with the last seq."""
+    _create(TEST_OWNER, "long")
+    manager, ws = open_socket(ws_client)
+    try:
+        for start in range(0, 180, 60):
+            batch = [{"id": f"m{i}", "role": "user" if i % 2 == 0 else "assistant", "content": f"tin {i}"}
+                     for i in range(start, start + 60)]
+            call(ws, "chat:send-messages", {"chatId": "long", "messages": batch}, f"s{start}")
+        pulled = call(ws, "chat:pull-messages", {"chatId": "long", "afterSeq": 0}, "all")["body"]["content"]
+        assert pulled["seq"] == 180 and len(pulled["messages"]) == 180
+        assert [m["seq"] for m in pulled["messages"]] == list(range(1, 181))
+    finally:
+        manager.__exit__(None, None, None)
+
+
+def test_authentication_timeout_lets_the_browser_retry(ws_client, monkeypatch):
+    # 4001 makes AIRI stop reconnecting until the page reloads; a slow authentication must not cause that.
+    monkeypatch.setattr(airi_sync, "AUTH_TIMEOUT_SECONDS", 0.2)
+    with ws_client.websocket_connect(PREFIX + "/ws/v2/chat") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_text()
+        assert closed.value.code == airi_sync.CLOSE_TRY_AGAIN_LATER
 
 
 def test_a_browser_that_leaves_before_authenticating_is_no_error(ws_client):
