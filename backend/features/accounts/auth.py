@@ -1,6 +1,6 @@
 """Đăng nhập bằng Discord, Google hoặc GitHub. Đăng nhập khách đã bỏ ngày 6/10/2026.
 
-Email (mã 6 số) và Steam (OpenID 2.0) nằm ở ``email_login.py`` và ``steam_login.py``, dùng chung cookie phiên ở đây.
+Đăng nhập bằng mã gửi qua email nằm ở ``email_login.py``, dùng chung cookie phiên ở đây.
 
 Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
 - Chỉ ánh xạ danh tính SAU KHI máy chủ tự đổi code lấy token và tự hỏi Discord
@@ -95,9 +95,9 @@ def github_configured() -> bool:
 
 def available_providers() -> dict[str, bool]:
     """Cách nào đang dùng được (đã cấu hình khóa)."""
-    from features.accounts import email_login, steam_login
+    from features.accounts import email_login
     return {"discord": is_configured(), "google": google_configured(), "github": github_configured(),
-            "email": email_login.configured(), "steam": steam_login.configured()}
+            "email": email_login.configured()}
 
 
 def account_id(owner: str) -> str:

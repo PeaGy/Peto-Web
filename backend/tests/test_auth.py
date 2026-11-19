@@ -94,7 +94,7 @@ async def test_google_login_bao_loi_khi_chua_cau_hinh(anon_client, monkeypatch):
     monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "")
     assert (await anon_client.get("/api/auth/google/login")).status_code == 503
     assert auth.available_providers() == {
-        "discord": True, "google": False, "github": True, "email": True, "steam": True,
+        "discord": True, "google": False, "github": True, "email": True,
     }
 
 
@@ -231,7 +231,7 @@ async def test_guest_login_is_gone_and_old_guest_cookies_sign_out(anon_client):
 
 async def test_me_liet_ke_cac_cach_dang_nhap(anon_client):
     body = (await anon_client.get("/api/auth/me")).json()
-    assert body["providers"] == {"discord": True, "google": True, "github": True, "email": True, "steam": True}
+    assert body["providers"] == {"discord": True, "google": True, "github": True, "email": True}
     assert body["login_configured"] is True
 
 

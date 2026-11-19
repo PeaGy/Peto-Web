@@ -37,12 +37,10 @@ os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-client-secret"
 os.environ["GITHUB_LOGIN_CLIENT_ID"] = "test-github-client-id"
 os.environ["GITHUB_LOGIN_CLIENT_SECRET"] = "test-github-client-secret"
 os.environ["PETO_SESSION_SECRET"] = "test-session-secret"
-# Email và Steam: khóa Resend giả (thư không bao giờ gửi thật, xem fixture sent_emails), callback Steam giả.
+# Đăng nhập email: khóa Resend giả, thư không bao giờ gửi thật (xem fixture sent_emails).
 os.environ["RESEND_API_KEY"] = "test-resend-key"
 os.environ["PETO_EMAIL_FROM"] = "Peto <no-reply@peto.test>"
 os.environ["PETO_EMAIL_REPLY_TO"] = ""
-os.environ["STEAM_REDIRECT_URI"] = "http://test/api/auth/steam/callback"
-os.environ["STEAM_API_KEY"] = ""
 TEST_DISCORD_ID = "111111111111111111"
 # Người dùng thứ hai, dùng cho các bài kiểm tra cách ly dữ liệu. Không còn
 # allowlist nên đây chỉ là "một người khác", không phải "người bị chặn".

@@ -7,7 +7,7 @@ from features.agent import gateway as agent_gateway
 from features.agent import desktop_release
 from features.agent import desktop_update
 from features.agent import install as agent_install
-from features.accounts import auth, email_login, steam_login
+from features.accounts import auth, email_login
 from features.documents import api as document_api
 from features.imagine import api as imagine_api
 from features.companion import memory_api
@@ -46,7 +46,6 @@ app.add_middleware(
 )
 app.include_router(auth.router)
 app.include_router(email_login.router)
-app.include_router(steam_login.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
 app.include_router(discord_memory_api.router)

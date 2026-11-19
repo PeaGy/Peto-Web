@@ -1,18 +1,17 @@
-"""Đăng nhập bằng email (mã 6 số qua Resend) và bằng Steam (OpenID 2.0). Không gọi mạng thật."""
+"""Đăng nhập bằng email: mã 6 số gửi qua Resend. Không gọi mạng thật."""
 
 from __future__ import annotations
 
 import re
 import sqlite3
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
 
 from core import config
 from core.config import DB_PATH, SESSION_COOKIE, discord_id_from_owner
-from features.accounts import auth, email_login, steam_login
+from features.accounts import auth, email_login
 from features.accounts.email_login import deliver as real_deliver
 
 EMAIL = "Tran.An+peto@Gmail.com"
@@ -38,8 +37,6 @@ async def send(client, email: str | None = None):
 async def verify(client, code: str, email: str | None = None):
     return await client.post("/api/auth/email/verify", json={"email": EMAIL if email is None else email, "code": code})
 
-
-# --- Email ---------------------------------------------------------------------------------------------------------
 
 
 async def test_gui_ma_roi_dang_nhap_tao_tai_khoan_email(anon_client, sent_emails):
@@ -245,142 +242,3 @@ async def test_deliver_goi_resend_dung_dang(monkeypatch):
                         lambda **kw: real(transport=httpx.MockTransport(lambda r: httpx.Response(422)), **kw))
     with pytest.raises(email_login.EmailError):
         await real_deliver("an@example.com", "Chủ đề", "chữ", "<p>chữ</p>", "k-2")
-
-
-# --- Steam ---------------------------------------------------------------------------------------------------------
-
-STEAM_ID = "76561197960287930"
-
-
-async def steam_start(client) -> tuple[str, dict]:
-    response = await client.get("/api/auth/steam/login")
-    assert response.status_code == 307
-    location = urlsplit(response.headers["location"])
-    assert f"{location.scheme}://{location.netloc}{location.path}" == steam_login.STEAM_OPENID_URL
-    params = {key: values[0] for key, values in parse_qs(location.query).items()}
-    return response.cookies.get(steam_login.STATE_COOKIE), params
-
-
-def assertion(return_to: str, **override) -> dict:
-    claimed = f"https://steamcommunity.com/openid/id/{STEAM_ID}"
-    params = {
-        "openid.ns": steam_login.OPENID_NS,
-        "openid.mode": "id_res",
-        "openid.op_endpoint": steam_login.STEAM_OPENID_URL,
-        "openid.claimed_id": claimed,
-        "openid.identity": claimed,
-        "openid.return_to": return_to,
-        "openid.response_nonce": "2026-11-19T10:00:00Zabc",
-        "openid.assoc_handle": "1234567890",
-        "openid.signed": "signed,op_endpoint,claimed_id,identity,return_to,response_nonce,assoc_handle",
-        "openid.sig": "c2lnbmF0dXJl",
-    }
-    params.update(override)
-    return {key: value for key, value in params.items() if value is not None}
-
-
-def fake_steam(monkeypatch, *, valid: bool = True, xml: str | None = None, api: dict | None = None) -> list:
-    calls = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(request)
-        if request.method == "POST":
-            form = parse_qs(request.content.decode())
-            assert form["openid.mode"] == ["check_authentication"]
-            assert "state" not in form
-            return httpx.Response(200, text=f"ns:{steam_login.OPENID_NS}\nis_valid:{'true' if valid else 'false'}\n")
-        if request.url.host == "api.steampowered.com":
-            return httpx.Response(200, json=api or {})
-        return httpx.Response(200, text=xml if xml is not None else (
-            "<profile><steamID><![CDATA[Gabe]]></steamID>"
-            "<avatarFull><![CDATA[https://avatars.steamstatic.com/abc_full.jpg]]></avatarFull></profile>"))
-
-    real = httpx.AsyncClient
-    monkeypatch.setattr(steam_login.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
-    return calls
-
-
-async def test_steam_login_chuyen_toi_steam(anon_client):
-    state, params = await steam_start(anon_client)
-    assert state
-    assert params["openid.mode"] == "checkid_setup"
-    assert params["openid.realm"] == "http://test"
-    assert params["openid.identity"] == steam_login.IDENTIFIER_SELECT
-    assert params["openid.return_to"] == f"http://test/api/auth/steam/callback?state={state}"
-
-
-async def test_steam_callback_dang_nhap(anon_client, monkeypatch):
-    calls = fake_steam(monkeypatch)
-    state, params = await steam_start(anon_client)
-    response = await anon_client.get("/api/auth/steam/callback", params=assertion(params["openid.return_to"]))
-    assert response.status_code == 307
-    assert response.headers["location"] == "/"
-    owner = auth.read_session(response.cookies.get(SESSION_COOKIE))
-    assert owner == f"steam:{STEAM_ID}"
-    assert discord_id_from_owner(owner) == ""
-    assert calls[0].method == "POST" and str(calls[0].url) == steam_login.STEAM_OPENID_URL
-
-    anon_client.cookies.set(SESSION_COOKIE, response.cookies.get(SESSION_COOKIE))
-    me = (await anon_client.get("/api/auth/me")).json()
-    assert me["user"]["provider"] == "steam"
-    assert me["user"]["display_name"] == "Gabe"
-    assert me["user"]["avatar_url"] == "https://avatars.steamstatic.com/abc_full.jpg"
-
-
-async def test_steam_dung_web_api_khi_co_khoa_va_loc_anh_la(anon_client, monkeypatch):
-    monkeypatch.setattr(config, "STEAM_API_KEY", "test-steam-key")
-    calls = fake_steam(monkeypatch, api={"response": {"players": [
-        {"personaname": "Người chơi", "avatarfull": "https://evil.example/a.jpg"}]}})
-    state, params = await steam_start(anon_client)
-    response = await anon_client.get("/api/auth/steam/callback", params=assertion(params["openid.return_to"]))
-    anon_client.cookies.set(SESSION_COOKIE, response.cookies.get(SESSION_COOKIE))
-    me = (await anon_client.get("/api/auth/me")).json()
-    assert me["user"]["display_name"] == "Người chơi"
-    assert me["user"]["avatar_url"] == ""
-    assert calls[1].url.host == "api.steampowered.com"
-
-
-async def test_steam_ho_so_loi_van_dang_nhap_voi_ten_mac_dinh(anon_client, monkeypatch):
-    fake_steam(monkeypatch, xml="<loi/>")
-    state, params = await steam_start(anon_client)
-    response = await anon_client.get("/api/auth/steam/callback", params=assertion(params["openid.return_to"]))
-    anon_client.cookies.set(SESSION_COOKIE, response.cookies.get(SESSION_COOKIE))
-    assert (await anon_client.get("/api/auth/me")).json()["user"]["display_name"] == "Người chơi Steam"
-
-
-@pytest.mark.parametrize("override, valid, message", [
-    ({}, False, "Steam không xác nhận"),
-    ({"openid.mode": "cancel"}, True, "hủy đăng nhập Steam"),
-    ({"openid.mode": None}, True, "Thiếu thông tin"),
-    ({"openid.claimed_id": "https://evil.example/openid/id/76561197960287930"}, True, "không hợp lệ"),
-    ({"openid.identity": f"https://steamcommunity.com/openid/id/76561197960287931"}, True, "không hợp lệ"),
-    ({"openid.op_endpoint": "https://evil.example/openid/login"}, True, "không hợp lệ"),
-    ({"openid.signed": "signed,op_endpoint,return_to"}, True, "không hợp lệ"),
-    ({"openid.return_to": "http://evil.example/api/auth/steam/callback?state=STATE"}, True, "không khớp"),
-    ({"openid.return_to": "http://test/api/auth/steam/callback?state=khac"}, True, "không khớp"),
-])
-async def test_steam_callback_tu_choi(anon_client, monkeypatch, override, valid, message):
-    fake_steam(monkeypatch, valid=valid)
-    state, params = await steam_start(anon_client)
-    if "openid.return_to" in override:
-        override = {**override, "openid.return_to": override["openid.return_to"].replace("STATE", state)}
-    response = await anon_client.get("/api/auth/steam/callback",
-                                     params=assertion(params["openid.return_to"], **override))
-    assert response.status_code == 307
-    assert not response.cookies.get(SESSION_COOKIE)
-    location = urlsplit(response.headers["location"])
-    assert message in parse_qs(location.query)["auth_error"][0]
-
-
-async def test_steam_callback_thieu_cookie_state(anon_client, monkeypatch):
-    fake_steam(monkeypatch)
-    state, params = await steam_start(anon_client)
-    anon_client.cookies.clear()
-    response = await anon_client.get("/api/auth/steam/callback", params=assertion(params["openid.return_to"]))
-    assert "không khớp" in parse_qs(urlsplit(response.headers["location"]).query)["auth_error"][0]
-
-
-async def test_steam_chua_cau_hinh(anon_client, monkeypatch):
-    monkeypatch.setattr(config, "STEAM_REDIRECT_URI", "")
-    assert (await anon_client.get("/api/auth/steam/login")).status_code == 503
-    assert auth.available_providers()["steam"] is False

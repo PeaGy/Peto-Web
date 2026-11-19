@@ -84,7 +84,7 @@ def parse_owner_accounts(raw: str) -> frozenset[str]:
 
 
 # Tài khoản của chủ web, được dùng 6.1 Terra, 6.2 Sol và Sonnet 5.5 trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
-# discord:<Discord ID>, google:<mã Google>, github:<mã số GitHub>, steam:<SteamID64> hoặc email:<mã tài khoản email>.
+# discord:<Discord ID>, google:<mã Google>, github:<mã số GitHub> hoặc email:<mã tài khoản email>.
 OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 
 # Tệp JSON đơn giá cho chi phí ước tính ở trang Quản trị (/admin, chỉ OWNER_ACCOUNTS xem được): mỗi slug model một
@@ -126,13 +126,6 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 EMAIL_FROM = os.getenv("PETO_EMAIL_FROM", "").strip() or "Peto <no-reply@peagy.com>"
 EMAIL_REPLY_TO = os.getenv("PETO_EMAIL_REPLY_TO", "").strip()
 
-# --- Đăng nhập Steam -----------------------------------------------------
-# OpenID 2.0 của Steam không cần client secret, nên nút Steam chỉ hiện khi STEAM_REDIRECT_URI được đặt (một callback
-# mỗi tên miền, ngăn cách bằng dấu phẩy, như các lối OAuth khác). STEAM_API_KEY tùy chọn: có thì đọc tên và ảnh qua
-# Steam Web API, không có thì đọc hồ sơ công khai dạng XML.
-STEAM_REDIRECT_URI = os.getenv("STEAM_REDIRECT_URI", "").strip()
-STEAM_API_KEY = os.getenv("STEAM_API_KEY", "").strip()
-
 # Nơi đưa người dùng về sau khi đăng nhập xong.
 #
 # Để TRỐNG là tốt nhất: khi đó backend chuyển hướng bằng đường dẫn tương đối
@@ -156,7 +149,7 @@ CANONICAL_ORIGIN = os.getenv("PETO_CANONICAL_ORIGIN", "").strip()
 # Ba cách đăng nhập. KHÔNG còn allowlist — đăng ký mở, ai vào cũng được. Đăng nhập khách bỏ ngày 6/10/2026 (ai cũng
 # tạo vô hạn tài khoản khách và tiêu hạn mức AI của web): khóa "guest:…" cũ không còn hợp lệ, cookie khách bị đăng xuất,
 # và dữ liệu của chúng được dọn bằng ops.purge_guests.
-PROVIDERS = ("discord", "google", "github", "email", "steam")
+PROVIDERS = ("discord", "google", "github", "email")
 
 
 def owner_key(provider: str, external_id: str) -> str:
