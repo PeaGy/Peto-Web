@@ -41,6 +41,18 @@
 }
 @media (hover: hover) and (pointer: fine) { .login-back:hover:not(:disabled) { color: var(--text); } }
 .login-back:disabled { cursor: default; opacity: 0.55; }
+
+/* Lỗi như AIRI: một dòng chữ đỏ căn giữa trên các ô nhập, không khung. */
+.login-error { margin: -4px 0 0; color: var(--danger); font-size: 15px; line-height: 1.5; text-align: center; }
+.login-required { color: var(--danger); }
+/* "Quên mật khẩu?" bên trái, "Dùng email khác" bên phải; chỉ còn "Dùng email khác" thì nằm bên phải. */
+.login-links { display: flex; justify-content: space-between; gap: 12px; margin-top: -4px; }
+.login-links-end { justify-content: flex-end; }
+.login-links .login-back { margin-top: 0; font-size: 13.5px; }
+/* "Đặt lại mật khẩu", "Đặt mật khẩu mới": tiêu đề nhỏ hơn trang Đăng nhập, như AIRI. */
+.login-panel h1.login-title-small { font-size: 28px; }
+/* Nút "Đi tới đăng nhập" ở trang "Đã đổi mật khẩu": vừa chữ, căn giữa. */
+.login-button.login-compact { width: auto; justify-self: center; }
 .login-panel .error { margin: 0; }
 .login-stack { display: grid; gap: 12px; }
 .login-field label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }

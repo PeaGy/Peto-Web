@@ -1,5 +1,5 @@
-"""Đăng nhập bằng email như AIRI (thư có nút đăng nhập, trang đang chờ tự tiếp tục, kể cả khi mở thư trên máy khác) và gộp
-tài khoản Google/GitHub/email theo email đã xác minh. Không gọi mạng thật."""
+"""Đăng nhập bằng email và mật khẩu như AIRI (tạo tài khoản có thư xác nhận, trang đang chờ tự tiếp tục kể cả khi mở
+thư trên máy khác, quên mật khẩu) và gộp tài khoản Google/GitHub/email theo email đã xác minh. Không gọi mạng thật."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from main import app
 from storage import email_login as email_store
 
 EMAIL = "Tran.An+peto@Gmail.com"
+PASSWORD = "mat-khau-8"
 REAL_CLIENT = httpx.AsyncClient
 WINDOWS_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
@@ -40,9 +41,28 @@ async def phone() -> AsyncClient:
         yield client
 
 
-async def send(client, email: str | None = None, **headers):
-    return await client.post("/api/auth/email/send", json={"email": EMAIL if email is None else email},
-                             headers=headers or None)
+async def send(client, email: str | None = None, password: str = PASSWORD, display_name: str = "", **headers):
+    """Trang "Tạo tài khoản": gửi thư xác nhận email."""
+    return await client.post("/api/auth/email/signup", json={
+        "email": EMAIL if email is None else email, "password": password, "display_name": display_name,
+    }, headers=headers or None)
+
+
+async def check(client, email: str | None = None) -> str:
+    return (await client.post("/api/auth/email/check", json={"email": EMAIL if email is None else email})).json()["state"]
+
+
+async def password_sign_in(client, password: str = PASSWORD, email: str | None = None):
+    return await client.post("/api/auth/email/password", json={"email": EMAIL if email is None else email,
+                                                               "password": password})
+
+
+async def request_reset(client, email: str | None = None):
+    return await client.post("/api/auth/email/reset", json={"email": EMAIL if email is None else email})
+
+
+def reset_token_of(mail: dict) -> str:
+    return re.search(r"/#reset_token=([A-Za-z0-9_-]+)", mail["text"]).group(1)
 
 
 def link_of(mail: dict) -> str:
@@ -76,7 +96,7 @@ async def test_thu_dang_nhap_co_nut_khong_co_ma(anon_client, sent_emails):
     mail = sent_emails[0]
     # Gửi tới đúng địa chỉ đã gõ (viết thường), không phải dạng chuẩn hóa.
     assert mail["to"] == EMAIL.lower()
-    assert mail["subject"] == "Đăng nhập vào Peto"
+    assert mail["subject"] == "Xác nhận email cho Peto"
     link = link_of(mail)
     # Token nằm sau dấu #, nên không tới máy chủ lúc trình duyệt tải trang; nút trong HTML trỏ đúng đường dẫn đó.
     assert link.startswith("http://localhost:5173/#email_token=")
@@ -84,15 +104,18 @@ async def test_thu_dang_nhap_co_nut_khong_co_ma(anon_client, sent_emails):
     assert not re.search(r"\b\d{6}\b", mail["subject"] + mail["text"])
 
 
-async def test_tra_loi_giong_nhau_du_email_da_co_tai_khoan_hay_chua(anon_client, sent_emails, monkeypatch):
+async def test_quen_mat_khau_tra_loi_giong_nhau_du_email_co_tai_khoan_hay_khong(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
     tag = EMAIL[7:15]
     await send(anon_client, f"cu{tag}@example.com")
     await open_link(anon_client, token_of(sent_emails[-1]))
-    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
-    old = await send(anon_client, f"cu{tag}@example.com")
-    new = await send(anon_client, f"moi{tag}@example.com")
+    count = len(sent_emails)
+    old = await request_reset(anon_client, f"cu{tag}@example.com")
+    new = await request_reset(anon_client, f"moi{tag}@example.com")
     assert old.status_code == new.status_code == 200
-    assert old.json() == new.json()
+    assert old.json() == new.json() == {"ok": True}
+    # Chỉ email có tài khoản mới nhận thư.
+    assert len(sent_emails) == count + 1
 
 
 async def test_khong_luu_dia_chi_email_hay_token(anon_client, sent_emails):
@@ -129,7 +152,7 @@ async def test_gioi_han_gui_theo_email(anon_client, sent_emails, monkeypatch):
         assert (await send(anon_client)).status_code == 200
     limited = await send(anon_client)
     assert limited.status_code == 429
-    assert "nhiều thư đăng nhập quá" in limited.json()["detail"]
+    assert "nhiều thư quá" in limited.json()["detail"]
     assert len(sent_emails) == 5
 
 
@@ -331,9 +354,10 @@ async def test_cung_hop_thu_gmail_la_cung_tai_khoan(anon_client, sent_emails, mo
     owners = []
     tag = EMAIL[7:15]
     for address in (f"tran.an{tag}@gmail.com", f"TranAn{tag}+khac@googlemail.com"):
-        await send(anon_client, address)
-        owners.append(session_of(await open_link(anon_client, token_of(sent_emails[-1]))))
+        owners.append(await email_sign_in(anon_client, sent_emails, address))
     assert owners[0] == owners[1]
+    # Dạng khác của cùng hộp thư Gmail không tạo được tài khoản thứ hai.
+    assert (await send(anon_client, f"t.r.a.n.a.n{tag}@gmail.com")).status_code == 409
     assert email_login.normalize("a+b@example.com") == "a+b@example.com"
     assert email_login.normalize("a.b+c@outlook.com") == "a.b@outlook.com"
 
@@ -358,8 +382,11 @@ async def google_sign_in(client, monkeypatch, profile: dict) -> str | None:
 
 
 async def email_sign_in(client, sent_emails, address: str) -> str | None:
-    await send(client, address)
-    return session_of(await open_link(client, token_of(sent_emails[-1])))
+    """Email mới thì tạo tài khoản (thư xác nhận); có rồi thì đăng nhập bằng mật khẩu."""
+    if await check(client, address) == "new":
+        await send(client, address)
+        return session_of(await open_link(client, token_of(sent_emails[-1])))
+    return session_of(await password_sign_in(client, email=address))
 
 
 async def test_dang_nhap_email_truoc_roi_google_cung_email_vao_cung_tai_khoan(anon_client, phone, sent_emails, monkeypatch):
@@ -375,6 +402,13 @@ async def test_google_truoc_roi_email_vao_tai_khoan_google_giu_ten(anon_client, 
     by_google = await google_sign_in(phone, monkeypatch, {
         "sub": f"g-{uuid.uuid4().hex}", "name": "Người Google", "email": address, "email_verified": True})
     assert by_google.startswith("google:")
+    # Tài khoản Google chưa có mật khẩu: đặt qua "Quên mật khẩu" rồi đăng nhập bằng email.
+    assert await check(anon_client, address) == "no_password"
+    assert (await request_reset(anon_client, address)).status_code == 200
+    confirm = await anon_client.post("/api/auth/email/reset/confirm",
+                                     json={"token": reset_token_of(sent_emails[-1]), "password": PASSWORD})
+    assert confirm.json() == {"ok": True}
+    assert await check(anon_client, address) == "password"
     by_email = await email_sign_in(anon_client, sent_emails, address)
     assert by_email == by_google
     me = (await anon_client.get("/api/auth/me")).json()
@@ -491,3 +525,110 @@ async def test_ten_che_cu_duoc_thay_bang_phan_truoc_a_cong(anon_client, sent_ema
     anon_client.cookies.clear()
     await email_sign_in(anon_client, sent_emails, address)
     assert (await db.get_user(owner))["display_name"] == address.split("+")[0]
+
+
+# --- Mật khẩu ------------------------------------------------------------------------------------------------------
+
+
+async def test_tao_tai_khoan_co_mat_khau_roi_dang_nhap(anon_client, sent_emails):
+    assert await check(anon_client) == "new"
+    response = await send(anon_client, display_name="  An   Trần ")
+    assert response.status_code == 200
+    # Chưa bấm thư thì chưa có tài khoản, cũng chưa đăng nhập được bằng mật khẩu.
+    assert await check(anon_client) == "new"
+    assert (await password_sign_in(anon_client)).status_code == 400
+    owner = session_of(await open_link(anon_client, token_of(sent_emails[-1])))
+    assert (await db.get_user(owner))["display_name"] == "An Trần"
+    assert await check(anon_client) == "password"
+
+    anon_client.cookies.clear()
+    signed = await password_sign_in(anon_client)
+    assert signed.status_code == 200
+    assert session_of(signed) == owner
+
+
+async def test_mat_khau_chi_luu_dau_bam(anon_client, sent_emails):
+    secret = f"bi-mat-{uuid.uuid4().hex[:8]}"
+    await send(anon_client, password=secret)
+    await open_link(anon_client, token_of(sent_emails[-1]))
+    with sqlite3.connect(DB_PATH) as con:
+        for table in [row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]:
+            for row in con.execute(f'SELECT * FROM "{table}"'):
+                assert not any(isinstance(value, str) and secret in value for value in row), table
+        stored = [row[0] for row in con.execute("SELECT password_hash FROM account_passwords")]
+    assert stored and all(value.startswith("scrypt$") for value in stored)
+
+
+@pytest.mark.parametrize("password", ["", "1234567", "x" * 257])
+async def test_mat_khau_chi_can_du_dai(anon_client, sent_emails, password):
+    response = await send(anon_client, password=password)
+    assert response.status_code == 400
+    assert sent_emails == []
+
+
+async def test_mat_khau_chi_so_cung_duoc(anon_client, sent_emails):
+    assert (await send(anon_client, password="12345678")).status_code == 200
+
+
+async def test_email_da_co_tai_khoan_thi_khong_tao_lai(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    await send(anon_client)
+    await open_link(anon_client, token_of(sent_emails[-1]))
+    again = await send(anon_client, password="mat-khau-khac")
+    assert again.status_code == 409
+    assert "đã có tài khoản" in again.json()["detail"]
+
+
+async def test_sai_mat_khau_bao_chung_va_khoa_sau_nhieu_lan(anon_client, sent_emails):
+    await send(anon_client)
+    await open_link(anon_client, token_of(sent_emails[-1]))
+    unknown = await password_sign_in(anon_client, email=f"khong-co-{uuid.uuid4().hex[:6]}@example.com")
+    wrong = await password_sign_in(anon_client, password="sai-mat-khau")
+    assert unknown.status_code == wrong.status_code == 400
+    assert unknown.json() == wrong.json() == {"detail": "Email hoặc mật khẩu không đúng."}
+    for _ in range(email_login.FAILS_PER_EMAIL - 1):
+        await password_sign_in(anon_client, password="sai-mat-khau")
+    locked = await password_sign_in(anon_client)
+    assert locked.status_code == 429
+    assert "Thử quá nhiều lần" in locked.json()["detail"]
+    assert int(locked.headers["retry-after"]) > 0
+
+
+async def test_gioi_han_sai_mat_khau_theo_ip(anon_client, monkeypatch):
+    monkeypatch.setattr(email_login, "FAILS_PER_IP", 3)
+    for index in range(3):
+        await password_sign_in(anon_client, email=f"a{index}{EMAIL[7:15]}@example.com")
+    assert (await password_sign_in(anon_client)).status_code == 429
+
+
+async def test_quen_mat_khau_dat_mat_khau_moi(anon_client, phone, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    await send(anon_client)
+    owner = session_of(await open_link(anon_client, token_of(sent_emails[-1])))
+    assert (await request_reset(phone)).json() == {"ok": True}
+    mail = sent_emails[-1]
+    assert mail["subject"] == "Đặt lại mật khẩu Peto"
+    token = reset_token_of(mail)
+    assert f'href="http://localhost:5173/#reset_token={token}"' in mail["html"]
+
+    short = await phone.post("/api/auth/email/reset/confirm", json={"token": token, "password": "ngan"})
+    assert short.status_code == 400
+    done = await phone.post("/api/auth/email/reset/confirm", json={"token": token, "password": "mat-khau-moi"})
+    assert done.json() == {"ok": True}
+    # Đặt lại không tự đăng nhập (như AIRI: "Đăng nhập bằng mật khẩu mới").
+    assert not done.cookies.get(SESSION_COOKIE)
+    assert (await phone.post("/api/auth/email/reset/confirm",
+                             json={"token": token, "password": "mat-khau-khac"})).status_code == 400
+    assert (await password_sign_in(phone)).status_code == 400
+    assert session_of(await password_sign_in(phone, password="mat-khau-moi")) == owner
+
+
+async def test_duong_dan_dat_lai_khong_dung_de_xac_nhan_email_va_nguoc_lai(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    await send(anon_client)
+    signup_token = token_of(sent_emails[-1])
+    assert (await anon_client.post("/api/auth/email/reset/confirm",
+                                   json={"token": signup_token, "password": "mat-khau-moi"})).status_code == 400
+    await open_link(anon_client, signup_token)
+    await request_reset(anon_client)
+    assert (await open_link(anon_client, reset_token_of(sent_emails[-1]))).status_code == 400

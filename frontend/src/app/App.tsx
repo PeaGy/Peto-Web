@@ -1,7 +1,8 @@
 import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
 import EmailLinkScreen from './EmailLinkScreen';
-import { forgetEmailToken, takeEmailToken } from './emailLink';
+import ResetPasswordScreen from './ResetPasswordScreen';
+import { forgetEmailToken, forgetResetToken, takeEmailToken, takeResetToken } from './emailLink';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
 import { AIRI_COMPANION_URL, appPath, appView, chatId, chatRoute, companionSettingsPage, legacyPath, openAiriCompanion, VIEW_PATHS } from './routes';
@@ -107,6 +108,8 @@ function AppContent() {
   const [authError, setAuthError] = useState<string | null>(null);
   // Trang mở từ nút đăng nhập trong thư (/#email_token=…).
   const [emailToken, setEmailToken] = useState<string | null>(takeEmailToken);
+  // Trang mở từ nút "Đặt lại mật khẩu" trong thư (/#reset_token=…).
+  const [resetToken, setResetToken] = useState<string | null>(takeResetToken);
   // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
   const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
   const [connectorResult] = useState<string | null>(takeConnectorResult);
@@ -452,6 +455,10 @@ function AppContent() {
       newConversation(true);
     }
   }, [auth?.authenticated, auth?.user?.id, view, routedConversationId, location.key]);
+
+  if (resetToken !== null) {
+    return <ResetPasswordScreen token={resetToken} onDone={() => { forgetResetToken(); setResetToken(null); }} />;
+  }
 
   if (emailToken !== null) {
     return <EmailLinkScreen token={emailToken} onSignedIn={signedInByEmail}

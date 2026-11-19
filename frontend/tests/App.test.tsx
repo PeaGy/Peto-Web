@@ -9,7 +9,7 @@ import * as documentApi from '../src/features/documents/documentApi';
 import * as projectApi from '../src/features/projects/projectApi';
 import * as adminApi from '../src/features/admin/adminApi';
 import { CHAT_DRAFT_PREFIX, draftKey } from '../src/features/chat/chatDrafts';
-import { forgetEmailToken } from '../src/app/emailLink';
+import { forgetEmailToken, forgetResetToken } from '../src/app/emailLink';
 vi.mock('../src/features/admin/adminApi', async original => ({ ...await original<typeof import('../src/features/admin/adminApi')>(), getAdminOverview: vi.fn() }));
 vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
@@ -22,7 +22,8 @@ vi.mock('../src/shared/api/api', async (original) => ({
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
   getProfile: vi.fn(), saveProfile: vi.fn(), uploadAvatar: vi.fn(), resetAvatar: vi.fn(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
-  getCompanionMemory: vi.fn(), sendLoginEmail: vi.fn(), emailLoginStatus: vi.fn(), openEmailLink: vi.fn(),
+  getCompanionMemory: vi.fn(), emailLoginStatus: vi.fn(), openEmailLink: vi.fn(),
+  checkEmail: vi.fn(), signUpWithEmail: vi.fn(), signInWithPassword: vi.fn(), requestPasswordReset: vi.fn(), confirmPasswordReset: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -47,6 +48,7 @@ beforeEach(() => {
   // Mã Peto Agent còn sót từ test trước sẽ mở hộp kết nối trong mọi test sau.
   sessionStorage.clear();
   forgetEmailToken();
+  forgetResetToken();
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
     providers: { discord: true, google: true, github: true },
@@ -1544,12 +1546,12 @@ describe('Màn hình đăng nhập', () => {
 
   const signedInState = (): api.AuthState => ({ authenticated: true, login_configured: true,
     providers: { discord: true, google: true, github: true, email: true },
-    user: { id: 'acc-mail', provider: 'email', username: '', display_name: 'an•••@vidu.com', avatar_url: '' } });
+    user: { id: 'acc-mail', provider: 'email', username: '', display_name: 'an', avatar_url: '' } });
 
-  async function sendLoginMail(address = 'an@vidu.com') {
+  async function continueWith(state: 'new' | 'password' | 'no_password', address = 'an@vidu.com') {
+    vi.mocked(api.checkEmail).mockResolvedValue({ state });
     fireEvent.change(await screen.findByLabelText('Email'), { target: { value: address } });
     fireEvent.click(screen.getByRole('button', { name: 'Tiếp tục' }));
-    return screen.findByRole('heading', { name: 'Kiểm tra hộp thư' });
   }
 
   function broadcastSignedIn() {
@@ -1558,80 +1560,126 @@ describe('Màn hình đăng nhập', () => {
     channel.close();
   }
 
-  it('gửi thư như AIRI: trang chờ gọn, nút trong thư được bấm thì tự vào app tại bookmark', async () => {
+  it('email mới: trang Tạo tài khoản như AIRI, gửi thư xác nhận, bấm thư thì tự vào app tại bookmark', async () => {
     window.history.replaceState(null, '', '/chat/A?source=bookmark');
     chuaDangNhap({ discord: true, google: true, github: true, email: true });
-    vi.mocked(api.sendLoginEmail).mockResolvedValue({ ok: true, resend_after: 60, expires_in: 600 });
+    vi.mocked(api.signUpWithEmail).mockResolvedValue({ ok: true });
     vi.mocked(api.emailLoginStatus).mockResolvedValue({ state: 'waiting' });
     render(<App />);
-    const heading = await sendLoginMail(' an@vidu.com ');
-    expect(api.sendLoginEmail).toHaveBeenCalledWith('an@vidu.com');
-    expect(document.activeElement).toBe(heading);
-    expect(screen.getByText(/Mình đã gửi đường dẫn đăng nhập tới an@vidu\.com\. Mở thư để hoàn tất/)).toBeTruthy();
-    // Như mẫu AIRI: chỉ một liên kết quay lại, không ô mã, không nút gửi lại.
-    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Quay lại đăng nhập']);
-    expect(screen.queryByRole('textbox')).toBeNull();
+    await continueWith('new', ' an@vidu.com ');
+    expect(await screen.findByRole('heading', { name: 'Tạo tài khoản' })).toBeTruthy();
+    expect(api.checkEmail).toHaveBeenCalledWith('an@vidu.com');
+    expect(screen.getByText('Peto sẽ tạo tài khoản mới cho an@vidu.com.')).toBeTruthy();
+    const nameInput = screen.getByLabelText('Tên hiển thị');
+    expect(document.activeElement).toBe(nameInput);
+    expect(nameInput.getAttribute('placeholder')).toBe('Không bắt buộc, mặc định là phần trước @ của email');
 
-    // Thư được bấm (trình duyệt này hoặc xác nhận từ điện thoại): lần hỏi kế tiếp nhận phiên.
+    fireEvent.change(screen.getByLabelText('Tạo mật khẩu'), { target: { value: '1234567' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại mật khẩu'), { target: { value: '1234567' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Mật khẩu cần ít nhất 8 ký tự.');
+    // Chỉ cần đủ 8 ký tự, số thôi cũng được; hai ô phải khớp.
+    fireEvent.change(screen.getByLabelText('Tạo mật khẩu'), { target: { value: '12345678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Hai mật khẩu chưa khớp.');
+    expect(api.signUpWithEmail).not.toHaveBeenCalled();
+    fireEvent.change(nameInput, { target: { value: 'An Trần' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại mật khẩu'), { target: { value: '12345678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
+    expect(await screen.findByRole('heading', { name: 'Kiểm tra hộp thư' })).toBeTruthy();
+    expect(api.signUpWithEmail).toHaveBeenCalledWith('an@vidu.com', '12345678', 'An Trần');
+    expect(screen.getByText(/Mình đã gửi đường dẫn xác nhận tới an@vidu\.com\. Mở thư để hoàn tất tạo tài khoản/)).toBeTruthy();
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Quay lại đăng nhập']);
+
     vi.mocked(api.emailLoginStatus).mockResolvedValue({ state: 'signed_in' });
     vi.mocked(api.getAuthState).mockResolvedValue(signedInState());
     broadcastSignedIn();
     await screen.findByLabelText('Nhắn cho Peto', { exact: true });
     expect(window.location.pathname).toBe('/chat/A');
-    await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith('A', expect.anything(), expect.anything()));
   });
 
-  it('thư bị từ chối hoặc hết hạn thì về trang đăng nhập kèm lời báo', async () => {
+  it('email đã có tài khoản: Chào mừng trở lại, sai mật khẩu và quá nhiều lần báo đỏ, đúng thì vào app', async () => {
     chuaDangNhap({ discord: true, email: true });
-    vi.mocked(api.sendLoginEmail).mockResolvedValue({ ok: true, resend_after: 60, expires_in: 600 });
-    vi.mocked(api.emailLoginStatus).mockResolvedValue({ state: 'denied' });
     render(<App />);
-    await sendLoginMail();
-    broadcastSignedIn();
-    expect(await screen.findByText('Yêu cầu đăng nhập đã bị từ chối từ thư. Gửi lại nếu đó là bạn.')).toBeTruthy();
-    expect((screen.getByLabelText('Email') as HTMLInputElement).value).toBe('an@vidu.com');
+    await continueWith('password');
+    expect(await screen.findByRole('heading', { name: 'Chào mừng trở lại' })).toBeTruthy();
+    expect(screen.getByText('Tiếp tục với an@vidu.com.')).toBeTruthy();
+    const passwordInput = screen.getByLabelText('Mật khẩu');
+    expect(document.activeElement).toBe(passwordInput);
+    expect(passwordInput.getAttribute('type')).toBe('password');
+    expect(screen.getByRole('button', { name: 'Quên mật khẩu?' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dùng email khác' })).toBeTruthy();
 
-    vi.mocked(api.emailLoginStatus).mockResolvedValue({ state: 'expired' });
-    await sendLoginMail();
-    broadcastSignedIn();
-    expect(await screen.findByText('Đường dẫn đăng nhập đã hết hạn. Gửi lại thư nhé.')).toBeTruthy();
+    vi.mocked(api.signInWithPassword).mockRejectedValueOnce(new Error('Email hoặc mật khẩu không đúng.'))
+      .mockRejectedValueOnce(new Error('Thử quá nhiều lần. Thử lại sau 15 phút.')).mockResolvedValue();
+    fireEvent.change(passwordInput, { target: { value: 'sai' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Email hoặc mật khẩu không đúng.');
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Thử quá nhiều lần. Thử lại sau 15 phút.'));
+
+    vi.mocked(api.getAuthState).mockResolvedValue(signedInState());
+    fireEvent.change(passwordInput, { target: { value: 'dung-mat-khau' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    await screen.findByLabelText('Nhắn cho Peto', { exact: true });
+    expect(api.signInWithPassword).toHaveBeenLastCalledWith('an@vidu.com', 'dung-mat-khau');
   });
 
-  it('lỗi gửi thư hiện đúng chỗ, quay lại đăng nhập giữ email đã gõ', async () => {
+  it('quên mật khẩu: gửi đường dẫn đặt lại, trả lời như nhau, quay lại đăng nhập', async () => {
     chuaDangNhap({ discord: true, email: true });
-    vi.mocked(api.sendLoginEmail).mockRejectedValueOnce(new Error('Thư vừa được gửi. Đợi 40 giây rồi gửi lại nhé.'));
-    vi.mocked(api.emailLoginStatus).mockResolvedValue({ state: 'waiting' });
+    vi.mocked(api.requestPasswordReset).mockResolvedValue();
     render(<App />);
-    const emailInput = await screen.findByLabelText('Email');
-    fireEvent.change(emailInput, { target: { value: 'khong-hop-le' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Tiếp tục' }));
-    expect((await screen.findByRole('alert')).textContent).toBe('Email chưa đúng dạng. Kiểm tra lại giúp mình nhé.');
-    expect(api.sendLoginEmail).not.toHaveBeenCalled();
-
-    fireEvent.change(emailInput, { target: { value: 'an@vidu.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Tiếp tục' }));
-    expect(await screen.findByText('Thư vừa được gửi. Đợi 40 giây rồi gửi lại nhé.')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Kiểm tra hộp thư' })).toBeNull();
-
-    vi.mocked(api.sendLoginEmail).mockResolvedValue({ ok: true, resend_after: 60, expires_in: 600 });
-    await sendLoginMail();
+    await continueWith('password');
+    fireEvent.click(await screen.findByRole('button', { name: 'Quên mật khẩu?' }));
+    expect(await screen.findByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeTruthy();
+    expect((screen.getByLabelText(/^Email/) as HTMLInputElement).value).toBe('an@vidu.com');
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi đường dẫn đặt lại' }));
+    expect(await screen.findByText('Nếu an@vidu.com khớp với một tài khoản, đường dẫn đặt lại đang được gửi tới.')).toBeTruthy();
+    expect(api.requestPasswordReset).toHaveBeenCalledWith('an@vidu.com');
     fireEvent.click(screen.getByRole('button', { name: 'Quay lại đăng nhập' }));
-    expect(((await screen.findByLabelText('Email')) as HTMLInputElement).value).toBe('an@vidu.com');
-    expect(document.activeElement).toBe(screen.getByLabelText('Email'));
-    expect(screen.getByRole('link', { name: 'Đăng nhập bằng Discord' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeTruthy();
   });
 
-  it('mã agent_code của peto login vẫn còn sau khi đăng nhập bằng email', async () => {
+  it('tài khoản chưa có mật khẩu (Google/GitHub đã gộp email): báo đỏ và cho đặt mật khẩu qua email', async () => {
+    chuaDangNhap({ discord: true, google: true, email: true });
+    render(<App />);
+    await continueWith('no_password');
+    expect((await screen.findByRole('alert')).textContent).toMatch(/chưa đặt mật khẩu/);
+    fireEvent.click(screen.getByRole('button', { name: 'Đặt mật khẩu qua email' }));
+    expect(await screen.findByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeTruthy();
+  });
+
+  it('mã agent_code của peto login vẫn còn sau khi đăng nhập bằng mật khẩu', async () => {
     window.history.replaceState(null, '', '/?agent_code=kxmt-4p2q');
     chuaDangNhap({ discord: true, email: true });
     vi.mocked(api.getAgentDevice).mockResolvedValue({ user_code: 'KXMT-4P2Q', name: 'DESKTOP-BINH', expires_in: 500 });
-    vi.mocked(api.sendLoginEmail).mockResolvedValue({ ok: true, resend_after: 60, expires_in: 600 });
-    vi.mocked(api.emailLoginStatus).mockResolvedValue({ state: 'signed_in' });
+    vi.mocked(api.signInWithPassword).mockResolvedValue();
     render(<App />);
-    await sendLoginMail();
+    await continueWith('password');
+    fireEvent.change(await screen.findByLabelText('Mật khẩu'), { target: { value: 'dung-mat-khau' } });
     vi.mocked(api.getAuthState).mockResolvedValue(signedInState());
-    broadcastSignedIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
     expect(await screen.findByRole('dialog', { name: 'Kết nối Peto Agent?' })).toBeTruthy();
+  });
+
+  it('trang mở từ nút Đặt lại mật khẩu trong thư: đặt mật khẩu mới rồi đi tới đăng nhập', async () => {
+    const token = 'R3set_' + 'r'.repeat(37);
+    window.history.replaceState(null, '', `/#reset_token=${token}`);
+    chuaDangNhap({ discord: true, email: true });
+    vi.mocked(api.confirmPasswordReset).mockResolvedValue();
+    render(<App />);
+    expect(window.location.hash).toBe('');
+    expect(await screen.findByRole('heading', { name: 'Đặt mật khẩu mới' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/^Mật khẩu mới/), { target: { value: 'mat-khau-moi' } });
+    fireEvent.change(screen.getByLabelText(/^Nhập lại mật khẩu mới/), { target: { value: 'khac-han-roi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cập nhật mật khẩu' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Hai mật khẩu chưa khớp.');
+    fireEvent.change(screen.getByLabelText(/^Nhập lại mật khẩu mới/), { target: { value: 'mat-khau-moi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cập nhật mật khẩu' }));
+    expect(await screen.findByRole('heading', { name: 'Đã đổi mật khẩu' })).toBeTruthy();
+    expect(api.confirmPasswordReset).toHaveBeenCalledWith(token, 'mat-khau-moi');
+    fireEvent.click(screen.getByRole('button', { name: 'Đi tới đăng nhập' }));
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeTruthy();
   });
 
   it('trang mở từ nút trong thư (cùng trình duyệt): xóa token khỏi địa chỉ, báo tab đang chờ, Mở Peto', async () => {
