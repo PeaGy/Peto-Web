@@ -1,5 +1,7 @@
 """Đăng nhập bằng Discord, Google hoặc GitHub. Đăng nhập khách đã bỏ ngày 6/10/2026.
 
+Đăng nhập bằng mã gửi qua email nằm ở ``email_login.py``, dùng chung cookie phiên ở đây.
+
 Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
 - Chỉ ánh xạ danh tính SAU KHI máy chủ tự đổi code lấy token và tự hỏi Discord
   "người này là ai". Không bao giờ tin Discord ID do trình duyệt gửi lên.
@@ -8,6 +10,9 @@ Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
   "sửa lại cho an toàn" nếu không được yêu cầu.
 - Access token của Discord/Google/GitHub chỉ dùng một lần để đọc hồ sơ rồi bỏ. Không
   lưu token, không lưu email, không xuống trình duyệt.
+- Gộp tài khoản theo email (chủ web yêu cầu 19/11/2026, để một người không thành nhiều tài khoản): Google và GitHub đọc
+  email ĐÃ XÁC MINH, chỉ giữ dấu băm của nó (``_linked_owner``). Discord không bao giờ gộp: owner Discord là lối duy nhất
+  tới trí nhớ của bot.
 
 Đăng nhập ở đây mới chỉ xác định "ai đang chat". Việc dùng chung trí nhớ với
 bot Discord vẫn là một quyết định riêng và chưa được duyệt — lịch sử web hiện
@@ -41,13 +46,15 @@ DISCORD_SCOPE = "identify"
 GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USER_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-# Cố ý KHÔNG xin "email": màn hình đăng nhập hứa Peto chỉ đọc tên và ảnh đại
-# diện, xin thêm quyền là lời hứa đó thành sai.
-GOOGLE_SCOPE = "openid profile"
+# "email" để gộp tài khoản Google với tài khoản email cùng địa chỉ (chỉ lưu dấu băm, xem _linked_owner).
+GOOGLE_SCOPE = "openid profile email"
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_EMAILS_URL = "https://api.github.com/user/emails"
+# Chỉ đọc danh sách email (để gộp tài khoản theo email đã xác minh), không đụng repo.
+GITHUB_SCOPE = "user:email"
 
 STATE_COOKIE = "peto_oauth_state"
 GITHUB_STATE_COOKIE = "peto_oauth_state_github"
@@ -93,7 +100,9 @@ def github_configured() -> bool:
 
 def available_providers() -> dict[str, bool]:
     """Cách nào đang dùng được (đã cấu hình khóa)."""
-    return {"discord": is_configured(), "google": google_configured(), "github": github_configured()}
+    from features.accounts import email_login
+    return {"discord": is_configured(), "google": google_configured(), "github": github_configured(),
+            "email": email_login.configured()}
 
 
 def account_id(owner: str) -> str:
@@ -134,7 +143,7 @@ def current_owner(request: Request) -> str:
 
 
 def _set_session(response: Response, owner: str) -> None:
-    """Đặt cookie phiên. Ba lối đăng nhập dùng chung đúng một chỗ này."""
+    """Đặt cookie phiên. Mọi lối đăng nhập dùng chung đúng một chỗ này."""
     response.set_cookie(
         SESSION_COOKIE,
         _sign(owner),
@@ -211,6 +220,31 @@ async def discord_login(request: Request) -> RedirectResponse:
     # State chống CSRF: đặt trong cookie httponly, đối chiếu ở callback.
     _set_state(response, STATE_COOKIE, state)
     return response
+
+
+async def _linked_owner(identity: str, verified_email: str | None) -> str:
+    """Owner cho một lần đăng nhập Google/GitHub, có gộp theo email đã xác minh.
+
+    - Danh tính đã từng vào thì giữ owner cũ (đổi email bên Google sau này cũng không tách tài khoản).
+    - Danh tính có tài khoản từ trước khi có gộp thì giữ tài khoản đó: không bao giờ bỏ rơi dữ liệu đang có.
+    - Danh tính mới tinh có email đã thuộc một tài khoản (email, Google hay GitHub) thì vào chính tài khoản đó.
+    Email chưa ai nhận thì gắn cho owner này. Owner Discord không bao giờ có trong bảng email nên không ai gộp vào được.
+    """
+    from features.accounts import email_login
+    from storage import email_login as email_store
+
+    address = email_login.clean_address(verified_email or "") if verified_email else None
+    key = email_login.email_hash(address) if address else None
+    owner = await email_store.identity_owner(identity)
+    if not owner:
+        if await db.get_user(identity):
+            owner = identity
+        else:
+            owner = (await email_store.owner_for_email(key) if key else None) or identity
+        await email_store.link_identity(identity, owner)
+    if key:
+        await email_store.claim_email(key, owner)
+    return owner
 
 
 def _frontend_url(**params: str) -> str:
@@ -378,7 +412,9 @@ async def google_callback(
         return _fail("Hồ sơ Google thiếu mã tài khoản.")
 
     display_name = str(user.get("name") or user.get("given_name") or "Bạn")
-    owner = owner_key("google", subject)
+    # Chỉ email Google đã xác minh mới dùng để gộp tài khoản.
+    verified = str(user.get("email") or "") if user.get("email_verified") is True else None
+    owner = await _linked_owner(owner_key("google", subject), verified)
     await db.upsert_user(
         owner=owner,
         provider="google",
@@ -404,8 +440,8 @@ async def github_login(request: Request) -> RedirectResponse:
     params = {
         "client_id": GITHUB_LOGIN_CLIENT_ID,
         "redirect_uri": _select_callback(request, GITHUB_LOGIN_REDIRECT_URI),
-        # Không xin scope nào: chỉ đọc hồ sơ công khai (mã số, tên, ảnh), không email, không repo.
-        "scope": "",
+        # Hồ sơ công khai (mã số, tên, ảnh) và danh sách email để gộp tài khoản; không đụng repo.
+        "scope": GITHUB_SCOPE,
         "state": state,
         "allow_signup": "true",
     }
@@ -457,6 +493,19 @@ async def github_callback(
             headers={**headers, "Accept": "application/vnd.github+json", "Authorization": f"Bearer {access_token}"},
         )
         user = user_response.json() if user_response.status_code < 400 else None
+        verified = None
+        try:
+            emails_response = await client.get(
+                GITHUB_EMAILS_URL,
+                headers={**headers, "Accept": "application/vnd.github+json", "Authorization": f"Bearer {access_token}"},
+            )
+            emails = emails_response.json() if emails_response.status_code < 400 else []
+            if isinstance(emails, list):
+                primary = next((item for item in emails if isinstance(item, dict) and item.get("primary") is True
+                                and item.get("verified") is True), None)
+                verified = str(primary.get("email") or "") if primary else None
+        except (httpx.HTTPError, ValueError):
+            verified = None
         # Token chỉ để đọc hồ sơ một lần: thu hồi ngay (cố gắng hết sức, lỗi cũng không sao vì không lưu ở đâu).
         try:
             await client.request(
@@ -475,7 +524,7 @@ async def github_callback(
     if not isinstance(user_id, int) or isinstance(user_id, bool):
         return _fail("Hồ sơ GitHub thiếu mã tài khoản.")
     login = str(user.get("login") or "")
-    owner = owner_key("github", str(user_id))
+    owner = await _linked_owner(owner_key("github", str(user_id)), verified)
     await db.upsert_user(
         owner=owner,
         provider="github",

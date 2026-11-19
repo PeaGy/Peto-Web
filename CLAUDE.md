@@ -22,7 +22,7 @@ when the owner removed it (see "English model instructions, provider overlays, n
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice" in `docs/notes/chat.md`).
-Registration is **open**: Discord, Google or GitHub — there is no allowlist.
+Registration is **open**: Discord, Google, GitHub or a sign-in mail — there is no allowlist. Google, GitHub and email with one verified address are one account; Discord never merges.
 
 ## Where to read before working on an area
 
@@ -158,7 +158,7 @@ Short map; the full sections are in the note files named in each line.
   kept scoped to that voice source. The OpenAI model gates in `ai/models.py` (Luna for signed-in accounts, Terra and Sol
   for `PETO_OWNER_ACCOUNTS`) are also the owner's call. These quotas and gates exist because those features spend the
   owner's API billing; Peto itself stays open to everyone.
-- Google and GitHub accounts must never resolve to a Discord ID — that isolation is the
+- Google, GitHub and email accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.
 - Do not rename model slugs (`grok-4.7`, `grok-imagine-image-2.0`, `gpt-6-luna`, `gpt-5.6-terra`, `gpt-6-sol`), the `/api/imagine` path,
   or table names into branded equivalents — the API needs the real identifiers. Product

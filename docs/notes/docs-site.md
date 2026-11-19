@@ -76,3 +76,18 @@ Chat and Companion turn (not the Agent CLI).
   `prefers-reduced-motion: no-preference`. A capture right after opening something can catch the first frame of its
   fade: a see-through search panel on 2026-09-28 was only that.
 - **Tests:** `frontend/tests/Docs.test.tsx`, `backend/tests/test_docs_api.py`, `test_static_files.py`.
+- **Terms and Privacy** (2026-11-19, draft). `dieu-khoan` ("Điều khoản sử dụng") and `quyen-rieng-tu` ("Chính sách
+  quyền riêng tư") sit in the Trợ giúp group, like AIRI's `/docs/en/about/terms` and `/privacy` (none of AIRI's text
+  was copied). The login page links both. They were written from the code and these notes: what each table stores,
+  that email addresses are only hashed (Google and GitHub now read the verified address to merge accounts), which providers get data (xAI, OpenAI, Anthropic; StepFun, OpenAI, Alibaba
+  Cloud for Giọng Peto; YouTube; Resend; Cloudflare), the read-only Discord gateway, cookies, what users can delete
+  themselves, and that whole-account deletion is by request in Discord (there is no button). Second pass the same day, checked against the code: server logs (uvicorn access log behind `--proxy-headers`) do record
+  IP addresses and paths, including the history search `q=`; backups are daily with 7 kept (the owner enabled
+  `peto-backup.timer`); Agent content passes through the server; data leaves Vietnam with the AI and voice providers;
+  the operator can technically read stored data. Sections "Ai xem được dữ liệu của bạn", "Giữ dữ liệu bao lâu",
+  "Quyền của bạn", "Sự đồng ý của bạn" (as in AIRI's layout), contact `support@peagy.com` (the owner's choice, also
+  the suggested `PETO_EMAIL_REPLY_TO`) next to Discord, and in the Terms "Độ tuổi" and "Luật áp dụng" were added. Still the owner's (and ideally a
+  lawyer's) call: the operator's name, where the VPS is, the minimum age (13, parental consent under
+  18) against Companion cards that allow adult content with no age gate, and Vietnam's personal-data law (consent,
+  cross-border transfer). Update the date line at the top of each page when they
+  change, and keep them true when storage or providers change.

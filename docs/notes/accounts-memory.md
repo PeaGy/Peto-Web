@@ -17,16 +17,97 @@ server-side, calls `/users/@me` itself, and discards the Discord access token im
 (nothing stored, nothing sent to the client). The session is an `itsdangerous` signed
 cookie holding only the owner key.
 
-There are three ways in, all in `features/accounts/auth.py`: Discord, Google and GitHub OAuth.
-`owner_key(provider, external_id)` builds every owner; `provider_from_owner` is what
-`session_owner` uses to reject a signed cookie carrying a malformed key.
+There are four ways in: Discord, Google and GitHub OAuth in `features/accounts/auth.py`, and a sign-in mail with a
+button link in `features/accounts/email_login.py` (since 2026-11-19, see below). Google, GitHub and email logins with
+the same verified address share one account; Discord never does. `owner_key(provider, external_id)` builds every
+owner; `provider_from_owner` is what `session_owner` uses to reject a signed cookie carrying a malformed key.
+
+### Email login (link like AIRI)
+
+On 2026-11-19 the owner first got a 6-digit code flow, then sent AIRI's ("Check your inbox", a mail with a "Verify
+email" button, a tab saying "Email verified … you can close this tab", the waiting page continuing by itself), asked
+for the inbox page to follow it exactly ("quá nhiều chữ"), and for a mail opened on the phone to sign the computer in
+"vì các trang khác cũng làm thế". The code is gone. Sent with Resend, from `PETO_EMAIL_FROM` (default
+`Peto <no-reply@peagy.com>`, the domain the owner verified at Resend), optional `PETO_EMAIL_REPLY_TO` (for a
+Cloudflare Email Routing address). No `RESEND_API_KEY` means `providers.email` is false and the login page hides the
+field. Steam login was built in the same branch and dropped by the owner the same day; it is in commit `e82a874`.
+- **Routes.** `POST /api/auth/email/send {email}` sends the mail and sets an httponly request cookie
+  `peto_email_request` (path `/api/auth/email`, 15 minutes) on the waiting browser. `POST /api/auth/email/link
+  {token, confirm?, deny?}` is called by the page the button opens. `POST /api/auth/email/status` is polled by the
+  waiting page.
+- **One row per mail** (`email_login_links`): hashes of the link token and of the request cookie, the masked name, a
+  device label ("Chrome trên Windows", from the User-Agent at send time; the UA itself is not stored), and a state:
+  `pending` → `approved` (owner set) → `claimed`, or `denied`, or `replaced` by a newer mail. 10 minutes
+  (`LINK_TTL`), plus 5 minutes (`CLAIM_WINDOW`) for the waiting page to claim an approved row. Rows deleted after a day.
+- **Same browser.** The link page's request carries the request cookie, so `/link` approves at once, signs that
+  browser in and answers `{state: signed_in, same_browser: true}`; the page shows "Email đã xác nhận".
+- **Another device.** No request cookie, so `/link` first answers `{state: confirm, device, requested_at}` and changes
+  nothing; the page asks "Xác nhận đăng nhập: Cho phép Chrome trên Windows đăng nhập vào Peto (yêu cầu lúc 13:51)?"
+  with "Xác nhận" and "Không phải mình". Confirm approves the row and signs the phone in too; deny marks it `denied`.
+  This step exists because otherwise someone who types a victim's address and waits would be signed in the moment
+  the victim taps the button in an unexpected mail. Mail scanners only GET the page, so they never approve or spend.
+- **The waiting page** ("Kiểm tra hộp thư") polls `/status` every 3 s while visible (for 15 minutes), on focus, and at
+  once when a link tab of the same browser broadcasts `signed-in` on `BroadcastChannel('peto-auth')`. `/status` hands
+  out the session exactly once (`approved` → `claimed` in one guarded UPDATE), then clears the request cookie;
+  `denied` or `expired` send the page back to the form with a message. Only the browser holding that request cookie
+  can claim, so a stranger polling gets nothing.
+- **The link is `<origin>/#email_token=<token>`.** The fragment never reaches the server, Cloudflare or access logs
+  when the page loads; `main.tsx` (`app/emailLink.takeEmailToken`) strips it from the address bar before the router
+  reads it, and `EmailLinkScreen` POSTs it once (a module map guards StrictMode's second effect). The origin comes only
+  from operator config (`link_origin`: `PETO_CANONICAL_ORIGIN`, `PETO_FRONTEND_URL`, the OAuth callback origins),
+  never from Host/Origin as sent: a forged Host would put the attacker's site in the victim's mail and leak the token.
+  A request Origin that is one of those configured origins is kept; nothing configured answers 503.
+- **No address at rest.** Only `email_hash` (unkeyed SHA-256 of `peto-email-v1:<normalized>`, so rotating
+  `PETO_SESSION_SECRET` loses no account) and the display name `tr•••@gmail.com` (two characters and the domain). The
+  address lives only in memory while sending; logs carry the HTTP status, never the address or link.
+  `tests/test_email_login.py` scans every table for the address, the token and the User-Agent.
+- **One mailbox, one key.** Gmail/Googlemail drop dots and `+tag`; Outlook, Hotmail, Live, MSN, iCloud, Proton and
+  Fastmail drop `+tag` (`PLUS_DOMAINS`). Other domains are left alone, since `a+b` may be someone else's box. The mail
+  still goes to the address as typed (lowercased).
+- **Limits.** Per address (SQLite): 60 s between sends, 5 sends an hour. Per IP (process memory, like the other
+  queues): 10 sends and 30 link opens an hour. The IP is `CF-Connecting-IP` only when the TCP peer is loopback (the
+  tunnel); a direct connection's own address otherwise. 429 answers carry `Retry-After`.
+- **No account enumeration.** Send answers the same `{ok, resend_after, expires_in}` whether or not the address has an
+  account; an email account is created only when a link is approved.
+- Email accounts have the same rights as Google and GitHub (owner's answer 2026-11-19): Luna, Agent, the Giọng Peto
+  allowance (`voice/api.MEMBERS`). They never carry a Discord ID. A login by email into an owner that already has a
+  profile (for example a merged Google account) keeps its name and avatar.
+- **Login page** (`app/LoginScreen.tsx`, `account.css`): the owner picked "Như AIRI" without Steam from three mockups.
+  A frameless 400 px column: "Đăng nhập", "Nhập email để đăng nhập hoặc tạo tài khoản.", Email + "Tiếp tục" (grey),
+  "hoặc", grey stacked Discord, Google, GitHub (visible text is the name, accessible name "Đăng nhập bằng …"), then
+  "Khi tiếp tục, bạn đồng ý với Điều khoản và Chính sách quyền riêng tư của Peto." linking `/docs/dieu-khoan/` and
+  `/docs/quyen-rieng-tu/` in a new tab. "Kiểm tra hộp thư" is AIRI's page and nothing more: the title (focused), "Mình
+  đã gửi đường dẫn đăng nhập tới … Mở thư để hoàn tất — trang này sẽ tự tiếp tục sau khi bạn bấm đường dẫn.", and a
+  muted underlined "Quay lại đăng nhập" (`.login-back`, keeps the address). `app/EmailLinkScreen.tsx` uses the same
+  shape: "Đang đăng nhập…", "Xác nhận đăng nhập" (accent "Xác nhận", muted "Không phải mình"), "Email đã xác nhận"
+  ("Mở Peto"), "Đã từ chối", "Không đăng nhập được". Nothing is focused on first load (a phone keyboard would cover the
+  buttons). The panel centres with `margin: auto` so a short screen still scrolls to the title.
+
+### Merging accounts by verified email
+
+Asked by the owner on 2026-11-19 ("tránh mọi người tạo nhiều tài khoản"), after seeing that AIRI links a Google
+account and an email account with the same address. `auth._linked_owner(identity, verified_email)`:
+- Google now asks for `openid profile email` and uses `email` only when `email_verified` is true. GitHub asks for
+  `user:email` and reads `/user/emails` for the primary, verified address (before the token is revoked). Only the hash
+  is kept, in `email_accounts` (email → owner; several emails per owner).
+- `account_identities` remembers which owner each Google/GitHub identity belongs to, so changing the address at Google
+  later does not split the account.
+- A brand-new identity whose verified address already belongs to an account (email, Google or GitHub) signs into that
+  account. An address nobody has is attached to the identity's owner. An email login looks the address up the same
+  way, so "Google first, email later" lands in the Google account (with its name and avatar).
+- **Accounts that existed before merging are never moved.** An identity that already has a `users` row keeps its own
+  owner even if its address belongs to another account; nothing is ever re-pointed, so no one loses data. Two such
+  old accounts of one person stay two (merging their data would need a separate tool and the owner's go-ahead).
+- **Discord never merges.** Discord asks for no email; `claim_email` refuses a `discord:` owner, so no email or Google
+  login can ever resolve to a Discord ID and reach the bot's memory gateway.
+- Existing Google and GitHub users see the provider's consent screen again once, for the new email permission.
 
 **Guest login was removed on 2026-10-06** (the owner's call): anyone could mint unlimited guest accounts and spend the
 web's AI quota, and a per-guest counter could be dodged by clearing cookies. GitHub login replaced the "Khách" button.
 - `guest` left `config.PROVIDERS`, so an old `guest:` cookie fails `session_owner` and the visitor is signed out. Agent
   tokens of an owner that no longer parses are refused as expired (`device_auth`).
 - GitHub uses its own OAuth App (`GITHUB_LOGIN_CLIENT_ID/SECRET/REDIRECT_URI`), separate from the Kết nối GitHub App
-  (`PETO_GITHUB_*`). No scope is requested (public profile only). The owner is `github:<numeric id>`; `login` can change,
+  (`PETO_GITHUB_*`). It asks only for `user:email` (since 2026-11-19, to merge accounts by verified email; see "Merging accounts by verified email"). The owner is `github:<numeric id>`; `login` can change,
   so it is only the username. GitHub reports a bad code with HTTP 200 and an `error` field, so the callback checks the
   body. The token is revoked right after reading `/user` (best effort), and nothing is stored.
 - GitHub accounts have the same rights as Google: Luna, Agent CLI, the Giọng Peto allowance. Only the Discord gateway check differs, since only `discord:` owners have a Discord ID.
@@ -40,7 +121,7 @@ the cost; do not reintroduce a gate unless asked. `tests/test_auth.py` asserts
 `config.ALLOWED_DISCORD_IDS` no longer exists so a well-meaning revert gets caught.
 
 Only `discord:` owners carry a Discord ID, so `discord_id_from_owner` returns `""` for
-Google and GitHub accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
+Google, GitHub and email accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
 is what keeps open registration from exposing members' long-term memory.
 
 ### User profile (Settings → Hồ sơ)
@@ -227,6 +308,36 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
 # Dated log (newest first)
+
+## Email login, AIRI-style login page, account merging, Terms and Privacy (2026-11-19, branch `login-email-steam`, not merged)
+
+The owner sent AIRI's sign-in page (email + Continue, "or", Google, GitHub, Steam, Terms line) and asked for it in
+Peto, with email via Resend (sending) and Cloudflare Email Routing (receiving), Steam, and Terms/Privacy under `/docs/`
+like AIRI. Three mockups (Như AIRI, Thẻ Peto, Tài khoản trước); the owner picked "Như AIRI" and said to drop Steam.
+Discord stays: it is the only way to the bot's memory gateway. The same day, in three rounds:
+1. A 6-digit code flow; Steam (OpenID 2.0 with `check_authentication`) built, then removed (`e82a874`, `62d28a3`).
+2. After seeing it, the owner sent AIRI's link flow (inbox page, mail button, "Email verified" tab): link plus code
+   (`b2dfdf7`).
+3. The owner found the inbox page too wordy ("bám sát mẫu"), wanted a mail opened on the phone to sign the computer
+   in, and asked for Google/email accounts with one address to be one account. Code removed, cross-device sign-in
+   with a confirmation step, merging by verified email (see the two sections above).
+- Backend: `features/accounts/email_login.py`, `storage/email_login.py` (`email_accounts`, `account_identities`,
+  `email_login_links`; the code table of round 1 is dropped at startup), `auth._linked_owner`, config
+  `RESEND_API_KEY`, `PETO_EMAIL_FROM`, `PETO_EMAIL_REPLY_TO` (`.env.example`). `conftest` sets a fake Resend key and an
+  autouse `sent_emails` fixture that replaces `deliver`, so no test can send mail.
+- Frontend: `LoginScreen.tsx`, `EmailLinkScreen.tsx`, `emailLink.ts`, `sendLoginEmail` / `openEmailLink` /
+  `emailLoginStatus` in `api.ts`, `App.signedInByEmail`, account labels "Email" / "Đăng nhập bằng email".
+  `browser-tests/login.spec.ts` with nine screenshots (sign-in dark and light, inbox, verified tab on PC and mobile;
+  the phone's confirmation page).
+- Docs: `dieu-khoan` and `quyen-rieng-tu` in `articles.json` (group Trợ giúp), drafted from the code and these notes;
+  the owner still has to approve the wording (see `docs-site.md`).
+- Tests: backend `test_email_login.py` (same browser, phone confirm, deny, a stranger polling, one use, newer mail,
+  expiry, origin, limits, nothing stored, merging both orders, unverified email, old accounts kept, GitHub primary
+  email, Discord refused), `test_auth.py` (new scopes); frontend `App.test.tsx` (7 login tests); Playwright
+  `login.spec.ts` 6 passed (a second tab of the same context, and a separate "phone" context that confirms).
+- Not tried for real: a Resend send from the VPS, delivery to Gmail/Outlook inboxes (spam placement), Google and
+  GitHub returning the email with the new scopes, the `CF-Connecting-IP` limit behind the real tunnel (see
+  `unverified.md`).
 
 ## Conservative automatic memory attribution (2026-10-27, committed `ee8c6db`, not deployed)
 

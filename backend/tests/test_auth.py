@@ -54,6 +54,8 @@ async def test_me_reports_logged_in_user(client):
 
 async def test_me_never_leaks_tokens(client):
     body = (await client.get("/api/auth/me")).json()
+    # "providers" chỉ là tên các lối đăng nhập (có lối "email"), không phải dữ liệu của người dùng.
+    body.pop("providers")
     serialized = str(body).casefold()
     assert "token" not in serialized
     assert "secret" not in serialized
@@ -80,9 +82,8 @@ async def test_login_redirects_to_google(anon_client):
     assert response.status_code == 307
     location = response.headers["location"]
     assert location.startswith("https://accounts.google.com/o/oauth2/v2/auth")
-    # Không xin "email": màn hình đăng nhập chỉ hứa đọc tên và ảnh đại diện.
-    assert "scope=openid+profile" in location
-    assert "email" not in location
+    # "email" chỉ để gộp tài khoản theo email đã xác minh (lưu dấu băm); không xin gì thêm.
+    assert "scope=openid+profile+email&" in location
     assert "test-google-client-secret" not in location
     assert response.cookies.get(auth.GOOGLE_STATE_COOKIE)
 
@@ -92,7 +93,7 @@ async def test_google_login_bao_loi_khi_chua_cau_hinh(anon_client, monkeypatch):
     monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "")
     assert (await anon_client.get("/api/auth/google/login")).status_code == 503
     assert auth.available_providers() == {
-        "discord": True, "google": False, "github": True,
+        "discord": True, "google": False, "github": True, "email": True,
     }
 
 
@@ -111,8 +112,8 @@ async def test_login_redirects_to_github(anon_client):
     assert response.status_code == 307
     location = response.headers["location"]
     assert location.startswith("https://github.com/login/oauth/authorize")
-    # Không xin scope nào: chỉ hồ sơ công khai, không email, không repo.
-    assert "scope=&" in location or location.endswith("scope=")
+    # Chỉ đọc danh sách email để gộp tài khoản; không đụng repo.
+    assert "scope=user%3Aemail&" in location
     assert "test-github-client-secret" not in location
     assert response.cookies.get(auth.GITHUB_STATE_COOKIE)
 
@@ -229,7 +230,7 @@ async def test_guest_login_is_gone_and_old_guest_cookies_sign_out(anon_client):
 
 async def test_me_liet_ke_cac_cach_dang_nhap(anon_client):
     body = (await anon_client.get("/api/auth/me")).json()
-    assert body["providers"] == {"discord": True, "google": True, "github": True}
+    assert body["providers"] == {"discord": True, "google": True, "github": True, "email": True}
     assert body["login_configured"] is True
 
 

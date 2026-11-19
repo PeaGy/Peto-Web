@@ -39,6 +39,7 @@ export function AccountAvatar({ user, size }: { user?: AccountUser; size: number
  */
 export function accountSubtitle(user?: AccountUser): string {
   if (user?.provider === "google") return "Google";
+  if (user?.provider === "email") return "Email";
   if (user?.provider === "github") return user.username ? `@${user.username} · GitHub` : "GitHub";
   return user?.username ? `@${user.username}` : "Discord";
 }
@@ -46,6 +47,7 @@ export function accountSubtitle(user?: AccountUser): string {
 /** Dòng dưới tên trong mục Tài khoản của Cài đặt. */
 export function accountLine(user?: AccountUser): string {
   if (user?.provider === "google") return "Đăng nhập bằng Google";
+  if (user?.provider === "email") return "Đăng nhập bằng email";
   if (user?.provider === "github") return `${user.username ? `@${user.username} · ` : ""}Đăng nhập bằng GitHub`;
   return `${user?.username ? `@${user.username} · ` : ""}Đăng nhập bằng Discord`;
 }

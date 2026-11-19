@@ -190,7 +190,7 @@ interface ChatHandlers {
   onDone?: (messageId?: number) => void;
 }
 
-export type AuthProvider = "discord" | "google" | "github";
+export type AuthProvider = "discord" | "google" | "github" | "email";
 
 export interface DiscordMemorySettings {
   enabled: boolean;
@@ -236,7 +236,7 @@ export interface AuthState {
   authenticated: boolean;
   login_configured: boolean;
   /** Cách đăng nhập nào đang dùng được. Thiếu cấu hình thì nút tự ẩn. */
-  providers?: Record<AuthProvider, boolean>;
+  providers?: Partial<Record<AuthProvider, boolean>>;
   /** Máy chủ phục vụ Companion bản AIRI ở /companion/ (PETO_AIRI_DIR, từ 15/11/2026): mở Companion là điều hướng thật
    * sang trang đó, không dựng Companion React. Thiếu (máy chủ cũ) nghĩa là không. */
   companion_airi?: boolean;
@@ -271,6 +271,45 @@ export async function logout(): Promise<void> {
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
 export const GITHUB_LOGIN_URL = "/api/auth/github/login";
+
+export interface LoginEmailSent {
+  ok: true;
+  /** Số giây trước khi được gửi lại thư. */
+  resend_after: number;
+  /** Đường dẫn và mã trong thư dùng được trong bấy nhiêu giây. */
+  expires_in: number;
+}
+
+/** Gửi thư đăng nhập có nút đăng nhập. Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp của máy chủ. Máy chủ
+ * đặt cho trình duyệt này một cookie yêu cầu để trang "Kiểm tra hộp thư" nhận phiên khi thư được bấm. */
+export async function sendLoginEmail(email: string): Promise<LoginEmailSent> {
+  return json(await fetch("/api/auth/email/send", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  }));
+}
+
+export interface EmailLinkResult {
+  /** `confirm`: mở trên máy khác với máy đang chờ, cần người dùng xác nhận; `signed_in`: đã đăng nhập trình duyệt này. */
+  state: 'confirm' | 'signed_in' | 'denied';
+  /** Máy đang chờ, ví dụ "Chrome trên Windows" (chỉ khi `confirm`). */
+  device?: string;
+  /** Giờ gửi yêu cầu, giây Unix (chỉ khi `confirm`). */
+  requested_at?: number;
+  same_browser?: boolean;
+}
+
+/** Trang mở từ nút trong thư gửi token lên; `confirm`/`deny` là câu trả lời ở trang xác nhận. */
+export async function openEmailLink(token: string, action?: 'confirm' | 'deny'): Promise<EmailLinkResult> {
+  return json(await fetch("/api/auth/email/link", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, confirm: action === 'confirm', deny: action === 'deny' }),
+  }));
+}
+
+/** Trang "Kiểm tra hộp thư" hỏi thư của trình duyệt này đã được bấm chưa; `signed_in` thì máy chủ vừa đặt phiên. */
+export async function emailLoginStatus(): Promise<{ state: 'waiting' | 'signed_in' | 'denied' | 'expired' }> {
+  return json(await fetch("/api/auth/email/status", { method: "POST" }));
+}
 
 /** Hồ sơ người dùng tự điền trong Cài đặt. Máy chủ ghép nó vào mọi lượt chat. */
 export interface Profile {

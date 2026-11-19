@@ -130,7 +130,7 @@ Only these places may write hex directly. Any other new colour becomes a token.
 | 16px | Answer and message text (`.bubble`, line height 1.7); every input on touch screens |
 | 19–20px | Settings page title (19), dialog titles (20) |
 | 22px | Greeting, Admin page title |
-| 26–30px | Login card (26), centred desktop greeting (30, weight 600, `letter-spacing: -0.01em`) |
+| 26–34px | Centred desktop greeting (30, weight 600, `letter-spacing: -0.01em`), login page title (34, same tracking) |
 
 Weights: 400 body, 500 labels and navigation, 600 titles and primary buttons, 650 headings and bold text **inside
 answers**, 700 avatar initials and file-extension tags.
@@ -163,7 +163,7 @@ padding inside cards and dialogs is 16–24px.
 | 12px | Code blocks, tables, web source cards, Dropdown lists, **all action menus**, sidebar navigation items |
 | 14px | User bubble |
 | 16px | Composer option menus, file cards in messages, Admin cards |
-| 18px | Composer, Settings dialog, confirm dialogs, login card |
+| 18px | Composer, Settings dialog, confirm dialogs |
 | 20px | Text-edit dialog, history search dialog |
 | `999px` | Pills: Send button, effort chip, sources pill |
 | `50%` | Avatars, the round "jump to latest" button |
