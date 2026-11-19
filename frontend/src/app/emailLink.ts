@@ -1,25 +1,33 @@
 /**
- * Đường dẫn đăng nhập trong thư có dạng `/#email_token=…`. Phần sau dấu # không bao giờ tới máy chủ hay Cloudflare lúc
- * tải trang; trang đọc nó ở đây, xóa khỏi thanh địa chỉ ngay (trước cả router), rồi gửi lên bằng POST.
+ * Đường dẫn trong thư có dạng `/#email_token=…` (xác nhận email khi tạo tài khoản) hoặc `/#reset_token=…` (đặt lại mật
+ * khẩu). Phần sau dấu # không bao giờ tới máy chủ hay Cloudflare lúc tải trang; trang đọc nó ở đây, xóa khỏi thanh địa
+ * chỉ ngay (trước cả router), rồi gửi lên bằng POST.
  */
-const PREFIX = '#email_token=';
 const CHANNEL = 'peto-auth';
-let stash: string | null = null;
+const stash: Record<'email' | 'reset', string | null> = { email: null, reset: null };
 
-/** Đọc token một lần từ địa chỉ và xóa nó khỏi lịch sử; gọi lại bao nhiêu lần cũng trả cùng token tới khi quên. */
-export function takeEmailToken(): string | null {
+function take(kind: 'email' | 'reset'): string | null {
+  const prefix = `#${kind}_token=`;
   try {
-    if (window.location.hash.startsWith(PREFIX)) {
-      const token = decodeURIComponent(window.location.hash.slice(PREFIX.length)).trim();
+    if (window.location.hash.startsWith(prefix)) {
+      const token = decodeURIComponent(window.location.hash.slice(prefix.length)).trim();
       window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
-      stash = /^[A-Za-z0-9_-]{20,100}$/.test(token) ? token : '';
+      stash[kind] = /^[A-Za-z0-9_-]{20,100}$/.test(token) ? token : '';
     }
   } catch { /* Địa chỉ lạ: coi như không có token. */ }
-  return stash;
+  return stash[kind];
 }
 
+/** Đọc token một lần từ địa chỉ và xóa nó khỏi lịch sử; gọi lại bao nhiêu lần cũng trả cùng token tới khi quên. */
+export const takeEmailToken = () => take('email');
+export const takeResetToken = () => take('reset');
+
 export function forgetEmailToken() {
-  stash = null;
+  stash.email = null;
+}
+
+export function forgetResetToken() {
+  stash.reset = null;
 }
 
 /** Báo các tab Peto khác (đang chờ ở "Kiểm tra hộp thư") rằng trình duyệt này vừa đăng nhập. */

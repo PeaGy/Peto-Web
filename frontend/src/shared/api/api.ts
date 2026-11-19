@@ -272,20 +272,34 @@ export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
 export const GITHUB_LOGIN_URL = "/api/auth/github/login";
 
-export interface LoginEmailSent {
-  ok: true;
-  /** Số giây trước khi được gửi lại thư. */
-  resend_after: number;
-  /** Đường dẫn và mã trong thư dùng được trong bấy nhiêu giây. */
-  expires_in: number;
+const postJson = (url: string, body: unknown) =>
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+/** Bấm Tiếp tục ở trang Đăng nhập: `new` → trang Tạo tài khoản, `password` → Chào mừng trở lại, `no_password` → tài
+ * khoản (thường là Google/GitHub đã gộp email) chưa đặt mật khẩu. */
+export async function checkEmail(email: string): Promise<{ state: 'new' | 'password' | 'no_password' }> {
+  return json(await postJson("/api/auth/email/check", { email }));
 }
 
-/** Gửi thư đăng nhập có nút đăng nhập. Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp của máy chủ. Máy chủ
- * đặt cho trình duyệt này một cookie yêu cầu để trang "Kiểm tra hộp thư" nhận phiên khi thư được bấm. */
-export async function sendLoginEmail(email: string): Promise<LoginEmailSent> {
-  return json(await fetch("/api/auth/email/send", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
-  }));
+/** Trang Tạo tài khoản: máy chủ gửi thư xác nhận email và đặt cho trình duyệt này một cookie yêu cầu, để trang "Kiểm
+ * tra hộp thư" nhận phiên khi thư được bấm. Tài khoản chỉ có sau khi bấm thư. */
+export async function signUpWithEmail(email: string, password: string, displayName: string): Promise<{ ok: true }> {
+  return json(await postJson("/api/auth/email/signup", { email, password, display_name: displayName }));
+}
+
+/** Trang Chào mừng trở lại; thành công thì máy chủ đặt cookie phiên. */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  await json(await postJson("/api/auth/email/password", { email, password }));
+}
+
+/** Quên mật khẩu: máy chủ trả lời như nhau dù email có tài khoản hay không. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await json(await postJson("/api/auth/email/reset", { email }));
+}
+
+/** Trang mở từ nút "Đặt lại mật khẩu" trong thư. */
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  await json(await postJson("/api/auth/email/reset/confirm", { token, password }));
 }
 
 export interface EmailLinkResult {

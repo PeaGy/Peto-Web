@@ -1,7 +1,7 @@
 """Bảng của đăng nhập bằng email và của việc gộp tài khoản theo email đã xác minh.
 
-Không lưu địa chỉ email ở đâu cả: chỉ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
-``features.accounts.email_login.email_hash``) và tên hiển thị đã che (``tr•••@gmail.com``). Token của đường dẫn trong
+Không lưu địa chỉ email đầy đủ: chỉ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
+``features.accounts.email_login.email_hash``) và tên hiển thị là phần trước @ (cột ``masked`` giữ tên cũ của nó). Token của đường dẫn trong
 thư và mã của yêu cầu (cookie của trình duyệt đã gõ email) cũng chỉ lưu dạng băm.
 
 - ``email_accounts``: email nào thuộc owner nào. Tài khoản đầu tiên có email đó (đăng nhập email, Google hay GitHub với
@@ -9,9 +9,11 @@ thư và mã của yêu cầu (cookie của trình duyệt đã gõ email) cũng
   giờ có mặt ở đây.
 - ``account_identities``: mỗi danh tính Google/GitHub đã đăng nhập thuộc owner nào (để đổi email bên Google sau này
   không tách ra tài khoản mới).
-- ``email_login_links``: mỗi thư đăng nhập một dòng, đi qua ``pending`` → ``approved`` (đã bấm/xác nhận, có owner) →
-  ``claimed`` (tab đang chờ đã nhận phiên); hoặc ``denied`` (người nhận thư bấm "Không phải mình"), ``replaced`` (có
-  thư mới hơn).
+- ``email_login_links``: mỗi thư một dòng, ``kind`` là ``signup`` (xác nhận email khi tạo tài khoản, kèm dấu băm mật
+  khẩu vừa đặt) hoặc ``reset`` (đặt lại mật khẩu). Thư xác nhận đi qua ``pending`` → ``approved`` (đã bấm/xác nhận, có
+  owner) → ``claimed`` (tab đang chờ đã nhận phiên); hoặc ``denied`` ("Không phải mình"), ``replaced`` (có thư mới hơn
+  cùng loại). Thư đặt lại đi thẳng ``pending`` → ``claimed`` khi mật khẩu mới được lưu.
+- ``account_passwords``: dấu băm scrypt của mật khẩu, mỗi owner một dòng (kể cả tài khoản Google/GitHub đã gộp email).
 """
 
 from __future__ import annotations
@@ -63,7 +65,24 @@ async def init_tables(db) -> None:
             created_at REAL NOT NULL,
             expires_at REAL NOT NULL,
             state TEXT NOT NULL DEFAULT 'pending',
-            owner TEXT NOT NULL DEFAULT ''
+            owner TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL DEFAULT 'signin',
+            password_hash TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    # Bản đã deploy ngày 19/11/2026 chưa có hai cột này (thư khi ấy chỉ để đăng nhập).
+    columns = {row[1] for row in await (await db.execute("PRAGMA table_info(email_login_links)")).fetchall()}
+    if "kind" not in columns:
+        await db.execute("ALTER TABLE email_login_links ADD COLUMN kind TEXT NOT NULL DEFAULT 'signin'")
+    if "password_hash" not in columns:
+        await db.execute("ALTER TABLE email_login_links ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_passwords (
+            owner TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            updated_at REAL NOT NULL
         )
         """
     )
@@ -87,18 +106,20 @@ async def recent_sends(email_hash: str, since: float) -> list[float]:
         return [row[0] for row in await cursor.fetchall()]
 
 
-async def add_link(*, email_hash: str, masked: str, link_hash: str, request_hash: str, device: str, ttl: float,
-                   keep_for: float) -> int:
-    """Ghi thư mới; thư cũ chưa dùng của email đó thành ``replaced`` (chỉ thư sau cùng còn dùng được)."""
+async def add_link(*, kind: str, email_hash: str, masked: str, link_hash: str, request_hash: str, device: str,
+                   ttl: float, keep_for: float, password_hash: str = "") -> int:
+    """Ghi thư mới; thư cũ cùng loại chưa dùng của email đó thành ``replaced`` (chỉ thư sau cùng còn dùng được).
+    ``masked`` là tên hiển thị của tài khoản sắp tạo (tên người dùng gõ, hoặc phần trước @)."""
     now = time.time()
     async with db_connection.connect() as db:
         await db.execute("DELETE FROM email_login_links WHERE created_at < ?", (now - keep_for,))
-        await db.execute("UPDATE email_login_links SET state = 'replaced' WHERE email_hash = ? AND state = 'pending'",
-                         (email_hash,))
+        await db.execute(
+            "UPDATE email_login_links SET state = 'replaced' WHERE email_hash = ? AND kind = ? AND state = 'pending'",
+            (email_hash, kind))
         cursor = await db.execute(
-            "INSERT INTO email_login_links (email_hash, masked, link_hash, request_hash, device, created_at, expires_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (email_hash, masked, link_hash, request_hash, device, now, now + ttl),
+            "INSERT INTO email_login_links (kind, email_hash, masked, link_hash, request_hash, device, created_at, "
+            "expires_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, email_hash, masked, link_hash, request_hash, device, now, now + ttl, password_hash),
         )
         await db.commit()
         return int(cursor.lastrowid)
@@ -111,21 +132,51 @@ async def drop_link(link_id: int) -> None:
         await db.commit()
 
 
-async def pending_link(link_hash: str) -> dict | None:
-    """Thư còn dùng được ứng với token này, hoặc None."""
+async def pending_link(link_hash: str, kind: str) -> dict | None:
+    """Thư loại ``kind`` còn dùng được ứng với token này, hoặc None."""
     if not link_hash:
         return None
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT id, email_hash, masked, request_hash, device, created_at FROM email_login_links "
-            "WHERE link_hash = ? AND state = 'pending' AND expires_at > ?",
-            (link_hash, time.time()),
+            "SELECT id, email_hash, masked, request_hash, device, created_at, password_hash FROM email_login_links "
+            "WHERE link_hash = ? AND kind = ? AND state = 'pending' AND expires_at > ?",
+            (link_hash, kind, time.time()),
         )
         row = await cursor.fetchone()
     if not row:
         return None
-    keys = ("id", "email_hash", "masked", "request_hash", "device", "created_at")
+    keys = ("id", "email_hash", "masked", "request_hash", "device", "created_at", "password_hash")
     return dict(zip(keys, row))
+
+
+async def claim_link(link_id: int) -> bool:
+    """Dùng thư đặt lại mật khẩu đúng một lần."""
+    async with db_connection.connect() as db:
+        cursor = await db.execute(
+            "UPDATE email_login_links SET state = 'claimed' WHERE id = ? AND state = 'pending'", (link_id,))
+        await db.commit()
+        return cursor.rowcount == 1
+
+
+# --- Mật khẩu -------------------------------------------------------------------------------------------------------
+
+
+async def password_of(owner: str) -> str | None:
+    async with db_connection.connect() as db:
+        cursor = await db.execute("SELECT password_hash FROM account_passwords WHERE owner = ?", (owner,))
+        row = await cursor.fetchone()
+    return str(row[0]) if row else None
+
+
+async def set_password(owner: str, password_hash: str, *, replace: bool) -> None:
+    """Lưu mật khẩu. ``replace=False`` (tạo tài khoản) không đè mật khẩu đã có; đặt lại mật khẩu thì đè."""
+    if owner.startswith("discord:"):
+        raise ValueError("tài khoản Discord không có mật khẩu")
+    verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
+    async with db_connection.connect() as db:
+        await db.execute(f"{verb} INTO account_passwords (owner, password_hash, updated_at) VALUES (?, ?, ?)",
+                         (owner, password_hash, time.time()))
+        await db.commit()
 
 
 async def approve_link(link_id: int, owner: str) -> bool:
@@ -154,7 +205,7 @@ async def request_state(request_hash: str, claim_window: float) -> tuple[str, st
     now = time.time()
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT id, state, owner, expires_at FROM email_login_links WHERE request_hash = ? "
+            "SELECT id, state, owner, expires_at FROM email_login_links WHERE request_hash = ? AND kind != 'reset' "
             "ORDER BY created_at DESC LIMIT 1",
             (request_hash,),
         )
@@ -198,6 +249,35 @@ async def email_owner(email_hash: str) -> str:
     owner = await owner_for_email(email_hash)
     assert owner is not None
     return owner
+
+
+async def move_email_account(source: str, target: str) -> None:
+    """Nhập tài khoản email ``source`` vào tài khoản ``target`` (Google/GitHub cùng email đã xác minh): mọi dòng có cột
+    ``owner`` chuyển sang ``target``, email và danh tính của ``source`` trỏ về ``target``, rồi ``source`` không còn.
+
+    Dòng nào đụng ràng buộc duy nhất của ``target`` (hồ sơ, ảnh đại diện, mục "Bạn" của trí nhớ, cài đặt…) thì giữ bản
+    của ``target`` và bỏ bản của ``source``. Bảng ``users`` đi sau cùng: ảnh đại diện và bài hát yêu thích tham chiếu
+    tới nó với ON DELETE CASCADE. Chỉ nhận ``source`` là tài khoản email: không bao giờ gộp hai tài khoản OAuth hay
+    tài khoản Discord."""
+    if not source.startswith("email:") or source == target or target.startswith("discord:"):
+        raise ValueError("chỉ nhập được tài khoản email vào một tài khoản khác không phải Discord")
+    async with db_connection.connect() as db:
+        names = [row[0] for row in await (await db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")).fetchall()]
+        tables = []
+        for name in names:
+            columns = await (await db.execute(f'PRAGMA table_info("{name}")')).fetchall()
+            if any(column[1] == "owner" for column in columns):
+                tables.append(name)
+        tables.sort(key=lambda name: name == "users")
+        try:
+            for name in tables:
+                await db.execute(f'UPDATE OR IGNORE "{name}" SET owner = ? WHERE owner = ?', (target, source))
+                await db.execute(f'DELETE FROM "{name}" WHERE owner = ?', (source,))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
 
 async def identity_owner(identity: str) -> str | None:

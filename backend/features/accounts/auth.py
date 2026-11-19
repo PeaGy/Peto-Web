@@ -228,6 +228,9 @@ async def _linked_owner(identity: str, verified_email: str | None) -> str:
     - Danh tính đã từng vào thì giữ owner cũ (đổi email bên Google sau này cũng không tách tài khoản).
     - Danh tính có tài khoản từ trước khi có gộp thì giữ tài khoản đó: không bao giờ bỏ rơi dữ liệu đang có.
     - Danh tính mới tinh có email đã thuộc một tài khoản (email, Google hay GitHub) thì vào chính tài khoản đó.
+    - Email đang thuộc một tài khoản email riêng (đăng nhập email trước, tài khoản Google/GitHub cũ chưa kịp gắn email)
+      thì tài khoản email đó được nhập vào owner này, cả dữ liệu (chủ web thử thật ngày 19/11/2026 và thấy bị tách).
+      Hai tài khoản Google/GitHub cũ cùng email thì không tự gộp.
     Email chưa ai nhận thì gắn cho owner này. Owner Discord không bao giờ có trong bảng email nên không ai gộp vào được.
     """
     from features.accounts import email_login
@@ -243,6 +246,11 @@ async def _linked_owner(identity: str, verified_email: str | None) -> str:
             owner = (await email_store.owner_for_email(key) if key else None) or identity
         await email_store.link_identity(identity, owner)
     if key:
+        # Email này đã có một tài khoản email riêng (người dùng đăng nhập bằng email trước khi tài khoản Google/GitHub
+        # cũ kịp gắn email): nhập nó vào tài khoản này. Cả hai lối đều đã chứng minh làm chủ cùng một hộp thư.
+        holder = await email_store.owner_for_email(key)
+        if holder and holder != owner and holder.startswith("email:"):
+            await email_store.move_email_account(holder, owner)
         await email_store.claim_email(key, owner)
     return owner
 
