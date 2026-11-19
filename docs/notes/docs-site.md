@@ -76,3 +76,12 @@ Chat and Companion turn (not the Agent CLI).
   `prefers-reduced-motion: no-preference`. A capture right after opening something can catch the first frame of its
   fade: a see-through search panel on 2026-09-28 was only that.
 - **Tests:** `frontend/tests/Docs.test.tsx`, `backend/tests/test_docs_api.py`, `test_static_files.py`.
+- **Terms and Privacy** (2026-11-19, draft). `dieu-khoan` ("Điều khoản sử dụng") and `quyen-rieng-tu` ("Chính sách
+  quyền riêng tư") sit in the Trợ giúp group, like AIRI's `/docs/en/about/terms` and `/privacy` (none of AIRI's text
+  was copied). The login page links both. They were written from the code and these notes: what each table stores,
+  that email addresses are only hashed, which providers get data (xAI, OpenAI, Anthropic; StepFun, OpenAI, Alibaba
+  Cloud for Giọng Peto; YouTube; Resend; Cloudflare), the read-only Discord gateway, cookies, what users can delete
+  themselves, and that whole-account deletion is by request in Discord (there is no button). Owner decisions still
+  open in the text: the minimum age (13, under 18 with a parent's consent), contact (Discord only, no email address
+  yet), backup retention ("bản sao lưu cũ … một thời gian"). Update the date line at the top of each page when they
+  change, and keep them true when storage or providers change.

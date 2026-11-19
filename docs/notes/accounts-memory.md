@@ -17,9 +17,46 @@ server-side, calls `/users/@me` itself, and discards the Discord access token im
 (nothing stored, nothing sent to the client). The session is an `itsdangerous` signed
 cookie holding only the owner key.
 
-There are three ways in, all in `features/accounts/auth.py`: Discord, Google and GitHub OAuth.
-`owner_key(provider, external_id)` builds every owner; `provider_from_owner` is what
-`session_owner` uses to reject a signed cookie carrying a malformed key.
+There are four ways in: Discord, Google and GitHub OAuth in `features/accounts/auth.py`, and a 6-digit code sent by
+email in `features/accounts/email_login.py` (since 2026-11-19, see below). `owner_key(provider, external_id)` builds
+every owner; `provider_from_owner` is what `session_owner` uses to reject a signed cookie carrying a malformed key.
+
+### Email login (6-digit code)
+
+Picked over a magic link because a code works when the mail is read on another device or in a mail app's own browser:
+the session cookie always lands in the browser that typed the address. Sent with Resend, from `PETO_EMAIL_FROM`
+(default `Peto <no-reply@peagy.com>`, the domain the owner verified at Resend), optional `PETO_EMAIL_REPLY_TO` (for a
+Cloudflare Email Routing address). No `RESEND_API_KEY` means `providers.email` is false and the login page hides the
+field. Steam login was built in the same branch and dropped by the owner the same day; it is in commit `e82a874`.
+- `POST /api/auth/email/send {email}` and `POST /api/auth/email/verify {email, code}`. Verify sets the session cookie
+  in its JSON response; the page then re-reads `/api/auth/me` without navigating, so a chat bookmark and a pending
+  `agent_code` survive.
+- **No address at rest.** `email_accounts` maps `email_hash` (unkeyed SHA-256 of `peto-email-v1:<normalized>`, so
+  rotating `PETO_SESSION_SECRET` loses no account) to a random owner `email:<32 hex>`. `users.display_name` is
+  `tr•••@gmail.com` (two characters and the domain), `username` is empty. The address lives only in memory while
+  sending; logs carry the HTTP status, never the address or code. `tests/test_email_login.py` scans every table.
+- **One mailbox, one account.** Gmail/Googlemail drop dots and `+tag`; Outlook, Hotmail, Live, MSN, iCloud, Proton
+  and Fastmail drop `+tag` (`PLUS_DOMAINS`). Other domains are left alone, since `a+b` may be someone else's box. The
+  code is still sent to the address as typed (lowercased).
+- **Codes** (`email_login_codes`): HMAC of the code with the session secret, 10 minutes (`CODE_TTL`), only the newest
+  unexpired code of an address works, 5 wrong tries burn it (`MAX_ATTEMPTS`), used once (`consume_code` is a guarded
+  UPDATE), rows deleted after a day. A failed Resend call marks its code used and answers 502.
+- **Limits.** Per address (SQLite): 60 s between sends, 5 sends an hour. Per IP (process memory, like the other
+  queues): 10 sends and 30 verifies an hour. The IP is `CF-Connecting-IP` only when the TCP peer is loopback (the
+  tunnel); a direct connection's own address otherwise. 429 answers carry `Retry-After` and a Vietnamese wait time.
+- **No account enumeration.** Send answers the same `{ok, resend_after, expires_in}` whether or not the address has an
+  account; the account is created only on a correct code.
+- Email accounts have the same rights as Google and GitHub (owner's answer 2026-11-19): Luna, Agent, the Giọng Peto
+  allowance (`voice/api.MEMBERS`). They never carry a Discord ID.
+- **Login page** (`app/LoginScreen.tsx`, `account.css`): the owner picked "Như AIRI" without Steam from three mockups.
+  A frameless 400 px column: "Đăng nhập", "Nhập email để đăng nhập hoặc tạo tài khoản.", Email + "Tiếp tục" (grey),
+  "hoặc", grey stacked Discord, Google, GitHub (visible text is the name, accessible name "Đăng nhập bằng …"), then
+  "Khi tiếp tục, bạn đồng ý với Điều khoản và Chính sách quyền riêng tư của Peto." linking `/docs/dieu-khoan/` and
+  `/docs/quyen-rieng-tu/` in a new tab. Step two, "Nhập mã": one `one-time-code` field that submits itself at 6
+  digits, "Đăng nhập" (accent), a Spam hint, "Đổi email" (keeps the address) and "Gửi lại mã sau N giây". Nothing is
+  focused on first load (a phone keyboard would cover the buttons); changing step moves focus. The panel centres with
+  `margin: auto` so a short screen still scrolls to the title. The Peto avatar and "Peto chỉ đọc tên và ảnh đại diện"
+  line of the old card are gone; the privacy page says it now.
 
 **Guest login was removed on 2026-10-06** (the owner's call): anyone could mint unlimited guest accounts and spend the
 web's AI quota, and a per-guest counter could be dodged by clearing cookies. GitHub login replaced the "Khách" button.
@@ -40,7 +77,7 @@ the cost; do not reintroduce a gate unless asked. `tests/test_auth.py` asserts
 `config.ALLOWED_DISCORD_IDS` no longer exists so a well-meaning revert gets caught.
 
 Only `discord:` owners carry a Discord ID, so `discord_id_from_owner` returns `""` for
-Google and GitHub accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
+Google, GitHub and email accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
 is what keeps open registration from exposing members' long-term memory.
 
 ### User profile (Settings → Hồ sơ)
@@ -227,6 +264,26 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
 # Dated log (newest first)
+
+## Email login, AIRI-style login page, Terms and Privacy pages (2026-11-19, branch `login-email-steam`, not merged)
+
+The owner sent AIRI's sign-in page (email + Continue, "or", Google, GitHub, Steam, Terms line) and asked for it in
+Peto, with email via Resend (sending) and Cloudflare Email Routing (receiving), Steam, and Terms/Privacy under `/docs/`
+like AIRI. Three mockups (Như AIRI, Thẻ Peto, Tài khoản trước); the owner picked "Như AIRI" and said to drop Steam.
+Discord stays: it is the only way to the bot's memory gateway. Steam (OpenID 2.0 with `check_authentication`, owner
+`steam:<SteamID64>`) was built and tested first, then removed; it is commit `e82a874` on the branch.
+- Backend: `features/accounts/email_login.py`, `storage/email_login.py`, config `RESEND_API_KEY`, `PETO_EMAIL_FROM`,
+  `PETO_EMAIL_REPLY_TO` (`.env.example`). `conftest` sets a fake Resend key and an autouse `sent_emails` fixture
+  that replaces `deliver`, so no test can send mail.
+- Frontend: `LoginScreen.tsx` rewritten, `sendEmailCode` / `verifyEmailCode` in `api.ts`, `App.signedInByEmail`,
+  account labels "Email" / "Đăng nhập bằng email". `browser-tests/login.spec.ts` with six screenshots (dark, light,
+  code step; PC and mobile).
+- Docs: `dieu-khoan` and `quyen-rieng-tu` in `articles.json` (group Trợ giúp), drafted from the code and these notes;
+  the owner still has to approve the wording (see `docs-site.md`).
+- Tests: backend `test_email_login.py` (23), `test_auth.py`, `test_docs_api.py`; frontend `App.test.tsx` (5 new login
+  tests), full vitest 1189 passed; Playwright `login.spec.ts` 4 passed, routing and discord-memory specs passed.
+- Not tried for real: a Resend send from the VPS, delivery to Gmail/Outlook inboxes (spam placement), the
+  `CF-Connecting-IP` limit behind the real tunnel (see `unverified.md`).
 
 ## Conservative automatic memory attribution (2026-10-27, committed `ee8c6db`, not deployed)
 

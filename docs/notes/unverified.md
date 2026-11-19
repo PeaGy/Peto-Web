@@ -26,6 +26,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Accounts and memory (`accounts-memory.md`)
 
+- [ ] Email login with a real Resend key on the VPS: the code mail arrives from `PETO_EMAIL_FROM` at Gmail and Outlook (inbox or spam?), the code signs in, and a reply reaches `PETO_EMAIL_REPLY_TO` through Cloudflare Email Routing (only a fake `deliver` and a mocked Resend API have run) — `accounts-memory.md`, "Email login (6-digit code)".
+- [ ] The per-IP send limit behind the real Cloudflare Tunnel: two phones on different networks each get their own 10 sends an hour (tested only with a fake `CF-Connecting-IP`) — `accounts-memory.md`, "Email login (6-digit code)".
+- [ ] The login page on a real phone: the keyboard offers the code from the mail (iOS Mail, Gmail) and picking it fills the field and signs in — `accounts-memory.md`, "Email login (6-digit code)".
+
 - [ ] How well a real model sorts and routes memory notes into entries (only the mock has run) — `accounts-memory.md`, "Memory (Brain)".
 - [ ] Automatic memory extraction under the grounding contract with a real model (fake model/gateway only) — `accounts-memory.md`, "Conservative automatic memory attribution".
 

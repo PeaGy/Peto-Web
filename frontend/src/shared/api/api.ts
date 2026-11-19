@@ -190,7 +190,7 @@ interface ChatHandlers {
   onDone?: (messageId?: number) => void;
 }
 
-export type AuthProvider = "discord" | "google" | "github";
+export type AuthProvider = "discord" | "google" | "github" | "email";
 
 export interface DiscordMemorySettings {
   enabled: boolean;
@@ -236,7 +236,7 @@ export interface AuthState {
   authenticated: boolean;
   login_configured: boolean;
   /** Cách đăng nhập nào đang dùng được. Thiếu cấu hình thì nút tự ẩn. */
-  providers?: Record<AuthProvider, boolean>;
+  providers?: Partial<Record<AuthProvider, boolean>>;
   /** Máy chủ phục vụ Companion bản AIRI ở /companion/ (PETO_AIRI_DIR, từ 15/11/2026): mở Companion là điều hướng thật
    * sang trang đó, không dựng Companion React. Thiếu (máy chủ cũ) nghĩa là không. */
   companion_airi?: boolean;
@@ -271,6 +271,28 @@ export async function logout(): Promise<void> {
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
 export const GITHUB_LOGIN_URL = "/api/auth/github/login";
+
+export interface EmailCodeSent {
+  ok: true;
+  /** Số giây trước khi được gửi lại mã. */
+  resend_after: number;
+  /** Mã dùng được trong bấy nhiêu giây. */
+  expires_in: number;
+}
+
+/** Gửi mã 6 số tới email. Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp tiếng Việt của máy chủ. */
+export async function sendEmailCode(email: string): Promise<EmailCodeSent> {
+  return json(await fetch("/api/auth/email/send", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  }));
+}
+
+/** Đổi mã lấy phiên đăng nhập; thành công thì máy chủ đặt cookie phiên. */
+export async function verifyEmailCode(email: string, code: string): Promise<void> {
+  await json(await fetch("/api/auth/email/verify", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }),
+  }));
+}
 
 /** Hồ sơ người dùng tự điền trong Cài đặt. Máy chủ ghép nó vào mọi lượt chat. */
 export interface Profile {

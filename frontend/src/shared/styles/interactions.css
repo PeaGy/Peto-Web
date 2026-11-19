@@ -21,16 +21,15 @@ button, summary, a { touch-action: manipulation; }
 button,
 summary,
 label,
-.discord-button,
-.alt-login { -webkit-user-select: none; user-select: none; }
+.login-button { -webkit-user-select: none; user-select: none; }
 
 /* Bỏ lớp phủ của trình duyệt thì app phải tự báo "đã nhận cú bấm". Nút gọn co
    nhẹ khi nhấn. Các hàng dài (mục điều hướng, dòng hội thoại, ô tài khoản, mục
    trong menu dấu + và menu mức suy nghĩ) chỉ đổi nền như lúc rê chuột, vì co cả một hàng trông giật;
    lớp phủ ngăn kéo thì phủ kín màn hình nên càng không được co. */
-:where(button, .discord-button, .alt-login) { transition: transform 160ms var(--ease-out); }
+:where(button, .login-button) { transition: transform 160ms var(--ease-out); }
 
-:where(button, .discord-button, .alt-login):active:not(
+:where(button, .login-button):active:not(
   :disabled, .nav-item, .conv-open, .account, .popup-menu > :is(button, a), .settings-nav-item, .work-head, .sidebar-backdrop,
   .composer-options > button, .effort-option, .jump-latest, .memory-row-main
 ) { transform: scale(0.97); }
@@ -50,9 +49,9 @@ label,
 }
 
 /* Giảm chuyển động: vẫn co để báo đã bấm, chỉ bỏ phần chạy chuyển tiếp. */
-:root[data-motion="reduced"] :where(button, .discord-button, .alt-login) { transition: none; }
+:root[data-motion="reduced"] :where(button, .login-button) { transition: none; }
 /* Bàn phím cần phản hồi tức thì, không chờ hiệu ứng nhấn. */
-:where(button, .discord-button, .alt-login):focus-visible { transition: none; }
+:where(button, .login-button):focus-visible { transition: none; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .chat-skip { position: fixed; top: 8px; left: 12px; z-index: 100; transform: translateY(-150%); padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }

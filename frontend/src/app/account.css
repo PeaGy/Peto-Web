@@ -1,57 +1,85 @@
-/* ---------- Dang nhap ---------- */
+/* ---------- Đăng nhập ----------
+   Theo mẫu AIRI (chủ web chọn "Như AIRI" ngày 19/11/2026): cột không khung giữa màn hình, tiêu đề lớn, ô email, vạch
+   "hoặc", các nút xám xếp dọc, dòng Điều khoản ở cuối. margin: auto thay cho căn giữa bằng grid để màn hình thấp vẫn
+   cuộn tới được phần đầu. */
 .login {
-  display: grid;
-  place-items: center;
+  display: flex;
   height: 100%;
-  padding: 20px;
+  overflow-y: auto;
+  padding: 24px 16px;
 }
 
-.login-card {
+.login-panel {
   width: min(400px, 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 36px 28px;
+  margin: auto;
+  display: grid;
+  gap: 16px;
+}
+
+.login-panel h1 { margin: 0; font-size: 34px; line-height: 1.15; letter-spacing: -0.01em; text-align: center; }
+.login-sub { margin: -6px 0 12px; color: var(--muted); text-align: center; }
+.login-sub strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.login-panel .error { margin: 0; }
+.login-stack { display: grid; gap: 12px; }
+.login-field label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+
+.login-input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  transition: border-color 150ms var(--ease-out);
+}
+.login-input::placeholder { color: var(--muted); }
+.login-input:focus { border-color: var(--accent); }
+.login-input[aria-invalid="true"] { border-color: var(--danger); }
+.login-code {
+  height: 52px;
+  padding-left: calc(12px + 0.45em);
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.45em;
   text-align: center;
 }
 
-.avatar.big { width: 56px; height: 56px; font-size: 24px; }
-
-.login-card h1 { margin: 0; font-size: 26px; }
-.login-sub { margin: 0; color: var(--muted); }
-
-.login-card .error { margin: 0; width: 100%; }
-
-.discord-button {
+.login-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
   width: 100%;
-  padding: 12px 18px;
-  border-radius: 12px;
-  background: #5865f2;
-  color: #fff;
+  height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
   font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
 }
-
-@media (hover: hover) and (pointer: fine) { .discord-button:hover { background: #4752c4; } }
+.login-button:disabled { opacity: 0.55; cursor: default; }
+.login-primary { background: var(--accent); color: var(--on-accent); }
+@media (hover: hover) and (pointer: fine) {
+  .login-button:hover:not(:disabled) { background: var(--panel-3); }
+  .login-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--bg)); }
+}
 
 /* Vạch ngăn có chữ ở giữa: hai gạch tự co giãn hai bên. */
 .login-divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 12.5px;
 }
-
 .login-divider::before,
 .login-divider::after {
   content: "";
@@ -60,27 +88,28 @@
   background: var(--line);
 }
 
-.login-alts { display: flex; gap: 8px; width: 100%; }
-
-.alt-login {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-2);
+.login-hint,
+.login-notice { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.login-links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.login-link {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
 }
+.login-link:disabled { color: var(--muted); font-weight: 400; text-decoration: none; cursor: default; }
 
-@media (hover: hover) and (pointer: fine) { .alt-login:hover:not(:disabled) { background: var(--panel-3); } }
+.login-terms { margin: 18px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; text-align: center; }
+.login-terms a { color: var(--text); text-underline-offset: 2px; }
+
+.avatar.big { width: 56px; height: 56px; font-size: 24px; }
 
 /* Chữ cái đầu cho tài khoản không có ảnh (khách). Hai lớp để thắng
    `.account-avatar` đứng sau trong file: trước đây nó đè nền thành xám tối
@@ -92,20 +121,6 @@
   color: var(--text);
   font-size: 13px;
   font-weight: 700;
-}
-
-.login-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.login-card code {
-  background: var(--panel-2);
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 12px;
 }
 
 /* ---------- Tài khoản trong thanh bên ---------- */

@@ -280,6 +280,15 @@ function AppContent() {
     };
   }, []);
 
+  /** Đăng nhập bằng mã email không chuyển trang: máy chủ vừa đặt cookie phiên, đọc lại trạng thái là vào app ngay, giữ
+   * nguyên URL (bookmark chat) và mã agent_code đang chờ. */
+  const signedInByEmail = useCallback(async () => {
+    const value = await getAuthState();
+    authChecked.current = true;
+    setAuthError(null);
+    setAuth(value);
+  }, []);
+
   /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
   const handleUnauthorized = useCallback(() => {
     authChecked.current = true;
@@ -453,7 +462,7 @@ function AppContent() {
   }
 
   if (!auth.authenticated) {
-    return <LoginScreen auth={auth} appInfo={appInfo} authError={authError} onSignIn={rememberChatLogin} />;
+    return <LoginScreen auth={auth} authError={authError} onSignIn={rememberChatLogin} onSignedIn={signedInByEmail} />;
   }
 
   async function openConversation(id: string) {
