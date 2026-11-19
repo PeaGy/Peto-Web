@@ -154,7 +154,7 @@ async def test_gioi_han_gui_theo_email(anon_client, sent_emails, monkeypatch):
         assert (await send(anon_client)).status_code == 200
     limited = await send(anon_client)
     assert limited.status_code == 429
-    assert "nhiều mã quá" in limited.json()["detail"]
+    assert "nhiều thư đăng nhập quá" in limited.json()["detail"]
     assert len(sent_emails) == 5
 
 
@@ -242,3 +242,93 @@ async def test_deliver_goi_resend_dung_dang(monkeypatch):
                         lambda **kw: real(transport=httpx.MockTransport(lambda r: httpx.Response(422)), **kw))
     with pytest.raises(email_login.EmailError):
         await real_deliver("an@example.com", "Chủ đề", "chữ", "<p>chữ</p>", "k-2")
+
+
+# --- Đường dẫn đăng nhập trong thư (như AIRI) ----------------------------------------------------------------------
+
+
+def link_of(mail: dict) -> str:
+    return re.search(r"(https?://[^\s\"<]+/#email_token=[A-Za-z0-9_-]+)", mail["text"]).group(1)
+
+
+def token_of(mail: dict) -> str:
+    return link_of(mail).split("#email_token=", 1)[1]
+
+
+async def open_link(client, token: str):
+    return await client.post("/api/auth/email/link", json={"token": token})
+
+
+async def test_bam_duong_dan_trong_thu_la_dang_nhap(anon_client, sent_emails):
+    await send(anon_client)
+    mail = sent_emails[-1]
+    link = link_of(mail)
+    # Token nằm sau dấu #, nên không tới máy chủ lúc trình duyệt tải trang; nút trong HTML trỏ đúng đường dẫn đó.
+    assert link.startswith("http://localhost:5173/#email_token=")
+    assert f'href="{link}"' in mail["html"]
+    assert code_of(mail) in mail["text"]
+
+    response = await open_link(anon_client, token_of(mail))
+    assert response.status_code == 200
+    owner = auth.read_session(response.cookies.get(SESSION_COOKIE))
+    assert owner.startswith("email:")
+    anon_client.cookies.set(SESSION_COOKIE, response.cookies.get(SESSION_COOKIE))
+    me = (await anon_client.get("/api/auth/me")).json()
+    assert me["user"]["provider"] == "email"
+    assert me["user"]["display_name"] == f"{EMAIL.lower()[:2]}•••@gmail.com"
+
+
+async def test_duong_dan_dung_mot_lan_va_chet_cung_ma(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    await send(anon_client)
+    first = sent_emails[-1]
+    signed = await open_link(anon_client, token_of(first))
+    assert signed.status_code == 200
+    used = await open_link(anon_client, token_of(first))
+    assert used.status_code == 400
+    assert "đã hết hạn hoặc đã được dùng" in used.json()["detail"]
+    # Mã trong cùng thư cũng hết dùng được.
+    assert (await verify(anon_client, code_of(first))).status_code == 400
+
+    # Nhập mã trước thì đường dẫn của thư đó chết; thư mới hơn làm đường dẫn cũ chết. Cả hai lối cùng một tài khoản.
+    await send(anon_client)
+    second = sent_emails[-1]
+    await send(anon_client)
+    third = sent_emails[-1]
+    assert (await open_link(anon_client, token_of(second))).status_code == 400
+    by_code = await verify(anon_client, code_of(third))
+    assert by_code.status_code == 200
+    assert auth.read_session(by_code.cookies.get(SESSION_COOKIE)) == auth.read_session(signed.cookies.get(SESSION_COOKIE))
+    assert (await open_link(anon_client, token_of(third))).status_code == 400
+
+
+async def test_duong_dan_het_han_hoac_sai(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "CODE_TTL", 0)
+    await send(anon_client)
+    assert (await open_link(anon_client, token_of(sent_emails[-1]))).status_code == 400
+    for token in ("", "ngan", "x" * 43, "a" * 500):
+        response = await open_link(anon_client, token)
+        assert response.status_code == 400
+        assert not response.cookies.get(SESSION_COOKIE)
+
+
+async def test_goc_duong_dan_khong_lay_tu_header_gia(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    # Host/Origin giả không được thành gốc của đường dẫn: token sẽ lộ cho máy của kẻ gửi yêu cầu.
+    await anon_client.post("/api/auth/email/send", json={"email": EMAIL},
+                           headers={"Origin": "https://ke-gia-mao.example", "Host": "ke-gia-mao.example"})
+    assert link_of(sent_emails[-1]).startswith("http://localhost:5173/")
+    monkeypatch.setattr(config, "CANONICAL_ORIGIN", "https://peto.peagy.com")
+    await send(anon_client)
+    assert link_of(sent_emails[-1]).startswith("https://peto.peagy.com/#email_token=")
+    # Origin là một tên miền đã cấu hình thì giữ đúng tên miền người dùng đang mở.
+    await anon_client.post("/api/auth/email/send", json={"email": EMAIL}, headers={"Origin": "http://localhost:5173"})
+    assert link_of(sent_emails[-1]).startswith("http://localhost:5173/#email_token=")
+
+
+async def test_khong_co_ten_mien_nao_thi_khong_gui(anon_client, sent_emails, monkeypatch):
+    for name in ("CANONICAL_ORIGIN", "FRONTEND_URL", "DISCORD_REDIRECT_URI", "GOOGLE_REDIRECT_URI",
+                 "GITHUB_LOGIN_REDIRECT_URI"):
+        monkeypatch.setattr(config, name, "")
+    assert (await send(anon_client)).status_code == 503
+    assert sent_emails == []

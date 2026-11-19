@@ -1,7 +1,8 @@
-"""Bảng của lối đăng nhập bằng email: tài khoản email và mã 6 số.
+"""Bảng của lối đăng nhập bằng email: tài khoản email, đường dẫn đăng nhập và mã 6 số đi cùng trong một thư.
 
 Không lưu địa chỉ email. Cả hai bảng chỉ giữ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
-``features.accounts.email_login.email_hash``); địa chỉ thật chỉ nằm trong bộ nhớ lúc gửi thư.
+``features.accounts.email_login.email_hash``) và tên hiển thị đã che (``tr•••@gmail.com``); địa chỉ thật chỉ nằm trong
+bộ nhớ lúc gửi thư. Đường dẫn và mã chỉ lưu dạng băm.
 """
 
 from __future__ import annotations
@@ -31,13 +32,21 @@ async def init_tables(db) -> None:
             created_at REAL NOT NULL,
             expires_at REAL NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
-            used INTEGER NOT NULL DEFAULT 0
+            used INTEGER NOT NULL DEFAULT 0,
+            link_hash TEXT NOT NULL DEFAULT '',
+            masked TEXT NOT NULL DEFAULT ''
         )
         """
     )
+    # Bảng của bản chỉ có mã (chưa từng deploy) thiếu hai cột của đường dẫn đăng nhập.
+    columns = {row[1] for row in await (await db.execute("PRAGMA table_info(email_login_codes)")).fetchall()}
+    for column in ("link_hash", "masked"):
+        if column not in columns:
+            await db.execute(f"ALTER TABLE email_login_codes ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_email_login_codes_email ON email_login_codes(email_hash, created_at)"
     )
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_login_codes_link ON email_login_codes(link_hash)")
 
 
 async def recent_sends(email_hash: str, since: float) -> list[float]:
@@ -50,15 +59,17 @@ async def recent_sends(email_hash: str, since: float) -> list[float]:
         return [row[0] for row in await cursor.fetchall()]
 
 
-async def add_code(email_hash: str, code_hash: str, ttl: float, keep_for: float) -> int:
-    """Ghi mã mới, vô hiệu mọi mã cũ của email đó (chỉ mã gửi sau cùng còn dùng được) và dọn mã quá ``keep_for``."""
+async def add_code(email_hash: str, code_hash: str, link_hash: str, masked: str, ttl: float, keep_for: float) -> int:
+    """Ghi thư mới (mã và đường dẫn), vô hiệu mọi thư cũ của email đó (chỉ thư gửi sau cùng còn dùng được) và dọn các
+    dòng quá ``keep_for``."""
     now = time.time()
     async with db_connection.connect() as db:
         await db.execute("DELETE FROM email_login_codes WHERE created_at < ?", (now - keep_for,))
         await db.execute("UPDATE email_login_codes SET used = 1 WHERE email_hash = ? AND used = 0", (email_hash,))
         cursor = await db.execute(
-            "INSERT INTO email_login_codes (email_hash, code_hash, created_at, expires_at) VALUES (?, ?, ?, ?)",
-            (email_hash, code_hash, now, now + ttl),
+            "INSERT INTO email_login_codes (email_hash, code_hash, link_hash, masked, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (email_hash, code_hash, link_hash, masked, now, now + ttl),
         )
         await db.commit()
         return int(cursor.lastrowid)
@@ -105,6 +116,24 @@ async def consume_code(code_id: int) -> bool:
         )
         await db.commit()
         return cursor.rowcount == 1
+
+
+async def consume_link(link_hash: str) -> dict | None:
+    """Dùng đường dẫn đăng nhập một lần: trả về ``email_hash`` và tên đã che, hoặc None nếu đường dẫn sai, đã dùng (kể
+    cả khi mã trong cùng thư đã được nhập), đã có thư mới hơn hay đã hết hạn."""
+    if not link_hash:
+        return None
+    async with db_connection.connect() as db:
+        cursor = await db.execute(
+            "SELECT id, email_hash, masked FROM email_login_codes WHERE link_hash = ? AND used = 0 AND expires_at > ?",
+            (link_hash, time.time()),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        cursor = await db.execute("UPDATE email_login_codes SET used = 1 WHERE id = ? AND used = 0", (row[0],))
+        await db.commit()
+    return {"email_hash": row[1], "masked": row[2]} if cursor.rowcount == 1 else None
 
 
 async def email_owner(email_hash: str) -> str:

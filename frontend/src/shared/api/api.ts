@@ -272,16 +272,16 @@ export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
 export const GITHUB_LOGIN_URL = "/api/auth/github/login";
 
-export interface EmailCodeSent {
+export interface LoginEmailSent {
   ok: true;
-  /** Số giây trước khi được gửi lại mã. */
+  /** Số giây trước khi được gửi lại thư. */
   resend_after: number;
-  /** Mã dùng được trong bấy nhiêu giây. */
+  /** Đường dẫn và mã trong thư dùng được trong bấy nhiêu giây. */
   expires_in: number;
 }
 
-/** Gửi mã 6 số tới email. Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp tiếng Việt của máy chủ. */
-export async function sendEmailCode(email: string): Promise<EmailCodeSent> {
+/** Gửi thư đăng nhập (nút đăng nhập kèm mã 6 số). Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp của máy chủ. */
+export async function sendLoginEmail(email: string): Promise<LoginEmailSent> {
   return json(await fetch("/api/auth/email/send", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
   }));
@@ -291,6 +291,13 @@ export async function sendEmailCode(email: string): Promise<EmailCodeSent> {
 export async function verifyEmailCode(email: string, code: string): Promise<void> {
   await json(await fetch("/api/auth/email/verify", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }),
+  }));
+}
+
+/** Đổi token của nút đăng nhập trong thư lấy phiên đăng nhập cho chính trình duyệt này. */
+export async function openEmailLink(token: string): Promise<void> {
+  await json(await fetch("/api/auth/email/link", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
   }));
 }
 

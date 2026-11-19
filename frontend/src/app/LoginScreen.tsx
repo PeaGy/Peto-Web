@@ -1,22 +1,28 @@
 import { useEffect, useRef, useState, type FormEvent, type JSX } from 'react';
 import type { AuthState } from '../shared/api/api';
-import { DISCORD_LOGIN_URL, GITHUB_LOGIN_URL, GOOGLE_LOGIN_URL, sendEmailCode, verifyEmailCode } from '../shared/api/api';
+import { DISCORD_LOGIN_URL, GITHUB_LOGIN_URL, GOOGLE_LOGIN_URL, getAuthState, sendLoginEmail, verifyEmailCode } from '../shared/api/api';
 import { DiscordIcon, GitHubIcon, GoogleIcon } from './accountUi';
+import { onSignedInElsewhere } from './emailLink';
 
 type LoginScreenProps = {
   auth: AuthState;
   authError: string | null;
   /** Bấm một lối OAuth: nhớ bookmark chat trước khi trang chuyển đi. */
   onSignIn?: () => void;
-  /** Mã email đúng: máy chủ đã đặt cookie phiên, App đọc lại trạng thái đăng nhập (không chuyển trang). */
+  /** Đăng nhập email xong (bấm nút trong thư ở trình duyệt này, hoặc gõ mã): App đọc lại trạng thái, không chuyển trang. */
   onSignedIn?: () => Promise<void> | void;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Tab "Kiểm tra hộp thư" hỏi lại máy chủ bấy nhiêu ms một lần, và thôi hỏi sau 15 phút (thư hết hạn sau 10 phút). */
+const POLL_MS = 3000;
+const POLL_FOR_MS = 15 * 60 * 1000;
 
 /**
  * Trang đăng nhập theo mẫu AIRI (chủ web chọn "Như AIRI", bỏ Steam, ngày 19/11/2026): ô email và nút Tiếp tục, vạch
- * "hoặc", các nút Discord, Google, GitHub xếp dọc, dòng Điều khoản ở cuối. Email đi hai bước: gửi mã 6 số, rồi nhập mã.
+ * "hoặc", các nút Discord, Google, GitHub xếp dọc, dòng Điều khoản ở cuối. Email: máy chủ gửi thư có nút đăng nhập (như
+ * AIRI, chủ web đổi từ mã sang đường dẫn cùng ngày) kèm mã 6 số. Bấm nút trong trình duyệt này thì tab "Kiểm tra hộp
+ * thư" tự tiếp tục; mở thư trên máy khác thì gõ mã.
  */
 export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: LoginScreenProps) {
   const providers = auth.providers;
@@ -27,9 +33,10 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
     providers?.github && { name: 'GitHub', href: GITHUB_LOGIN_URL, icon: <GitHubIcon /> },
   ].filter((item): item is { name: string; href: string; icon: JSX.Element } => !!item);
 
-  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [step, setStep] = useState<'email' | 'sent'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [codeOpen, setCodeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -38,6 +45,7 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
   const [now, setNow] = useState(() => Date.now());
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const sentTitleRef = useRef<HTMLHeadingElement>(null);
   const wait = Math.max(0, Math.ceil((resendAt - now) / 1000));
 
   useEffect(() => {
@@ -49,16 +57,56 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
     return () => window.clearInterval(timer);
   }, [resendAt]);
 
-  // Chuyển bước thì đưa con trỏ tới ô của bước đó. Lúc mới mở trang thì không: trên điện thoại bàn phím bật lên sẽ che
-  // các nút Discord, Google, GitHub.
+  // Chuyển bước thì đưa con trỏ tới bước mới. Lúc mới mở trang thì không: trên điện thoại bàn phím bật lên sẽ che các
+  // nút Discord, Google, GitHub.
   const shownStep = useRef(step);
   useEffect(() => {
     if (shownStep.current === step) return;
     shownStep.current = step;
-    (step === 'code' ? codeRef : emailRef).current?.focus();
+    (step === 'sent' ? sentTitleRef : emailRef).current?.focus();
   }, [step]);
 
-  async function requestCode(again: boolean) {
+  useEffect(() => {
+    if (codeOpen) codeRef.current?.focus();
+  }, [codeOpen]);
+
+  // Chờ người dùng bấm nút trong thư. Bấm trong trình duyệt này thì cookie phiên mới dùng chung cho mọi tab, nên chỉ
+  // cần hỏi lại /api/auth/me: tab vừa mở từ thư báo ngay qua BroadcastChannel, còn lại cứ vài giây hỏi một lần (bỏ qua
+  // khi tab đang ẩn) và hỏi ngay khi người dùng quay lại tab.
+  useEffect(() => {
+    if (step !== 'sent' || !onSignedIn) return;
+    let stopped = false;
+    let checking = false;
+    const check = async (force = false) => {
+      if (stopped || checking || (!force && document.visibilityState === 'hidden')) return;
+      checking = true;
+      try {
+        const state = await getAuthState();
+        if (!stopped && state.authenticated) {
+          stopped = true;
+          await onSignedIn();
+        }
+      } catch { /* Lần sau hỏi lại. */ } finally {
+        checking = false;
+      }
+    };
+    const timer = window.setInterval(() => void check(), POLL_MS);
+    const deadline = window.setTimeout(() => { stopped = true; window.clearInterval(timer); }, POLL_FOR_MS);
+    const unsubscribe = onSignedInElsewhere(() => void check(true));
+    const onVisible = () => void check();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.clearTimeout(deadline);
+      unsubscribe();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [step, onSignedIn]);
+
+  async function requestEmail(again: boolean) {
     const address = email.trim();
     if (!EMAIL_PATTERN.test(address)) {
       setError('Email chưa đúng dạng. Kiểm tra lại giúp mình nhé.');
@@ -69,18 +117,15 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
     setError(null);
     setNotice(null);
     try {
-      const sent = await sendEmailCode(address);
+      const sent = await sendLoginEmail(address);
       setExpiresIn(sent.expires_in);
       setResendAt(Date.now() + sent.resend_after * 1000);
       setNow(Date.now());
       setCode('');
-      setStep('code');
-      if (again) {
-        setNotice('Đã gửi mã mới. Mã cũ không dùng được nữa.');
-        codeRef.current?.focus();
-      }
+      setStep('sent');
+      if (again) setNotice('Đã gửi thư mới. Nút và mã trong thư cũ không dùng được nữa.');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Chưa gửi được mã. Thử lại nhé.');
+      setError(reason instanceof Error ? reason.message : 'Chưa gửi được thư. Thử lại nhé.');
     } finally {
       setBusy(false);
     }
@@ -109,6 +154,7 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
   function changeEmail() {
     setStep('email');
     setCode('');
+    setCodeOpen(false);
     setError(null);
     setNotice(null);
   }
@@ -116,47 +162,59 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
   const shownError = error ?? authError;
   const errorBox = shownError && <div className="error" role="alert">{shownError}</div>;
 
-  if (step === 'code') {
+  if (step === 'sent') {
     return (
       <div className="login">
-        <form className="login-panel" onSubmit={(event: FormEvent) => { event.preventDefault(); void submitCode(code); }}>
-          <h1>Nhập mã</h1>
-          <p className="login-sub">
-            Mình vừa gửi mã 6 số tới <strong>{email.trim()}</strong>. Mã dùng được trong {Math.round(expiresIn / 60)} phút.
+        <div className="login-panel">
+          <h1 ref={sentTitleRef} tabIndex={-1}>Kiểm tra hộp thư</h1>
+          <p className="login-sub login-message">
+            Mình vừa gửi đường dẫn đăng nhập tới <strong>{email.trim()}</strong>. Mở thư và bấm nút trong đó; trang này
+            sẽ tự tiếp tục khi bạn bấm. Thư dùng được trong {Math.round(expiresIn / 60)} phút.
           </p>
-          <div className="login-field">
-            <label htmlFor="login-code">Mã đăng nhập</label>
-            <input
-              ref={codeRef}
-              id="login-code"
-              className="login-input login-code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="······"
-              value={code}
-              aria-invalid={!!error}
-              readOnly={busy}
-              onChange={event => {
-                const digits = event.target.value.replace(/\D/g, '').slice(0, 6);
-                setCode(digits);
-                if (digits.length === 6) void submitCode(digits);
-              }}
-            />
-          </div>
-          {errorBox}
           {notice && <p className="login-notice" role="status">{notice}</p>}
-          <button className="login-button login-primary" type="submit" disabled={busy}>
-            {busy ? 'Đang kiểm tra…' : 'Đăng nhập'}
-          </button>
+          {codeOpen ? (
+            <form className="login-stack" onSubmit={(event: FormEvent) => { event.preventDefault(); void submitCode(code); }}>
+              <div className="login-field">
+                <label htmlFor="login-code">Mã 6 số trong thư</label>
+                <input
+                  ref={codeRef}
+                  id="login-code"
+                  className="login-input login-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="······"
+                  value={code}
+                  aria-invalid={!!error}
+                  readOnly={busy}
+                  onChange={event => {
+                    const digits = event.target.value.replace(/\D/g, '').slice(0, 6);
+                    setCode(digits);
+                    if (digits.length === 6) void submitCode(digits);
+                  }}
+                />
+              </div>
+              {errorBox}
+              <button className="login-button login-primary" type="submit" disabled={busy}>
+                {busy ? 'Đang kiểm tra…' : 'Đăng nhập'}
+              </button>
+            </form>
+          ) : (
+            <>
+              {errorBox}
+              <button type="button" className="login-link login-center" onClick={() => setCodeOpen(true)}>
+                Mở thư trên máy khác? Nhập mã trong thư
+              </button>
+            </>
+          )}
           <p className="login-hint">Không thấy thư? Xem cả mục Spam hoặc Quảng cáo.</p>
           <div className="login-links">
-            <button type="button" className="login-link" onClick={changeEmail} disabled={busy}>Đổi email</button>
-            <button type="button" className="login-link" onClick={() => void requestCode(true)} disabled={busy || wait > 0}>
-              {wait > 0 ? `Gửi lại mã sau ${wait} giây` : 'Gửi lại mã'}
+            <button type="button" className="login-link" onClick={changeEmail} disabled={busy}>Quay lại đăng nhập</button>
+            <button type="button" className="login-link" onClick={() => void requestEmail(true)} disabled={busy || wait > 0}>
+              {wait > 0 ? `Gửi lại thư sau ${wait} giây` : 'Gửi lại thư'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     );
   }
@@ -174,7 +232,7 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
         {auth.login_configured ? (
           <>
             {emailEnabled && (
-              <form className="login-stack" noValidate onSubmit={event => { event.preventDefault(); void requestCode(false); }}>
+              <form className="login-stack" noValidate onSubmit={event => { event.preventDefault(); void requestEmail(false); }}>
                 <div className="login-field">
                   <label htmlFor="login-email">Email</label>
                   <input
@@ -191,7 +249,7 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
                   />
                 </div>
                 {errorBox}
-                <button className="login-button" type="submit" disabled={busy}>{busy ? 'Đang gửi mã…' : 'Tiếp tục'}</button>
+                <button className="login-button" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Tiếp tục'}</button>
               </form>
             )}
             {!emailEnabled && errorBox}

@@ -26,9 +26,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Accounts and memory (`accounts-memory.md`)
 
-- [ ] Email login with a real Resend key on the VPS: the code mail arrives from `PETO_EMAIL_FROM` at Gmail and Outlook (inbox or spam?), the code signs in, and a reply reaches `PETO_EMAIL_REPLY_TO` through Cloudflare Email Routing (only a fake `deliver` and a mocked Resend API have run) — `accounts-memory.md`, "Email login (6-digit code)".
-- [ ] The per-IP send limit behind the real Cloudflare Tunnel: two phones on different networks each get their own 10 sends an hour (tested only with a fake `CF-Connecting-IP`) — `accounts-memory.md`, "Email login (6-digit code)".
-- [ ] The login page on a real phone: the keyboard offers the code from the mail (iOS Mail, Gmail) and picking it fills the field and signs in — `accounts-memory.md`, "Email login (6-digit code)".
+- [ ] Email login with a real Resend key on the VPS: the mail arrives from `PETO_EMAIL_FROM` at Gmail and Outlook (inbox or spam?), its button opens `https://peto.peagy.com/#email_token=…` and signs in, the waiting tab continues by itself, the code works from a second device, a reply reaches `PETO_EMAIL_REPLY_TO` through Cloudflare Email Routing, and Outlook Safe Links does not spend the link before the click (only a fake `deliver`, a mocked Resend API and mocked routes in Playwright have run) — `accounts-memory.md`, "Email login (link like AIRI, plus a code)".
+- [ ] The per-IP send limit behind the real Cloudflare Tunnel: two phones on different networks each get their own 10 sends an hour (tested only with a fake `CF-Connecting-IP`) — `accounts-memory.md`, "Email login (link like AIRI, plus a code)".
+- [ ] The login page on a real phone: the mail app's in-app browser opening the button link (it signs in that browser, not the phone's default one), and the keyboard offering the code from the mail — `accounts-memory.md`, "Email login (link like AIRI, plus a code)".
 
 - [ ] How well a real model sorts and routes memory notes into entries (only the mock has run) — `accounts-memory.md`, "Memory (Brain)".
 - [ ] Automatic memory extraction under the grounding contract with a real model (fake model/gateway only) — `accounts-memory.md`, "Conservative automatic memory attribution".

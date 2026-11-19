@@ -19,6 +19,11 @@
 .login-panel h1 { margin: 0; font-size: 34px; line-height: 1.15; letter-spacing: -0.01em; text-align: center; }
 .login-sub { margin: -6px 0 12px; color: var(--muted); text-align: center; }
 .login-sub strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+/* Đoạn dài ở "Kiểm tra hộp thư" và "Đã đăng nhập": chữ sáng hơn dòng phụ, như AIRI. */
+.login-message { color: var(--text); line-height: 1.55; }
+/* Tiêu đề nhận focus khi đổi bước (cho trình đọc màn hình), không cần viền focus. */
+.login-panel h1:focus { outline: none; }
+.login-center { justify-self: center; }
 .login-panel .error { margin: 0; }
 .login-stack { display: grid; gap: 12px; }
 .login-field label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }

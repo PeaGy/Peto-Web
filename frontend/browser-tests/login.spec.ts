@@ -1,9 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
 
-/** Máy chủ giả cho lối đăng nhập bằng mã email: mã 000000 sai, mã khác đúng. Không gửi thư thật. */
-async function mockEmailLogin(page: Page) {
-  const state = { authenticated: false, sent: [] as string[], verified: [] as string[] };
+const TOKEN = 'TokenGia_' + 'x'.repeat(34);
+
+/** Máy chủ giả cho đăng nhập bằng email: thư có nút (token TOKEN) và mã; mã 000000 sai. Không gửi thư thật. Trạng thái
+ * dùng chung cho mọi tab của một context, như cookie phiên của một trình duyệt. */
+async function mockEmailLogin(page: Page, state = { authenticated: false, sent: [] as string[], verified: [] as string[] }) {
   await page.route('**/api/auth/me', route => route.fulfill({ json: state.authenticated
     ? { authenticated: true, login_configured: true, providers: { discord: true, google: true, github: true, email: true },
       user: { id: 'acc-mail', provider: 'email', username: '', display_name: 'an•••@vidu.com', avatar_url: '' } }
@@ -20,10 +22,17 @@ async function mockEmailLogin(page: Page) {
     state.authenticated = true;
     return route.fulfill({ json: { ok: true } });
   });
+  await page.route('**/api/auth/email/link', route => {
+    if (route.request().postDataJSON().token !== TOKEN) {
+      return route.fulfill({ status: 400, json: { detail: 'Đường dẫn đăng nhập đã hết hạn hoặc đã được dùng.' } });
+    }
+    state.authenticated = true;
+    return route.fulfill({ json: { ok: true } });
+  });
   return state;
 }
 
-test('đăng nhập như AIRI: email, mã 6 số, sáng/tối trên PC và mobile', async ({ page }) => {
+test('đăng nhập như AIRI: gửi thư, bấm nút trong thư ở tab mới, tab cũ tự vào app', async ({ page, context }) => {
   await mockPeto(page);
   const state = await mockEmailLogin(page);
   await page.goto('/chat/A?source=bookmark');
@@ -48,28 +57,32 @@ test('đăng nhập như AIRI: email, mã 6 số, sáng/tối trên PC và mobil
 
   await email.fill('an@vidu.com');
   await email.press('Enter');
-  const code = page.getByLabel('Mã đăng nhập');
-  await expect(page.getByRole('heading', { name: 'Nhập mã' })).toBeVisible();
-  await expect(code).toBeFocused();
-  await expect(page.getByRole('button', { name: /Gửi lại mã sau \d+ giây/ })).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Kiểm tra hộp thư' })).toBeFocused();
+  await expect(page.getByRole('button', { name: /Gửi lại thư sau \d+ giây/ })).toBeDisabled();
   expect(state.sent).toEqual(['an@vidu.com']);
   await noPageOverflow(page);
-  await expect(page).toHaveScreenshot('login-code.png', { mask: [page.getByRole('button', { name: /Gửi lại mã/ })] });
+  await expect(page).toHaveScreenshot('login-inbox.png', { mask: [page.getByRole('button', { name: /Gửi lại thư/ })] });
 
-  await code.fill('000000');
-  await expect(page.getByRole('alert')).toHaveText('Mã không đúng. Còn 4 lần thử.');
-  await expect(code).toHaveAttribute('aria-invalid', 'true');
+  // Bấm nút trong thư: trình duyệt mở tab mới ở /#email_token=…; tab đó đăng nhập, tab cũ tự tiếp tục.
+  const mailTab = await context.newPage();
+  await mockPeto(mailTab);
+  await mockEmailLogin(mailTab, state);
+  await mailTab.goto(`/#email_token=${TOKEN}`);
+  await expect(mailTab.getByRole('heading', { name: 'Đã đăng nhập' })).toBeVisible();
+  expect(new URL(mailTab.url()).hash).toBe('');
+  await noPageOverflow(mailTab);
+  await expect(mailTab).toHaveScreenshot('login-verified.png');
 
-  // Gõ đủ 6 số là tự gửi; vào app ngay tại bookmark, không qua trang nào khác.
-  await code.fill('482913');
   await expect(page.getByLabel('Nhắn cho Peto', { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/chat\/A\?source=bookmark$/);
-  expect(state.verified).toEqual(['000000', '482913']);
+
+  await mailTab.getByRole('button', { name: 'Mở Peto' }).click();
+  await expect(mailTab.getByLabel('Nhắn cho Peto', { exact: true })).toBeVisible();
 });
 
-test('đăng nhập: màn hình thấp vẫn cuộn tới tiêu đề, Đổi email giữ địa chỉ đã gõ', async ({ page }) => {
+test('đăng nhập: mở thư trên máy khác thì gõ mã; màn hình thấp vẫn cuộn tới tiêu đề', async ({ page }) => {
   await mockPeto(page);
-  await mockEmailLogin(page);
+  const state = await mockEmailLogin(page);
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeInViewport();
@@ -79,7 +92,28 @@ test('đăng nhập: màn hình thấp vẫn cuộn tới tiêu đề, Đổi em
 
   await page.getByLabel('Email', { exact: true }).fill('an@vidu.com');
   await page.getByRole('button', { name: 'Tiếp tục' }).click();
-  await page.getByRole('button', { name: 'Đổi email' }).click();
+  await page.getByRole('button', { name: 'Quay lại đăng nhập' }).click();
   await expect(page.getByLabel('Email', { exact: true })).toHaveValue('an@vidu.com');
   await expect(page.getByLabel('Email', { exact: true })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Tiếp tục' }).click();
+  await page.getByRole('button', { name: 'Mở thư trên máy khác? Nhập mã trong thư' }).click();
+  const code = page.getByLabel('Mã 6 số trong thư');
+  await expect(code).toBeFocused();
+  await code.fill('000000');
+  await expect(page.getByRole('alert')).toHaveText('Mã không đúng. Còn 4 lần thử.');
+  await expect(code).toHaveAttribute('aria-invalid', 'true');
+  // Gõ đủ 6 số là tự gửi.
+  await code.fill('482913');
+  await expect(page.getByLabel('Nhắn cho Peto', { exact: true })).toBeVisible();
+  expect(state.verified).toEqual(['000000', '482913']);
+});
+
+test('đăng nhập: đường dẫn trong thư đã dùng thì báo lỗi rồi về trang đăng nhập', async ({ page }) => {
+  await mockPeto(page);
+  await mockEmailLogin(page);
+  await page.goto(`/#email_token=${'y'.repeat(43)}`);
+  await expect(page.getByRole('alert')).toHaveText('Đường dẫn đăng nhập đã hết hạn hoặc đã được dùng.');
+  await page.getByRole('button', { name: 'Về trang đăng nhập' }).click();
+  await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
 });

@@ -1,7 +1,12 @@
-"""Đăng nhập hoặc tạo tài khoản bằng email: máy chủ gửi mã 6 số qua Resend, người dùng gõ mã vào trang đăng nhập.
+"""Đăng nhập hoặc tạo tài khoản bằng email, như AIRI: máy chủ gửi qua Resend một thư có nút đăng nhập (đường dẫn dùng
+một lần) và kèm mã 6 số.
 
-Chọn mã thay cho magic link vì mã dùng được cả khi thư mở trên máy khác (đọc thư trên điện thoại, đăng nhập trên máy
-tính) hay trong app thư có trình duyệt riêng: cookie phiên luôn đặt đúng vào trình duyệt đã gõ email.
+- Bấm nút: trình duyệt mở đường dẫn được đăng nhập. Nếu đó cũng là trình duyệt đang chờ ở trang "Kiểm tra hộp thư"
+  thì tab đó thấy cookie phiên mới (chung một kho cookie) và tự vào app; máy chủ không đăng nhập hộ một tab ở nơi khác,
+  nên kẻ nhập email của người khác rồi chờ không bao giờ vào được tài khoản đó dù nạn nhân lỡ bấm nút.
+- Gõ mã: cho khi thư mở trên máy khác (đọc thư trên điện thoại, đăng nhập trên máy tính).
+- Token của đường dẫn nằm sau dấu ``#`` (``/#email_token=…``), nên không đi tới máy chủ, Cloudflare hay nhật ký truy
+  cập lúc tải trang; trang tự gửi nó bằng POST. Trình quét thư chỉ tải trang (GET) nên không dùng mất token.
 
 Nguyên tắc:
 - Không lưu địa chỉ email. Tài khoản và mã gắn với ``email_hash`` (SHA-256 của email đã chuẩn hóa); địa chỉ thật chỉ
@@ -23,6 +28,8 @@ import re
 import secrets
 import time
 from collections import deque
+from html import escape as html_escape
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -65,6 +72,10 @@ class VerifyBody(BaseModel):
     code: str = ""
 
 
+class LinkBody(BaseModel):
+    token: str = ""
+
+
 class EmailError(Exception):
     """Gửi thư thất bại; không mang địa chỉ hay mã trong thông điệp."""
 
@@ -96,6 +107,10 @@ def email_hash(address: str) -> str:
 
 def _code_hash(key: str, code: str) -> str:
     return hmac.new(auth._secret.encode("utf-8"), f"{key}:{code}".encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _link_hash(token: str) -> str:
+    return hashlib.sha256(f"peto-email-link:{token}".encode("utf-8")).hexdigest()
 
 
 def masked(address: str) -> str:
@@ -154,23 +169,51 @@ def _wait_text(seconds: int) -> str:
 # --- Gửi thư -------------------------------------------------------------------------------------------------------
 
 
-def _message(code: str) -> tuple[str, str, str]:
+def link_origin(request: Request) -> str | None:
+    """Gốc của đường dẫn trong thư. Chỉ lấy từ cấu hình của chủ web (tên miền chính, callback OAuth, FRONTEND_URL),
+    không bao giờ từ header Host/Origin tùy ý: kẻ gửi yêu cầu kèm Host giả sẽ khiến thư của nạn nhân trỏ về máy của
+    hắn, và token sẽ lộ khi nạn nhân bấm."""
+    allowed: list[str] = []
+    for value in (config.CANONICAL_ORIGIN, config.FRONTEND_URL, config.DISCORD_REDIRECT_URI, config.GOOGLE_REDIRECT_URI,
+                  config.GITHUB_LOGIN_REDIRECT_URI):
+        for url in value.split(","):
+            parts = urlsplit(url.strip())
+            if parts.scheme in {"http", "https"} and parts.netloc:
+                origin = f"{parts.scheme}://{parts.netloc.lower()}"
+                if origin not in allowed:
+                    allowed.append(origin)
+    asked = request.headers.get("origin", "").strip().lower()
+    if asked in allowed:
+        return asked
+    return allowed[0] if allowed else None
+
+
+def _message(code: str, link: str) -> tuple[str, str, str]:
     minutes = CODE_TTL // 60
-    subject = f"{code} là mã đăng nhập Peto của bạn"
+    subject = f"Đăng nhập vào Peto (mã {code})"
     text = (
-        f"Mã đăng nhập Peto của bạn: {code}\n\n"
-        f"Mã dùng được trong {minutes} phút. Gõ mã vào trang đăng nhập đang mở để tiếp tục.\n\n"
-        "Nếu bạn không yêu cầu mã này, cứ bỏ qua thư. Không ai vào được tài khoản của bạn khi chưa có mã.\n\n"
+        "Bấm đường dẫn dưới đây để đăng nhập vào Peto:\n"
+        f"{link}\n\n"
+        f"Mở thư trên máy khác? Gõ mã {code} vào trang đăng nhập đang chờ.\n\n"
+        f"Đường dẫn và mã dùng được một lần, trong {minutes} phút. Nếu bạn không yêu cầu, cứ bỏ qua thư này: không ai vào "
+        "được tài khoản của bạn khi chưa có chúng.\n\n"
         "Peto"
     )
+    safe_link = html_escape(link, quote=True)
     html = (
         '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:440px;margin:0 auto;padding:24px;color:#0d0d0d">'
-        '<p style="margin:0 0 16px;font-size:15px">Mã đăng nhập Peto của bạn:</p>'
-        f'<p style="margin:0 0 20px;font-size:32px;font-weight:700;letter-spacing:8px">{code}</p>'
-        f'<p style="margin:0 0 12px;font-size:14px;color:#444">Mã dùng được trong {minutes} phút. Gõ mã vào trang đăng '
-        'nhập đang mở để tiếp tục.</p>'
-        '<p style="margin:0;font-size:13px;color:#6b6b6b">Nếu bạn không yêu cầu mã này, cứ bỏ qua thư. Không ai vào '
-        'được tài khoản của bạn khi chưa có mã.</p></div>'
+        '<h1 style="margin:0 0 12px;font-size:20px">Đăng nhập vào Peto</h1>'
+        '<p style="margin:0 0 18px;font-size:14px;line-height:1.5">Bấm nút dưới đây để đăng nhập hoặc tạo tài khoản '
+        'Peto bằng email này.</p>'
+        f'<a href="{safe_link}" style="display:inline-block;padding:11px 18px;border-radius:8px;background:#0d0d0d;'
+        'color:#ffffff;font-size:14px;font-weight:600;text-decoration:none">Đăng nhập vào Peto</a>'
+        '<p style="margin:22px 0 6px;font-size:13px;color:#444">Mở thư trên máy khác? Gõ mã này vào trang đăng nhập '
+        'đang chờ:</p>'
+        f'<p style="margin:0 0 18px;font-size:26px;font-weight:700;letter-spacing:6px">{code}</p>'
+        '<p style="margin:0 0 6px;font-size:12px;color:#6b6b6b">Nút không bấm được thì chép đường dẫn này vào trình '
+        f'duyệt:<br><a href="{safe_link}" style="color:#2563eb;word-break:break-all">{safe_link}</a></p>'
+        f'<p style="margin:16px 0 0;font-size:12px;color:#6b6b6b">Đường dẫn và mã dùng được một lần, trong {minutes} '
+        'phút. Nếu bạn không yêu cầu, cứ bỏ qua thư này.</p></div>'
     )
     return subject, text, html
 
@@ -208,22 +251,27 @@ async def send_code(body: SendBody, request: Request) -> dict:
     ip_key = f"send:{client_ip(request)}"
     wait = _limited(ip_key, SENDS_PER_IP_HOUR)
     if wait:
-        raise _too_many(f"Bạn yêu cầu mã nhiều quá. Thử lại sau {_wait_text(wait)}.", wait)
+        raise _too_many(f"Bạn yêu cầu thư đăng nhập nhiều quá. Thử lại sau {_wait_text(wait)}.", wait)
 
     key = email_hash(address)
     now = time.time()
     sends = await store.recent_sends(key, now - 3600)
     if sends and now - sends[0] < RESEND_COOLDOWN:
         wait = int(sends[0] + RESEND_COOLDOWN - now) + 1
-        raise _too_many(f"Mã vừa được gửi. Đợi {_wait_text(wait)} rồi gửi lại nhé.", wait)
+        raise _too_many(f"Thư vừa được gửi. Đợi {_wait_text(wait)} rồi gửi lại nhé.", wait)
     if len(sends) >= SENDS_PER_EMAIL_HOUR:
         wait = int(sends[-1] + 3600 - now) + 1
-        raise _too_many(f"Email này đã nhận nhiều mã quá. Thử lại sau {_wait_text(wait)}.", wait)
+        raise _too_many(f"Email này đã nhận nhiều thư đăng nhập quá. Thử lại sau {_wait_text(wait)}.", wait)
+
+    origin = link_origin(request)
+    if not origin:
+        raise HTTPException(503, "Đăng nhập bằng email chưa được bật trên máy chủ này.")
 
     _hit(ip_key)
     code = f"{secrets.randbelow(1_000_000):06d}"
-    code_id = await store.add_code(key, _code_hash(key, code), CODE_TTL, KEEP_CODES)
-    subject, text, html = _message(code)
+    token = secrets.token_urlsafe(32)
+    code_id = await store.add_code(key, _code_hash(key, code), _link_hash(token), masked(address), CODE_TTL, KEEP_CODES)
+    subject, text, html = _message(code, f"{origin}/#email_token={token}")
     try:
         await deliver(address, subject, text, html, f"peto-login-{key[:16]}-{code_id}")
     except EmailError:
@@ -250,7 +298,7 @@ async def verify_code(body: VerifyBody, request: Request) -> JSONResponse:
     _hit(ip_key)
 
     key = email_hash(address)
-    expired = "Mã đã hết hạn hoặc không còn dùng được. Bấm “Gửi lại mã” để nhận mã mới."
+    expired = "Mã đã hết hạn hoặc không còn dùng được. Bấm “Gửi lại thư” để nhận mã mới."
     current = await store.current_code(key)
     if not current:
         raise HTTPException(400, expired)
@@ -259,12 +307,33 @@ async def verify_code(body: VerifyBody, request: Request) -> JSONResponse:
         left = MAX_ATTEMPTS - attempts
         if left > 0:
             raise HTTPException(400, f"Mã không đúng. Còn {left} lần thử.")
-        raise HTTPException(400, "Sai quá nhiều lần nên mã đã bị hủy. Bấm “Gửi lại mã” để nhận mã mới.")
+        raise HTTPException(400, "Sai quá nhiều lần nên mã đã bị hủy. Bấm “Gửi lại thư” để nhận mã mới.")
     if not await store.consume_code(current["id"]):
         raise HTTPException(400, expired)
 
+    return await _signed_in(key, masked(address))
+
+
+@router.post("/link")
+async def open_link(body: LinkBody, request: Request) -> JSONResponse:
+    """Trang mở từ nút trong thư gửi token lên đây. Đăng nhập đúng trình duyệt đã mở đường dẫn, không trình duyệt nào khác."""
+    if not configured():
+        raise HTTPException(503, "Đăng nhập bằng email chưa được bật trên máy chủ này.")
+    ip_key = f"verify:{client_ip(request)}"
+    wait = _limited(ip_key, VERIFY_PER_IP_HOUR)
+    if wait:
+        raise _too_many(f"Bạn thử nhiều lần quá. Thử lại sau {_wait_text(wait)}.", wait)
+    _hit(ip_key)
+    token = (body.token or "").strip()
+    found = await store.consume_link(_link_hash(token)) if 20 <= len(token) <= 100 else None
+    if not found:
+        raise HTTPException(400, "Đường dẫn đăng nhập đã hết hạn hoặc đã được dùng. Gửi lại thư từ trang đăng nhập nhé.")
+    return await _signed_in(found["email_hash"], found["masked"])
+
+
+async def _signed_in(key: str, display: str) -> JSONResponse:
     owner = await store.email_owner(key)
-    await db.upsert_user(owner=owner, provider="email", username="", display_name=masked(address), avatar_url="")
+    await db.upsert_user(owner=owner, provider="email", username="", display_name=display, avatar_url="")
     response = JSONResponse({"ok": True})
     auth._set_session(response, owner)
     return response

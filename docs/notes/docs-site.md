@@ -79,7 +79,7 @@ Chat and Companion turn (not the Agent CLI).
 - **Terms and Privacy** (2026-11-19, draft). `dieu-khoan` ("Điều khoản sử dụng") and `quyen-rieng-tu` ("Chính sách
   quyền riêng tư") sit in the Trợ giúp group, like AIRI's `/docs/en/about/terms` and `/privacy` (none of AIRI's text
   was copied). The login page links both. They were written from the code and these notes: what each table stores,
-  that email addresses are only hashed, which providers get data (xAI, OpenAI, Anthropic; StepFun, OpenAI, Alibaba
+  that email addresses are only hashed and the sign-in mail carries a link and a code, which providers get data (xAI, OpenAI, Anthropic; StepFun, OpenAI, Alibaba
   Cloud for Giọng Peto; YouTube; Resend; Cloudflare), the read-only Discord gateway, cookies, what users can delete
   themselves, and that whole-account deletion is by request in Discord (there is no button). Owner decisions still
   open in the text: the minimum age (13, under 18 with a parent's consent), contact (Discord only, no email address

@@ -17,46 +17,65 @@ server-side, calls `/users/@me` itself, and discards the Discord access token im
 (nothing stored, nothing sent to the client). The session is an `itsdangerous` signed
 cookie holding only the owner key.
 
-There are four ways in: Discord, Google and GitHub OAuth in `features/accounts/auth.py`, and a 6-digit code sent by
-email in `features/accounts/email_login.py` (since 2026-11-19, see below). `owner_key(provider, external_id)` builds
-every owner; `provider_from_owner` is what `session_owner` uses to reject a signed cookie carrying a malformed key.
+There are four ways in: Discord, Google and GitHub OAuth in `features/accounts/auth.py`, and a sign-in mail (a button
+link plus a 6-digit code) in `features/accounts/email_login.py` (since 2026-11-19, see below).
+`owner_key(provider, external_id)` builds every owner; `provider_from_owner` is what `session_owner` uses to reject a
+signed cookie carrying a malformed key.
 
-### Email login (6-digit code)
+### Email login (link like AIRI, plus a code)
 
-Picked over a magic link because a code works when the mail is read on another device or in a mail app's own browser:
-the session cookie always lands in the browser that typed the address. Sent with Resend, from `PETO_EMAIL_FROM`
+The owner first got a code-only flow, then (same day, 2026-11-19) asked for AIRI's: "Check your inbox", a mail with a
+"Verify email" button, a tab saying "Email verified … you can close this tab", and the waiting page continuing by
+itself. Peto sends one mail with both a button link and a 6-digit code. Sent with Resend, from `PETO_EMAIL_FROM`
 (default `Peto <no-reply@peagy.com>`, the domain the owner verified at Resend), optional `PETO_EMAIL_REPLY_TO` (for a
 Cloudflare Email Routing address). No `RESEND_API_KEY` means `providers.email` is false and the login page hides the
 field. Steam login was built in the same branch and dropped by the owner the same day; it is in commit `e82a874`.
-- `POST /api/auth/email/send {email}` and `POST /api/auth/email/verify {email, code}`. Verify sets the session cookie
-  in its JSON response; the page then re-reads `/api/auth/me` without navigating, so a chat bookmark and a pending
-  `agent_code` survive.
+- **Routes.** `POST /api/auth/email/send {email}`, `POST /api/auth/email/link {token}` (the button) and
+  `POST /api/auth/email/verify {email, code}` (the code). Link and verify set the session cookie in a JSON response.
+- **The link is `<origin>/#email_token=<token>`.** The fragment never reaches the server, Cloudflare or access logs
+  when the page loads; `main.tsx` (`app/emailLink.takeEmailToken`) strips it from the address bar before the router
+  reads it, and `EmailLinkScreen` POSTs it once (a module map guards StrictMode's second effect). A mail scanner that
+  only GETs the page cannot spend the token. The origin comes only from operator config (`link_origin`:
+  `PETO_CANONICAL_ORIGIN`, `PETO_FRONTEND_URL`, the OAuth callback origins), never from Host/Origin as sent: a forged
+  Host would put the attacker's site in the victim's mail and leak the token on click. A request Origin that is one
+  of those configured origins is kept; nothing configured answers 503.
+- **Only the browser that opens the link is signed in.** The waiting "Kiểm tra hộp thư" tab continues by itself only
+  because it shares that browser's cookie jar: it re-reads `/api/auth/me` every 3 s while visible (for 15 minutes),
+  on focus, and at once when the link tab broadcasts `signed-in` on `BroadcastChannel('peto-auth')`. The server never
+  signs in "the tab that asked", so someone who types a victim's address and waits gets nothing even if the victim
+  clicks. Opened on another device, the link signs in that device; the waiting tab then needs the code ("Mở thư trên
+  máy khác? Nhập mã trong thư").
 - **No address at rest.** `email_accounts` maps `email_hash` (unkeyed SHA-256 of `peto-email-v1:<normalized>`, so
   rotating `PETO_SESSION_SECRET` loses no account) to a random owner `email:<32 hex>`. `users.display_name` is
-  `tr•••@gmail.com` (two characters and the domain), `username` is empty. The address lives only in memory while
-  sending; logs carry the HTTP status, never the address or code. `tests/test_email_login.py` scans every table.
+  `tr•••@gmail.com` (two characters and the domain; also kept on the mail row so the link can name the account),
+  `username` is empty. The address lives only in memory while sending; logs carry the HTTP status, never the address,
+  link or code. `tests/test_email_login.py` scans every table.
 - **One mailbox, one account.** Gmail/Googlemail drop dots and `+tag`; Outlook, Hotmail, Live, MSN, iCloud, Proton
   and Fastmail drop `+tag` (`PLUS_DOMAINS`). Other domains are left alone, since `a+b` may be someone else's box. The
-  code is still sent to the address as typed (lowercased).
-- **Codes** (`email_login_codes`): HMAC of the code with the session secret, 10 minutes (`CODE_TTL`), only the newest
-  unexpired code of an address works, 5 wrong tries burn it (`MAX_ATTEMPTS`), used once (`consume_code` is a guarded
-  UPDATE), rows deleted after a day. A failed Resend call marks its code used and answers 502.
+  mail still goes to the address as typed (lowercased).
+- **Mails** (`email_login_codes`): one row per mail with the code's HMAC (session secret) and the link token's SHA-256.
+  10 minutes (`CODE_TTL`); only the newest unexpired mail of an address works; using either the link or the code uses
+  up both; 5 wrong codes burn it (`MAX_ATTEMPTS`); `consume_code` / `consume_link` are guarded UPDATEs; rows deleted
+  after a day. A failed Resend call marks its row used and answers 502.
 - **Limits.** Per address (SQLite): 60 s between sends, 5 sends an hour. Per IP (process memory, like the other
-  queues): 10 sends and 30 verifies an hour. The IP is `CF-Connecting-IP` only when the TCP peer is loopback (the
-  tunnel); a direct connection's own address otherwise. 429 answers carry `Retry-After` and a Vietnamese wait time.
+  queues): 10 sends an hour, and 30 code or link tries an hour together. The IP is `CF-Connecting-IP` only when the TCP
+  peer is loopback (the tunnel); a direct connection's own address otherwise. 429 answers carry `Retry-After`.
 - **No account enumeration.** Send answers the same `{ok, resend_after, expires_in}` whether or not the address has an
-  account; the account is created only on a correct code.
+  account; the account is created only by a used link or a correct code.
 - Email accounts have the same rights as Google and GitHub (owner's answer 2026-11-19): Luna, Agent, the Giọng Peto
-  allowance (`voice/api.MEMBERS`). They never carry a Discord ID.
+  allowance (`voice/api.MEMBERS`). They never carry a Discord ID. A Google account and an email account with the same
+  address are separate Peto accounts: Google login never reads the address (unlike AIRI, which links them).
 - **Login page** (`app/LoginScreen.tsx`, `account.css`): the owner picked "Như AIRI" without Steam from three mockups.
   A frameless 400 px column: "Đăng nhập", "Nhập email để đăng nhập hoặc tạo tài khoản.", Email + "Tiếp tục" (grey),
   "hoặc", grey stacked Discord, Google, GitHub (visible text is the name, accessible name "Đăng nhập bằng …"), then
   "Khi tiếp tục, bạn đồng ý với Điều khoản và Chính sách quyền riêng tư của Peto." linking `/docs/dieu-khoan/` and
-  `/docs/quyen-rieng-tu/` in a new tab. Step two, "Nhập mã": one `one-time-code` field that submits itself at 6
-  digits, "Đăng nhập" (accent), a Spam hint, "Đổi email" (keeps the address) and "Gửi lại mã sau N giây". Nothing is
-  focused on first load (a phone keyboard would cover the buttons); changing step moves focus. The panel centres with
-  `margin: auto` so a short screen still scrolls to the title. The Peto avatar and "Peto chỉ đọc tên và ảnh đại diện"
-  line of the old card are gone; the privacy page says it now.
+  `/docs/quyen-rieng-tu/` in a new tab. Step two, "Kiểm tra hộp thư" (the title takes focus): the address, "trang này
+  sẽ tự tiếp tục khi bạn bấm", a link-button that opens the code field (`one-time-code`, submits itself at 6 digits),
+  a Spam hint, "Quay lại đăng nhập" (keeps the address) and "Gửi lại thư sau N giây". The link tab
+  (`app/EmailLinkScreen.tsx`) shows "Đang đăng nhập…", then "Đã đăng nhập" with "Mở Peto", or "Chưa đăng nhập được"
+  with the server's message and "Về trang đăng nhập". Nothing is focused on first load (a phone keyboard would cover
+  the buttons). The panel centres with `margin: auto` so a short screen still scrolls to the title. The Peto avatar and
+  "Peto chỉ đọc tên và ảnh đại diện" line of the old card are gone; the privacy page says it now.
 
 **Guest login was removed on 2026-10-06** (the owner's call): anyone could mint unlimited guest accounts and spend the
 web's AI quota, and a per-guest counter could be dodged by clearing cookies. GitHub login replaced the "Khách" button.
@@ -272,16 +291,20 @@ Peto, with email via Resend (sending) and Cloudflare Email Routing (receiving), 
 like AIRI. Three mockups (Như AIRI, Thẻ Peto, Tài khoản trước); the owner picked "Như AIRI" and said to drop Steam.
 Discord stays: it is the only way to the bot's memory gateway. Steam (OpenID 2.0 with `check_authentication`, owner
 `steam:<SteamID64>`) was built and tested first, then removed; it is commit `e82a874` on the branch.
+- After seeing the code flow, the owner sent AIRI's link flow (inbox page, mail button, "Email verified" tab) and asked
+  for it the same day. The mail now carries a button link and the code; see "Email login (link like AIRI, plus a
+  code)" for why only the browser that opens the link is signed in.
 - Backend: `features/accounts/email_login.py`, `storage/email_login.py`, config `RESEND_API_KEY`, `PETO_EMAIL_FROM`,
   `PETO_EMAIL_REPLY_TO` (`.env.example`). `conftest` sets a fake Resend key and an autouse `sent_emails` fixture
   that replaces `deliver`, so no test can send mail.
-- Frontend: `LoginScreen.tsx` rewritten, `sendEmailCode` / `verifyEmailCode` in `api.ts`, `App.signedInByEmail`,
-  account labels "Email" / "Đăng nhập bằng email". `browser-tests/login.spec.ts` with six screenshots (dark, light,
-  code step; PC and mobile).
+- Frontend: `LoginScreen.tsx` rewritten, `EmailLinkScreen.tsx`, `emailLink.ts`, `sendLoginEmail` / `verifyEmailCode`
+  / `openEmailLink` in `api.ts`, `App.signedInByEmail`, account labels "Email" / "Đăng nhập bằng email".
+  `browser-tests/login.spec.ts` with eight screenshots (sign-in dark and light, inbox, verified tab; PC and mobile).
 - Docs: `dieu-khoan` and `quyen-rieng-tu` in `articles.json` (group Trợ giúp), drafted from the code and these notes;
   the owner still has to approve the wording (see `docs-site.md`).
-- Tests: backend `test_email_login.py` (23), `test_auth.py`, `test_docs_api.py`; frontend `App.test.tsx` (5 new login
-  tests), full vitest 1189 passed; Playwright `login.spec.ts` 4 passed, routing and discord-memory specs passed.
+- Tests: backend `test_email_login.py` (28), `test_auth.py`, `test_docs_api.py`; frontend `App.test.tsx` (7 new login
+  tests); Playwright `login.spec.ts` 6 passed (the inbox tab continues when a second tab of the same context opens the
+  link), routing and discord-memory specs passed.
 - Not tried for real: a Resend send from the VPS, delivery to Gmail/Outlook inboxes (spam placement), the
   `CF-Connecting-IP` limit behind the real tunnel (see `unverified.md`).
 

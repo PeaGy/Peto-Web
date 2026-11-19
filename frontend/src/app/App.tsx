@@ -1,5 +1,7 @@
 import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
+import EmailLinkScreen from './EmailLinkScreen';
+import { forgetEmailToken, takeEmailToken } from './emailLink';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
 import { AIRI_COMPANION_URL, appPath, appView, chatId, chatRoute, companionSettingsPage, legacyPath, openAiriCompanion, VIEW_PATHS } from './routes';
@@ -103,6 +105,8 @@ function AppContent() {
   const authChecked = useRef(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Trang mở từ nút đăng nhập trong thư (/#email_token=…).
+  const [emailToken, setEmailToken] = useState<string | null>(takeEmailToken);
   // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
   const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
   const [connectorResult] = useState<string | null>(takeConnectorResult);
@@ -258,8 +262,10 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const version = authVersion.current;
     void getAuthState()
-      .then(value => { authChecked.current = true; setAuth(value); })
+      // Đăng nhập email xong trong lúc đang hỏi thì câu trả lời "chưa đăng nhập" này đã cũ.
+      .then(value => { authChecked.current = true; if (authVersion.current === version) setAuth(value); })
       .catch(() => setAuth({ authenticated: false, login_configured: false }));
   }, []);
 
@@ -283,6 +289,7 @@ function AppContent() {
   /** Đăng nhập bằng mã email không chuyển trang: máy chủ vừa đặt cookie phiên, đọc lại trạng thái là vào app ngay, giữ
    * nguyên URL (bookmark chat) và mã agent_code đang chờ. */
   const signedInByEmail = useCallback(async () => {
+    authVersion.current += 1;
     const value = await getAuthState();
     authChecked.current = true;
     setAuthError(null);
@@ -445,6 +452,11 @@ function AppContent() {
       newConversation(true);
     }
   }, [auth?.authenticated, auth?.user?.id, view, routedConversationId, location.key]);
+
+  if (emailToken !== null) {
+    return <EmailLinkScreen token={emailToken} onSignedIn={signedInByEmail}
+      onDone={() => { forgetEmailToken(); setEmailToken(null); }} />;
+  }
 
   if (auth === null) {
     return <LoadingIndicator variant="screen" label="Loading" />;
