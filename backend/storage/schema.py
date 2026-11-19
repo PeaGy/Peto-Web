@@ -460,4 +460,6 @@ async def init_db() -> None:
         await init_card_tables(db)
         from storage.airi_chats import init_tables as init_airi_chat_tables
         await init_airi_chat_tables(db)
+        from storage.email_login import init_tables as init_email_login_tables
+        await init_email_login_tables(db)
         await db.commit()

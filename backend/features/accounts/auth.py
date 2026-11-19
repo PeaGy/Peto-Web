@@ -1,5 +1,7 @@
 """Đăng nhập bằng Discord, Google hoặc GitHub. Đăng nhập khách đã bỏ ngày 6/10/2026.
 
+Email (mã 6 số) và Steam (OpenID 2.0) nằm ở ``email_login.py`` và ``steam_login.py``, dùng chung cookie phiên ở đây.
+
 Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
 - Chỉ ánh xạ danh tính SAU KHI máy chủ tự đổi code lấy token và tự hỏi Discord
   "người này là ai". Không bao giờ tin Discord ID do trình duyệt gửi lên.
@@ -93,7 +95,9 @@ def github_configured() -> bool:
 
 def available_providers() -> dict[str, bool]:
     """Cách nào đang dùng được (đã cấu hình khóa)."""
-    return {"discord": is_configured(), "google": google_configured(), "github": github_configured()}
+    from features.accounts import email_login, steam_login
+    return {"discord": is_configured(), "google": google_configured(), "github": github_configured(),
+            "email": email_login.configured(), "steam": steam_login.configured()}
 
 
 def account_id(owner: str) -> str:
@@ -134,7 +138,7 @@ def current_owner(request: Request) -> str:
 
 
 def _set_session(response: Response, owner: str) -> None:
-    """Đặt cookie phiên. Ba lối đăng nhập dùng chung đúng một chỗ này."""
+    """Đặt cookie phiên. Mọi lối đăng nhập dùng chung đúng một chỗ này."""
     response.set_cookie(
         SESSION_COOKIE,
         _sign(owner),
