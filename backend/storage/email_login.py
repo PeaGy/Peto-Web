@@ -1,7 +1,7 @@
 """Bảng của đăng nhập bằng email và của việc gộp tài khoản theo email đã xác minh.
 
-Không lưu địa chỉ email ở đâu cả: chỉ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
-``features.accounts.email_login.email_hash``) và tên hiển thị đã che (``tr•••@gmail.com``). Token của đường dẫn trong
+Không lưu địa chỉ email đầy đủ: chỉ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
+``features.accounts.email_login.email_hash``) và tên hiển thị là phần trước @ (cột ``masked`` giữ tên cũ của nó). Token của đường dẫn trong
 thư và mã của yêu cầu (cookie của trình duyệt đã gõ email) cũng chỉ lưu dạng băm.
 
 - ``email_accounts``: email nào thuộc owner nào. Tài khoản đầu tiên có email đó (đăng nhập email, Google hay GitHub với
@@ -198,6 +198,35 @@ async def email_owner(email_hash: str) -> str:
     owner = await owner_for_email(email_hash)
     assert owner is not None
     return owner
+
+
+async def move_email_account(source: str, target: str) -> None:
+    """Nhập tài khoản email ``source`` vào tài khoản ``target`` (Google/GitHub cùng email đã xác minh): mọi dòng có cột
+    ``owner`` chuyển sang ``target``, email và danh tính của ``source`` trỏ về ``target``, rồi ``source`` không còn.
+
+    Dòng nào đụng ràng buộc duy nhất của ``target`` (hồ sơ, ảnh đại diện, mục "Bạn" của trí nhớ, cài đặt…) thì giữ bản
+    của ``target`` và bỏ bản của ``source``. Bảng ``users`` đi sau cùng: ảnh đại diện và bài hát yêu thích tham chiếu
+    tới nó với ON DELETE CASCADE. Chỉ nhận ``source`` là tài khoản email: không bao giờ gộp hai tài khoản OAuth hay
+    tài khoản Discord."""
+    if not source.startswith("email:") or source == target or target.startswith("discord:"):
+        raise ValueError("chỉ nhập được tài khoản email vào một tài khoản khác không phải Discord")
+    async with db_connection.connect() as db:
+        names = [row[0] for row in await (await db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")).fetchall()]
+        tables = []
+        for name in names:
+            columns = await (await db.execute(f'PRAGMA table_info("{name}")')).fetchall()
+            if any(column[1] == "owner" for column in columns):
+                tables.append(name)
+        tables.sort(key=lambda name: name == "users")
+        try:
+            for name in tables:
+                await db.execute(f'UPDATE OR IGNORE "{name}" SET owner = ? WHERE owner = ?', (target, source))
+                await db.execute(f'DELETE FROM "{name}" WHERE owner = ?', (source,))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
 
 async def identity_owner(identity: str) -> str | None:

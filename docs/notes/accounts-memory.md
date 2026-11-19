@@ -57,8 +57,9 @@ field. Steam login was built in the same branch and dropped by the owner the sam
   from operator config (`link_origin`: `PETO_CANONICAL_ORIGIN`, `PETO_FRONTEND_URL`, the OAuth callback origins),
   never from Host/Origin as sent: a forged Host would put the attacker's site in the victim's mail and leak the token.
   A request Origin that is one of those configured origins is kept; nothing configured answers 503.
-- **No address at rest.** Only `email_hash` (unkeyed SHA-256 of `peto-email-v1:<normalized>`, so rotating
-  `PETO_SESSION_SECRET` loses no account) and the display name `tr•••@gmail.com` (two characters and the domain). The
+- **No full address at rest.** Only `email_hash` (unkeyed SHA-256 of `peto-email-v1:<normalized>`, so rotating
+  `PETO_SESSION_SECRET` loses no account) and the display name, the part before @ without `+tag` (`display_name`; the
+  owner asked for it on 2026-11-19 after trying the masked `tr•••@gmail.com`, which an email login now replaces). The
   address lives only in memory while sending; logs carry the HTTP status, never the address or link.
   `tests/test_email_login.py` scans every table for the address, the token and the User-Agent.
 - **One mailbox, one key.** Gmail/Googlemail drop dots and `+tag`; Outlook, Hotmail, Live, MSN, iCloud, Proton and
@@ -95,9 +96,13 @@ account and an email account with the same address. `auth._linked_owner(identity
 - A brand-new identity whose verified address already belongs to an account (email, Google or GitHub) signs into that
   account. An address nobody has is attached to the identity's owner. An email login looks the address up the same
   way, so "Google first, email later" lands in the Google account (with its name and avatar).
-- **Accounts that existed before merging are never moved.** An identity that already has a `users` row keeps its own
-  owner even if its address belongs to another account; nothing is ever re-pointed, so no one loses data. Two such
-  old accounts of one person stay two (merging their data would need a separate tool and the owner's go-ahead).
+- **Accounts that existed before merging keep their owner.** An identity that already has a `users` row keeps it.
+  If its verified address belongs to an **email** account (the person signed in by email before this old Google or
+  GitHub account logged in again with the email scope; the owner hit exactly this on 2026-11-19), that email account
+  is folded in: `storage.email_login.move_email_account` moves every row with an `owner` column in one transaction,
+  keeps the target's row where a unique constraint clashes (profile, avatar, fixed memory entries, settings), handles
+  `users` last (avatars and player favourites cascade from it), and re-points the email hashes. The old email session
+  then reads as signed out. Two old Google/GitHub accounts of one person are never merged automatically.
 - **Discord never merges.** Discord asks for no email; `claim_email` refuses a `discord:` owner, so no email or Google
   login can ever resolve to a Discord ID and reach the bot's memory gateway.
 - Existing Google and GitHub users see the provider's consent screen again once, for the new email permission.
@@ -308,6 +313,19 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
 # Dated log (newest first)
+
+## Email login fixes after the owner's real test (2026-11-19, branch `email-login-fixes`)
+
+The owner tried it on the live site: an email login and their older Google account with the same Gmail address stayed
+two accounts, the name showed `tr•••@gmail.com`, and signing in by email after signing out asked for a new mail.
+- Split accounts: the email login came first, so it created an email account; the "never move old accounts" rule then
+  kept the Google one apart. Now the email account is folded into the Google/GitHub account on its next OAuth login
+  (see "Merging accounts by verified email"). A user whose Google session is still open is merged at the next Google
+  sign-in, not before.
+- Name: the part before @.
+- A new mail after signing out is how email-link sign-in works (Slack, Notion, AIRI); see the owner's decision on a
+  remembered device, if any, below this entry once taken.
+- Tests: `test_email_login.py` (fold-in with data, refusal for non-email sources, display name, old masked name).
 
 ## Email login, AIRI-style login page, account merging, Terms and Privacy (2026-11-19, branch `login-email-steam`, not merged)
 

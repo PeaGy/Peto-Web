@@ -106,7 +106,9 @@ async def test_khong_luu_dia_chi_email_hay_token(anon_client, sent_emails):
             for row in con.execute(f'SELECT * FROM "{table}"'):
                 for value in row:
                     if isinstance(value, str):
-                        assert "bi.mat" not in value and token not in value and "Mozilla" not in value, table
+                        # Phần trước @ là tên hiển thị (chủ web chọn); địa chỉ đầy đủ thì không ở đâu cả.
+                        assert secret not in value and "@example.com" not in value, table
+                        assert token not in value and "Mozilla" not in value, table
 
 
 @pytest.mark.parametrize("email", ["", "khong-co-a-cong", "a@b", "a b@example.com", "x@example.com\r\nBcc: y@z.com"])
@@ -247,7 +249,7 @@ async def test_cung_trinh_duyet_bam_nut_la_dang_nhap_tab_dang_cho_cung_vao(anon_
 
     me = (await anon_client.get("/api/auth/me")).json()
     assert me["user"]["provider"] == "email"
-    assert me["user"]["display_name"] == f"{EMAIL.lower()[:2]}•••@gmail.com"
+    assert me["user"]["display_name"] == EMAIL.lower().split("+")[0]
     assert me["user"]["username"] == ""
 
 
@@ -435,3 +437,57 @@ async def test_github_gop_theo_email_chinh_da_xac_minh(anon_client, phone, sent_
 async def test_discord_khong_bao_gio_duoc_gan_email():
     with pytest.raises(ValueError):
         await email_store.claim_email("a" * 64, owner_key("discord", "111"))
+
+
+async def test_tai_khoan_email_co_truoc_duoc_nhap_vao_tai_khoan_google_cu(anon_client, phone, sent_emails, monkeypatch):
+    """Chủ web thử thật: đăng nhập email trước, rồi tài khoản Google cũ cùng email: trước đây hai tài khoản bị tách."""
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    address = EMAIL.lower()
+    sub = f"g-{uuid.uuid4().hex}"
+    google_owner = owner_key("google", sub)
+    await db.upsert_user(owner=google_owner, provider="google", username="An", display_name="An Google", avatar_url="")
+    old_chat = await db.create_conversation(google_owner, title="Chat cũ của Google")
+
+    by_email = await email_sign_in(anon_client, sent_emails, address)
+    assert by_email.startswith("email:")
+    email_chat = await db.create_conversation(by_email, title="Chat làm bằng email")
+    await db.save_profile(owner=by_email, full_name="Tên email", nickname="", occupation="", instructions="")
+    await db.save_profile(owner=google_owner, full_name="Tên Google", nickname="", occupation="", instructions="")
+
+    by_google = await google_sign_in(phone, monkeypatch, {"sub": sub, "name": "An Google", "email": address,
+                                                          "email_verified": True})
+    assert by_google == google_owner
+    titles = {row["id"]: row["title"] for row in await db.list_conversations(google_owner)}
+    assert titles.get(old_chat) == "Chat cũ của Google" and titles.get(email_chat) == "Chat làm bằng email"
+    assert await db.list_conversations(by_email) == []
+    # Trùng hồ sơ thì giữ của tài khoản Google; tài khoản email không còn, phiên cũ của nó thành chưa đăng nhập.
+    assert (await db.get_profile(google_owner))["full_name"] == "Tên Google"
+    assert await db.get_user(by_email) is None
+    assert (await anon_client.get("/api/auth/me")).json()["authenticated"] is False
+
+    # Đăng nhập email lần sau vào thẳng tài khoản Google, giữ tên Google.
+    again = await email_sign_in(anon_client, sent_emails, address)
+    assert again == google_owner
+    assert (await anon_client.get("/api/auth/me")).json()["user"]["display_name"] == "An Google"
+
+
+async def test_khong_nhap_tai_khoan_khong_phai_email():
+    with pytest.raises(ValueError):
+        await email_store.move_email_account(owner_key("google", "1"), owner_key("github", "2"))
+    with pytest.raises(ValueError):
+        await email_store.move_email_account("email:" + "a" * 32, owner_key("discord", "111"))
+
+
+def test_ten_hien_thi_la_phan_truoc_a_cong():
+    assert email_login.display_name("an.nguyen+peto@example.com") == "an.nguyen"
+    assert email_login.display_name("x" * 60 + "@example.com") == "x" * 40
+
+
+async def test_ten_che_cu_duoc_thay_bang_phan_truoc_a_cong(anon_client, sent_emails, monkeypatch):
+    monkeypatch.setattr(email_login, "RESEND_COOLDOWN", 0)
+    address = EMAIL.lower()
+    owner = await email_sign_in(anon_client, sent_emails, address)
+    await db.upsert_user(owner=owner, provider="email", username="", display_name="tr•••@gmail.com", avatar_url="")
+    anon_client.cookies.clear()
+    await email_sign_in(anon_client, sent_emails, address)
+    assert (await db.get_user(owner))["display_name"] == address.split("+")[0]

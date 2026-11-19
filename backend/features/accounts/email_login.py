@@ -10,7 +10,7 @@ một lần), trang "Kiểm tra hộp thư" tự tiếp tục khi người dùng
   chính trình duyệt đó (đúng một lần).
 
 Token nằm sau dấu ``#`` (``/#email_token=…``) nên không tới máy chủ, Cloudflare hay nhật ký truy cập lúc tải trang; trình
-quét thư chỉ tải trang (GET) nên không dùng mất token. Không lưu địa chỉ email: chỉ dấu băm và tên đã che. Không lộ email
+quét thư chỉ tải trang (GET) nên không dùng mất token. Không lưu địa chỉ email đầy đủ: chỉ dấu băm và phần trước @ làm tên. Không lộ email
 đã có tài khoản hay chưa. Tài khoản email không bao giờ có Discord ID.
 """
 
@@ -103,10 +103,11 @@ def _hash(kind: str, value: str) -> str:
     return hashlib.sha256(f"peto-email-{kind}:{value}".encode("utf-8")).hexdigest()
 
 
-def masked(address: str) -> str:
-    """Tên hiển thị của tài khoản email: hai ký tự đầu và tên miền (``tr•••@gmail.com``)."""
-    local, _, domain = address.rpartition("@")
-    return f"{local[:2]}•••@{domain}"
+def display_name(address: str) -> str:
+    """Tên hiển thị của tài khoản email: phần trước @, bỏ "+nhãn" (``an.nguyen+peto@example.com`` → ``an.nguyen``; chủ
+    web chọn ngày 19/11/2026 thay cho dạng che ``an•••@example.com``)."""
+    local = address.rpartition("@")[0].split("+", 1)[0]
+    return local[:40] or "Bạn"
 
 
 def device_label(user_agent: str) -> str:
@@ -273,7 +274,7 @@ async def send_link(body: SendBody, request: Request) -> JSONResponse:
     token = secrets.token_urlsafe(32)
     request_id = secrets.token_urlsafe(32)
     link_id = await store.add_link(
-        email_hash=key, masked=masked(address), link_hash=_hash("link", token), request_hash=_hash("request", request_id),
+        email_hash=key, masked=display_name(address), link_hash=_hash("link", token), request_hash=_hash("request", request_id),
         device=device_label(request.headers.get("user-agent", "")), ttl=LINK_TTL, keep_for=KEEP_LINKS,
     )
     subject, text, html = _message(f"{origin}/#email_token={token}")
@@ -339,10 +340,12 @@ async def request_status(
 
 
 async def _record_login(owner: str, display: str) -> None:
-    """Ghi lần đăng nhập. Owner đã có hồ sơ (kể cả tài khoản Google/GitHub đã gộp email) giữ nguyên tên và ảnh."""
+    """Ghi lần đăng nhập. Owner đã có hồ sơ (kể cả tài khoản Google/GitHub đã gộp email) giữ nguyên tên và ảnh; chỉ tên
+    dạng che cũ (``tr•••@gmail.com``, bản đầu ngày 19/11/2026) được thay bằng phần trước @."""
     user = await db.get_user(owner)
     if user:
-        await db.upsert_user(owner=owner, provider="email", username=user["username"], display_name=user["display_name"],
+        name = display if "•••@" in (user["display_name"] or "") else user["display_name"]
+        await db.upsert_user(owner=owner, provider="email", username=user["username"], display_name=name,
                              avatar_url=user["avatar_url"] or "")
     else:
         await db.upsert_user(owner=owner, provider="email", username="", display_name=display, avatar_url="")
