@@ -19,11 +19,28 @@
 .login-panel h1 { margin: 0; font-size: 34px; line-height: 1.15; letter-spacing: -0.01em; text-align: center; }
 .login-sub { margin: -6px 0 12px; color: var(--muted); text-align: center; }
 .login-sub strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
-/* Đoạn dài ở "Kiểm tra hộp thư" và "Đã đăng nhập": chữ sáng hơn dòng phụ, như AIRI. */
-.login-message { color: var(--text); line-height: 1.55; }
+/* "Kiểm tra hộp thư", "Email đã xác nhận", "Xác nhận đăng nhập": như AIRI, một tiêu đề, một đoạn chữ sáng căn giữa và
+   một liên kết mờ gạch chân. */
+.login-notice-panel { gap: 20px; text-align: center; }
+.login-message { margin: 0; color: var(--text); line-height: 1.6; overflow-wrap: anywhere; }
 /* Tiêu đề nhận focus khi đổi bước (cho trình đọc màn hình), không cần viền focus. */
 .login-panel h1:focus { outline: none; }
-.login-center { justify-self: center; }
+.login-back {
+  justify-self: center;
+  min-height: 32px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .login-back:hover:not(:disabled) { color: var(--text); } }
+.login-back:disabled { cursor: default; opacity: 0.55; }
 .login-panel .error { margin: 0; }
 .login-stack { display: grid; gap: 12px; }
 .login-field label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
@@ -43,16 +60,6 @@
 .login-input::placeholder { color: var(--muted); }
 .login-input:focus { border-color: var(--accent); }
 .login-input[aria-invalid="true"] { border-color: var(--danger); }
-.login-code {
-  height: 52px;
-  padding-left: calc(12px + 0.45em);
-  font-size: 26px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.45em;
-  text-align: center;
-}
-
 .login-button {
   display: inline-flex;
   align-items: center;
@@ -92,24 +99,6 @@
   height: 1px;
   background: var(--line);
 }
-
-.login-hint,
-.login-notice { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
-.login-links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.login-link {
-  min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.login-link:disabled { color: var(--muted); font-weight: 400; text-decoration: none; cursor: default; }
 
 .login-terms { margin: 18px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; text-align: center; }
 .login-terms a { color: var(--text); text-underline-offset: 2px; }

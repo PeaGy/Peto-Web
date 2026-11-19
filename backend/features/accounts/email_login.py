@@ -1,27 +1,22 @@
 """Đăng nhập hoặc tạo tài khoản bằng email, như AIRI: máy chủ gửi qua Resend một thư có nút đăng nhập (đường dẫn dùng
-một lần) và kèm mã 6 số.
+một lần), trang "Kiểm tra hộp thư" tự tiếp tục khi người dùng bấm nút, kể cả khi mở thư trên máy khác.
 
-- Bấm nút: trình duyệt mở đường dẫn được đăng nhập. Nếu đó cũng là trình duyệt đang chờ ở trang "Kiểm tra hộp thư"
-  thì tab đó thấy cookie phiên mới (chung một kho cookie) và tự vào app; máy chủ không đăng nhập hộ một tab ở nơi khác,
-  nên kẻ nhập email của người khác rồi chờ không bao giờ vào được tài khoản đó dù nạn nhân lỡ bấm nút.
-- Gõ mã: cho khi thư mở trên máy khác (đọc thư trên điện thoại, đăng nhập trên máy tính).
-- Token của đường dẫn nằm sau dấu ``#`` (``/#email_token=…``), nên không đi tới máy chủ, Cloudflare hay nhật ký truy
-  cập lúc tải trang; trang tự gửi nó bằng POST. Trình quét thư chỉ tải trang (GET) nên không dùng mất token.
+- ``POST /send``: gửi thư và đặt cho trình duyệt đang chờ một cookie yêu cầu (``peto_email_request``).
+- ``POST /link``: trang mở từ nút trong thư gửi token lên. Cùng trình duyệt với lúc gõ email (có cookie yêu cầu khớp)
+  thì đăng nhập luôn. Khác trình duyệt (đọc thư trên điện thoại, đăng nhập trên máy tính) thì trước hết trả về thiết bị
+  đang chờ và giờ yêu cầu để người dùng bấm "Xác nhận": nếu không, kẻ gõ email của người khác rồi ngồi chờ sẽ vào được
+  tài khoản đó chỉ vì nạn nhân lỡ bấm nút trong một thư lạ.
+- ``POST /status``: trang đang chờ hỏi vài giây một lần; khi thư đã được bấm/xác nhận thì máy chủ đặt cookie phiên cho
+  chính trình duyệt đó (đúng một lần).
 
-Nguyên tắc:
-- Không lưu địa chỉ email. Tài khoản và mã gắn với ``email_hash`` (SHA-256 của email đã chuẩn hóa); địa chỉ thật chỉ
-  nằm trong bộ nhớ lúc gửi thư, không ghi log. Owner là ``email:<mã ngẫu nhiên>``, không suy ra được email.
-- Không lộ email đã có tài khoản hay chưa: gửi mã trả lời giống hệt nhau, tài khoản chỉ được tạo khi mã đúng.
-- Mã hết hạn sau ``CODE_TTL``; mỗi mã nhập sai tối đa ``MAX_ATTEMPTS`` lần; chỉ mã gửi sau cùng còn dùng được. Gửi mã
-  bị giới hạn theo email (lưu trong SQLite) và theo IP (trong bộ nhớ tiến trình, như các hàng đợi khác của backend).
-- Tài khoản email không bao giờ có Discord ID (``discord_id_from_owner`` trả về rỗng), nên không chạm được trí nhớ
-  của bot Discord.
+Token nằm sau dấu ``#`` (``/#email_token=…``) nên không tới máy chủ, Cloudflare hay nhật ký truy cập lúc tải trang; trình
+quét thư chỉ tải trang (GET) nên không dùng mất token. Không lưu địa chỉ email: chỉ dấu băm và tên đã che. Không lộ email
+đã có tài khoản hay chưa. Tài khoản email không bao giờ có Discord ID.
 """
 
 from __future__ import annotations
 
 import hashlib
-import hmac
 import ipaddress
 import logging
 import re
@@ -32,7 +27,7 @@ from html import escape as html_escape
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Cookie, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -46,13 +41,15 @@ logger = logging.getLogger("peto_web.auth.email")
 router = APIRouter(prefix="/api/auth/email", tags=["auth"])
 
 RESEND_URL = "https://api.resend.com/emails"
-CODE_TTL = 10 * 60
+LINK_TTL = 10 * 60
+CLAIM_WINDOW = 5 * 60
 RESEND_COOLDOWN = 60
 SENDS_PER_EMAIL_HOUR = 5
 SENDS_PER_IP_HOUR = 10
-MAX_ATTEMPTS = 5
-VERIFY_PER_IP_HOUR = 30
-KEEP_CODES = 24 * 60 * 60
+LINKS_PER_IP_HOUR = 30
+KEEP_LINKS = 24 * 60 * 60
+REQUEST_COOKIE = "peto_email_request"
+REQUEST_COOKIE_PATH = "/api/auth/email"
 
 EMAIL_RE = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 # Hộp thư bỏ qua phần "+nhãn" (và Gmail bỏ cả dấu chấm): gộp về một tài khoản để một hộp thư không thành vô số tài
@@ -67,17 +64,14 @@ class SendBody(BaseModel):
     email: str = ""
 
 
-class VerifyBody(BaseModel):
-    email: str = ""
-    code: str = ""
-
-
 class LinkBody(BaseModel):
     token: str = ""
+    confirm: bool = False
+    deny: bool = False
 
 
 class EmailError(Exception):
-    """Gửi thư thất bại; không mang địa chỉ hay mã trong thông điệp."""
+    """Gửi thư thất bại; không mang địa chỉ hay token trong thông điệp."""
 
 
 def configured() -> bool:
@@ -101,23 +95,32 @@ def normalize(address: str) -> str:
 
 
 def email_hash(address: str) -> str:
-    """Khóa của tài khoản email. Không dùng bí mật nào, để đổi PETO_SESSION_SECRET không làm mất tài khoản."""
+    """Khóa của email. Không dùng bí mật nào, để đổi PETO_SESSION_SECRET không làm mất tài khoản."""
     return hashlib.sha256(f"peto-email-v1:{normalize(address)}".encode("utf-8")).hexdigest()
 
 
-def _code_hash(key: str, code: str) -> str:
-    return hmac.new(auth._secret.encode("utf-8"), f"{key}:{code}".encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def _link_hash(token: str) -> str:
-    return hashlib.sha256(f"peto-email-link:{token}".encode("utf-8")).hexdigest()
+def _hash(kind: str, value: str) -> str:
+    return hashlib.sha256(f"peto-email-{kind}:{value}".encode("utf-8")).hexdigest()
 
 
 def masked(address: str) -> str:
-    """Tên hiển thị của tài khoản email: hai ký tự đầu và tên miền (``tr•••@gmail.com``), đủ để người dùng nhận ra
-    mình đã đăng nhập bằng hộp thư nào mà không lưu lại địa chỉ."""
+    """Tên hiển thị của tài khoản email: hai ký tự đầu và tên miền (``tr•••@gmail.com``)."""
     local, _, domain = address.rpartition("@")
     return f"{local[:2]}•••@{domain}"
+
+
+def device_label(user_agent: str) -> str:
+    """Tên thiết bị đang chờ, cho trang xác nhận ("Chrome trên Windows"). Chỉ lưu nhãn này, không lưu User-Agent."""
+    ua = user_agent or ""
+    browser = next((name for pattern, name in (
+        ("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"), ("CriOS/", "Chrome"), ("Chrome/", "Chrome"),
+        ("Safari/", "Safari"),
+    ) if pattern in ua), "Trình duyệt")
+    system = next((name for pattern, name in (
+        ("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows"), ("Mac OS X", "macOS"),
+        ("CrOS", "ChromeOS"), ("Linux", "Linux"),
+    ) if pattern in ua), "")
+    return f"{browser} trên {system}" if system else browser
 
 
 # --- Giới hạn theo IP (trong bộ nhớ) ---------------------------------------------------------------------------------
@@ -188,15 +191,13 @@ def link_origin(request: Request) -> str | None:
     return allowed[0] if allowed else None
 
 
-def _message(code: str, link: str) -> tuple[str, str, str]:
-    minutes = CODE_TTL // 60
-    subject = f"Đăng nhập vào Peto (mã {code})"
+def _message(link: str) -> tuple[str, str, str]:
+    minutes = LINK_TTL // 60
+    subject = "Đăng nhập vào Peto"
     text = (
-        "Bấm đường dẫn dưới đây để đăng nhập vào Peto:\n"
+        "Bấm đường dẫn dưới đây để đăng nhập hoặc tạo tài khoản Peto bằng email này:\n"
         f"{link}\n\n"
-        f"Mở thư trên máy khác? Gõ mã {code} vào trang đăng nhập đang chờ.\n\n"
-        f"Đường dẫn và mã dùng được một lần, trong {minutes} phút. Nếu bạn không yêu cầu, cứ bỏ qua thư này: không ai vào "
-        "được tài khoản của bạn khi chưa có chúng.\n\n"
+        f"Đường dẫn dùng được một lần, trong {minutes} phút. Nếu bạn không yêu cầu, cứ bỏ qua thư này.\n\n"
         "Peto"
     )
     safe_link = html_escape(link, quote=True)
@@ -207,13 +208,10 @@ def _message(code: str, link: str) -> tuple[str, str, str]:
         'Peto bằng email này.</p>'
         f'<a href="{safe_link}" style="display:inline-block;padding:11px 18px;border-radius:8px;background:#0d0d0d;'
         'color:#ffffff;font-size:14px;font-weight:600;text-decoration:none">Đăng nhập vào Peto</a>'
-        '<p style="margin:22px 0 6px;font-size:13px;color:#444">Mở thư trên máy khác? Gõ mã này vào trang đăng nhập '
-        'đang chờ:</p>'
-        f'<p style="margin:0 0 18px;font-size:26px;font-weight:700;letter-spacing:6px">{code}</p>'
-        '<p style="margin:0 0 6px;font-size:12px;color:#6b6b6b">Nút không bấm được thì chép đường dẫn này vào trình '
+        '<p style="margin:22px 0 6px;font-size:12px;color:#6b6b6b">Nút không bấm được thì chép đường dẫn này vào trình '
         f'duyệt:<br><a href="{safe_link}" style="color:#2563eb;word-break:break-all">{safe_link}</a></p>'
-        f'<p style="margin:16px 0 0;font-size:12px;color:#6b6b6b">Đường dẫn và mã dùng được một lần, trong {minutes} '
-        'phút. Nếu bạn không yêu cầu, cứ bỏ qua thư này.</p></div>'
+        f'<p style="margin:16px 0 0;font-size:12px;color:#6b6b6b">Đường dẫn dùng được một lần, trong {minutes} phút. '
+        'Nếu bạn không yêu cầu, cứ bỏ qua thư này.</p></div>'
     )
     return subject, text, html
 
@@ -240,10 +238,14 @@ async def deliver(to: str, subject: str, text: str, html: str, idempotency_key: 
 # --- Route ---------------------------------------------------------------------------------------------------------
 
 
-@router.post("/send")
-async def send_code(body: SendBody, request: Request) -> dict:
+def _require_configured() -> None:
     if not configured():
         raise HTTPException(503, "Đăng nhập bằng email chưa được bật trên máy chủ này.")
+
+
+@router.post("/send")
+async def send_link(body: SendBody, request: Request) -> JSONResponse:
+    _require_configured()
     address = clean_address(body.email)
     if not address:
         raise HTTPException(400, "Email chưa đúng dạng. Kiểm tra lại giúp mình nhé.")
@@ -268,72 +270,79 @@ async def send_code(body: SendBody, request: Request) -> dict:
         raise HTTPException(503, "Đăng nhập bằng email chưa được bật trên máy chủ này.")
 
     _hit(ip_key)
-    code = f"{secrets.randbelow(1_000_000):06d}"
     token = secrets.token_urlsafe(32)
-    code_id = await store.add_code(key, _code_hash(key, code), _link_hash(token), masked(address), CODE_TTL, KEEP_CODES)
-    subject, text, html = _message(code, f"{origin}/#email_token={token}")
+    request_id = secrets.token_urlsafe(32)
+    link_id = await store.add_link(
+        email_hash=key, masked=masked(address), link_hash=_hash("link", token), request_hash=_hash("request", request_id),
+        device=device_label(request.headers.get("user-agent", "")), ttl=LINK_TTL, keep_for=KEEP_LINKS,
+    )
+    subject, text, html = _message(f"{origin}/#email_token={token}")
     try:
-        await deliver(address, subject, text, html, f"peto-login-{key[:16]}-{code_id}")
+        await deliver(address, subject, text, html, f"peto-login-{key[:16]}-{link_id}")
     except EmailError:
-        await store.drop_code(code_id)
+        await store.drop_link(link_id)
         raise HTTPException(502, "Chưa gửi được thư. Thử lại sau ít phút nhé.") from None
-    return {"ok": True, "resend_after": RESEND_COOLDOWN, "expires_in": CODE_TTL}
-
-
-@router.post("/verify")
-async def verify_code(body: VerifyBody, request: Request) -> JSONResponse:
-    if not configured():
-        raise HTTPException(503, "Đăng nhập bằng email chưa được bật trên máy chủ này.")
-    address = clean_address(body.email)
-    if not address:
-        raise HTTPException(400, "Email chưa đúng dạng. Kiểm tra lại giúp mình nhé.")
-    code = re.sub(r"\s", "", body.code or "")
-    if not re.fullmatch(r"\d{6}", code):
-        raise HTTPException(400, "Mã gồm đúng 6 chữ số.")
-
-    ip_key = f"verify:{client_ip(request)}"
-    wait = _limited(ip_key, VERIFY_PER_IP_HOUR)
-    if wait:
-        raise _too_many(f"Bạn thử nhiều lần quá. Thử lại sau {_wait_text(wait)}.", wait)
-    _hit(ip_key)
-
-    key = email_hash(address)
-    expired = "Mã đã hết hạn hoặc không còn dùng được. Bấm “Gửi lại thư” để nhận mã mới."
-    current = await store.current_code(key)
-    if not current:
-        raise HTTPException(400, expired)
-    if not hmac.compare_digest(current["code_hash"], _code_hash(key, code)):
-        attempts = await store.add_attempt(current["id"], MAX_ATTEMPTS)
-        left = MAX_ATTEMPTS - attempts
-        if left > 0:
-            raise HTTPException(400, f"Mã không đúng. Còn {left} lần thử.")
-        raise HTTPException(400, "Sai quá nhiều lần nên mã đã bị hủy. Bấm “Gửi lại thư” để nhận mã mới.")
-    if not await store.consume_code(current["id"]):
-        raise HTTPException(400, expired)
-
-    return await _signed_in(key, masked(address))
+    response = JSONResponse({"ok": True, "resend_after": RESEND_COOLDOWN, "expires_in": LINK_TTL})
+    response.set_cookie(REQUEST_COOKIE, request_id, max_age=LINK_TTL + CLAIM_WINDOW, httponly=True, samesite="lax",
+                        secure=config.SESSION_COOKIE_SECURE, path=REQUEST_COOKIE_PATH)
+    return response
 
 
 @router.post("/link")
-async def open_link(body: LinkBody, request: Request) -> JSONResponse:
-    """Trang mở từ nút trong thư gửi token lên đây. Đăng nhập đúng trình duyệt đã mở đường dẫn, không trình duyệt nào khác."""
-    if not configured():
-        raise HTTPException(503, "Đăng nhập bằng email chưa được bật trên máy chủ này.")
-    ip_key = f"verify:{client_ip(request)}"
-    wait = _limited(ip_key, VERIFY_PER_IP_HOUR)
+async def open_link(
+    body: LinkBody,
+    request: Request,
+    peto_email_request: str | None = Cookie(default=None, alias=REQUEST_COOKIE),
+) -> JSONResponse:
+    """Trang mở từ nút trong thư gửi token lên đây."""
+    _require_configured()
+    ip_key = f"link:{client_ip(request)}"
+    wait = _limited(ip_key, LINKS_PER_IP_HOUR)
     if wait:
         raise _too_many(f"Bạn thử nhiều lần quá. Thử lại sau {_wait_text(wait)}.", wait)
     _hit(ip_key)
     token = (body.token or "").strip()
-    found = await store.consume_link(_link_hash(token)) if 20 <= len(token) <= 100 else None
+    found = await store.pending_link(_hash("link", token)) if 20 <= len(token) <= 100 else None
     if not found:
         raise HTTPException(400, "Đường dẫn đăng nhập đã hết hạn hoặc đã được dùng. Gửi lại thư từ trang đăng nhập nhé.")
-    return await _signed_in(found["email_hash"], found["masked"])
 
+    if body.deny:
+        await store.deny_link(found["id"])
+        return JSONResponse({"state": "denied"})
+    same_browser = bool(peto_email_request) and secrets.compare_digest(
+        _hash("request", peto_email_request or ""), found["request_hash"])
+    if not same_browser and not body.confirm:
+        return JSONResponse({"state": "confirm", "device": found["device"], "requested_at": found["created_at"]})
 
-async def _signed_in(key: str, display: str) -> JSONResponse:
-    owner = await store.email_owner(key)
-    await db.upsert_user(owner=owner, provider="email", username="", display_name=display, avatar_url="")
-    response = JSONResponse({"ok": True})
+    owner = await store.email_owner(found["email_hash"])
+    if not await store.approve_link(found["id"], owner):
+        raise HTTPException(400, "Đường dẫn đăng nhập đã hết hạn hoặc đã được dùng. Gửi lại thư từ trang đăng nhập nhé.")
+    await _record_login(owner, found["masked"])
+    response = JSONResponse({"state": "signed_in", "same_browser": same_browser})
     auth._set_session(response, owner)
     return response
+
+
+@router.post("/status")
+async def request_status(
+    peto_email_request: str | None = Cookie(default=None, alias=REQUEST_COOKIE),
+) -> JSONResponse:
+    """Trang "Kiểm tra hộp thư" hỏi: thư của trình duyệt này đã được bấm chưa. Đã bấm thì đặt phiên cho trình duyệt này."""
+    request_hash = _hash("request", peto_email_request) if peto_email_request else ""
+    state, owner = await store.request_state(request_hash, CLAIM_WINDOW)
+    response = JSONResponse({"state": state})
+    if state == "signed_in":
+        auth._set_session(response, owner)
+    if state != "waiting":
+        response.delete_cookie(REQUEST_COOKIE, path=REQUEST_COOKIE_PATH)
+    return response
+
+
+async def _record_login(owner: str, display: str) -> None:
+    """Ghi lần đăng nhập. Owner đã có hồ sơ (kể cả tài khoản Google/GitHub đã gộp email) giữ nguyên tên và ảnh."""
+    user = await db.get_user(owner)
+    if user:
+        await db.upsert_user(owner=owner, provider="email", username=user["username"], display_name=user["display_name"],
+                             avatar_url=user["avatar_url"] or "")
+    else:
+        await db.upsert_user(owner=owner, provider="email", username="", display_name=display, avatar_url="")

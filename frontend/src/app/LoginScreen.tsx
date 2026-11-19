@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import type { AuthState } from '../shared/api/api';
-import { DISCORD_LOGIN_URL, GITHUB_LOGIN_URL, GOOGLE_LOGIN_URL, getAuthState, sendLoginEmail, verifyEmailCode } from '../shared/api/api';
+import { DISCORD_LOGIN_URL, GITHUB_LOGIN_URL, GOOGLE_LOGIN_URL, emailLoginStatus, sendLoginEmail } from '../shared/api/api';
 import { DiscordIcon, GitHubIcon, GoogleIcon } from './accountUi';
 import { onSignedInElsewhere } from './emailLink';
 
@@ -9,20 +9,19 @@ type LoginScreenProps = {
   authError: string | null;
   /** Bấm một lối OAuth: nhớ bookmark chat trước khi trang chuyển đi. */
   onSignIn?: () => void;
-  /** Đăng nhập email xong (bấm nút trong thư ở trình duyệt này, hoặc gõ mã): App đọc lại trạng thái, không chuyển trang. */
+  /** Thư đăng nhập đã được bấm (ở trình duyệt này hay máy khác): máy chủ đã đặt phiên, App đọc lại trạng thái. */
   onSignedIn?: () => Promise<void> | void;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** Tab "Kiểm tra hộp thư" hỏi lại máy chủ bấy nhiêu ms một lần, và thôi hỏi sau 15 phút (thư hết hạn sau 10 phút). */
+/** Trang "Kiểm tra hộp thư" hỏi máy chủ bấy nhiêu ms một lần, và thôi hỏi sau 15 phút (thư hết hạn sau 10 phút). */
 const POLL_MS = 3000;
 const POLL_FOR_MS = 15 * 60 * 1000;
 
 /**
  * Trang đăng nhập theo mẫu AIRI (chủ web chọn "Như AIRI", bỏ Steam, ngày 19/11/2026): ô email và nút Tiếp tục, vạch
- * "hoặc", các nút Discord, Google, GitHub xếp dọc, dòng Điều khoản ở cuối. Email: máy chủ gửi thư có nút đăng nhập (như
- * AIRI, chủ web đổi từ mã sang đường dẫn cùng ngày) kèm mã 6 số. Bấm nút trong trình duyệt này thì tab "Kiểm tra hộp
- * thư" tự tiếp tục; mở thư trên máy khác thì gõ mã.
+ * "hoặc", các nút Discord, Google, GitHub xếp dọc, dòng Điều khoản ở cuối. Email: máy chủ gửi thư có nút đăng nhập;
+ * trang "Kiểm tra hộp thư" (gọn như AIRI) tự tiếp tục khi nút được bấm, ở trình duyệt này hay trên máy khác.
  */
 export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: LoginScreenProps) {
   const providers = auth.providers;
@@ -35,27 +34,10 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
 
   const [step, setStep] = useState<'email' | 'sent'>('email');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [codeOpen, setCodeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [expiresIn, setExpiresIn] = useState(600);
-  const [resendAt, setResendAt] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
   const emailRef = useRef<HTMLInputElement>(null);
-  const codeRef = useRef<HTMLInputElement>(null);
   const sentTitleRef = useRef<HTMLHeadingElement>(null);
-  const wait = Math.max(0, Math.ceil((resendAt - now) / 1000));
-
-  useEffect(() => {
-    if (resendAt <= Date.now()) return;
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-      if (Date.now() >= resendAt) window.clearInterval(timer);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [resendAt]);
 
   // Chuyển bước thì đưa con trỏ tới bước mới. Lúc mới mở trang thì không: trên điện thoại bàn phím bật lên sẽ che các
   // nút Discord, Google, GitHub.
@@ -66,26 +48,28 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
     (step === 'sent' ? sentTitleRef : emailRef).current?.focus();
   }, [step]);
 
+  // Chờ nút trong thư được bấm. Máy chủ biết thư nào của trình duyệt này qua cookie yêu cầu đặt lúc gửi thư; khi thư
+  // được bấm (cùng trình duyệt, hoặc xác nhận từ máy khác) thì lần hỏi kế tiếp nhận phiên. Hỏi vài giây một lần khi tab
+  // đang hiện, hỏi ngay khi tab mở từ thư báo qua BroadcastChannel hoặc khi người dùng quay lại tab.
   useEffect(() => {
-    if (codeOpen) codeRef.current?.focus();
-  }, [codeOpen]);
-
-  // Chờ người dùng bấm nút trong thư. Bấm trong trình duyệt này thì cookie phiên mới dùng chung cho mọi tab, nên chỉ
-  // cần hỏi lại /api/auth/me: tab vừa mở từ thư báo ngay qua BroadcastChannel, còn lại cứ vài giây hỏi một lần (bỏ qua
-  // khi tab đang ẩn) và hỏi ngay khi người dùng quay lại tab.
-  useEffect(() => {
-    if (step !== 'sent' || !onSignedIn) return;
+    if (step !== 'sent') return;
     let stopped = false;
     let checking = false;
     const check = async (force = false) => {
       if (stopped || checking || (!force && document.visibilityState === 'hidden')) return;
       checking = true;
       try {
-        const state = await getAuthState();
-        if (!stopped && state.authenticated) {
-          stopped = true;
-          await onSignedIn();
+        const { state } = await emailLoginStatus();
+        if (stopped || state === 'waiting') return;
+        stopped = true;
+        if (state === 'signed_in') {
+          await onSignedIn?.();
+          return;
         }
+        setError(state === 'denied'
+          ? 'Yêu cầu đăng nhập đã bị từ chối từ thư. Gửi lại nếu đó là bạn.'
+          : 'Đường dẫn đăng nhập đã hết hạn. Gửi lại thư nhé.');
+        setStep('email');
       } catch { /* Lần sau hỏi lại. */ } finally {
         checking = false;
       }
@@ -106,7 +90,7 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
     };
   }, [step, onSignedIn]);
 
-  async function requestEmail(again: boolean) {
+  async function requestEmail() {
     const address = email.trim();
     if (!EMAIL_PATTERN.test(address)) {
       setError('Email chưa đúng dạng. Kiểm tra lại giúp mình nhé.');
@@ -115,48 +99,14 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
     }
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
-      const sent = await sendLoginEmail(address);
-      setExpiresIn(sent.expires_in);
-      setResendAt(Date.now() + sent.resend_after * 1000);
-      setNow(Date.now());
-      setCode('');
+      await sendLoginEmail(address);
       setStep('sent');
-      if (again) setNotice('Đã gửi thư mới. Nút và mã trong thư cũ không dùng được nữa.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Chưa gửi được thư. Thử lại nhé.');
     } finally {
       setBusy(false);
     }
-  }
-
-  async function submitCode(value: string) {
-    if (busy) return;
-    if (!/^\d{6}$/.test(value)) {
-      setError('Mã gồm đúng 6 chữ số.');
-      codeRef.current?.focus();
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await verifyEmailCode(email.trim(), value);
-      await onSignedIn?.();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Chưa đăng nhập được. Thử lại nhé.');
-      setBusy(false);
-      codeRef.current?.select();
-    }
-  }
-
-  function changeEmail() {
-    setStep('email');
-    setCode('');
-    setCodeOpen(false);
-    setError(null);
-    setNotice(null);
   }
 
   const shownError = error ?? authError;
@@ -165,55 +115,13 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
   if (step === 'sent') {
     return (
       <div className="login">
-        <div className="login-panel">
+        <div className="login-panel login-notice-panel">
           <h1 ref={sentTitleRef} tabIndex={-1}>Kiểm tra hộp thư</h1>
-          <p className="login-sub login-message">
-            Mình vừa gửi đường dẫn đăng nhập tới <strong>{email.trim()}</strong>. Mở thư và bấm nút trong đó; trang này
-            sẽ tự tiếp tục khi bạn bấm. Thư dùng được trong {Math.round(expiresIn / 60)} phút.
+          <p className="login-message">
+            Mình đã gửi đường dẫn đăng nhập tới {email.trim()}. Mở thư để hoàn tất — trang này sẽ tự tiếp tục sau khi bạn
+            bấm đường dẫn.
           </p>
-          {notice && <p className="login-notice" role="status">{notice}</p>}
-          {codeOpen ? (
-            <form className="login-stack" onSubmit={(event: FormEvent) => { event.preventDefault(); void submitCode(code); }}>
-              <div className="login-field">
-                <label htmlFor="login-code">Mã 6 số trong thư</label>
-                <input
-                  ref={codeRef}
-                  id="login-code"
-                  className="login-input login-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="······"
-                  value={code}
-                  aria-invalid={!!error}
-                  readOnly={busy}
-                  onChange={event => {
-                    const digits = event.target.value.replace(/\D/g, '').slice(0, 6);
-                    setCode(digits);
-                    if (digits.length === 6) void submitCode(digits);
-                  }}
-                />
-              </div>
-              {errorBox}
-              <button className="login-button login-primary" type="submit" disabled={busy}>
-                {busy ? 'Đang kiểm tra…' : 'Đăng nhập'}
-              </button>
-            </form>
-          ) : (
-            <>
-              {errorBox}
-              <button type="button" className="login-link login-center" onClick={() => setCodeOpen(true)}>
-                Mở thư trên máy khác? Nhập mã trong thư
-              </button>
-            </>
-          )}
-          <p className="login-hint">Không thấy thư? Xem cả mục Spam hoặc Quảng cáo.</p>
-          <div className="login-links">
-            <button type="button" className="login-link" onClick={changeEmail} disabled={busy}>Quay lại đăng nhập</button>
-            <button type="button" className="login-link" onClick={() => void requestEmail(true)} disabled={busy || wait > 0}>
-              {wait > 0 ? `Gửi lại thư sau ${wait} giây` : 'Gửi lại thư'}
-            </button>
-          </div>
+          <button type="button" className="login-back" onClick={() => setStep('email')}>Quay lại đăng nhập</button>
         </div>
       </div>
     );
@@ -232,7 +140,7 @@ export default function LoginScreen({ auth, authError, onSignIn, onSignedIn }: L
         {auth.login_configured ? (
           <>
             {emailEnabled && (
-              <form className="login-stack" noValidate onSubmit={event => { event.preventDefault(); void requestEmail(false); }}>
+              <form className="login-stack" noValidate onSubmit={event => { event.preventDefault(); void requestEmail(); }}>
                 <div className="login-field">
                   <label htmlFor="login-email">Email</label>
                   <input

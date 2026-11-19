@@ -280,25 +280,35 @@ export interface LoginEmailSent {
   expires_in: number;
 }
 
-/** Gửi thư đăng nhập (nút đăng nhập kèm mã 6 số). Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp của máy chủ. */
+/** Gửi thư đăng nhập có nút đăng nhập. Lỗi (sai dạng, gửi quá nhiều, chưa bật) mang thông điệp của máy chủ. Máy chủ
+ * đặt cho trình duyệt này một cookie yêu cầu để trang "Kiểm tra hộp thư" nhận phiên khi thư được bấm. */
 export async function sendLoginEmail(email: string): Promise<LoginEmailSent> {
   return json(await fetch("/api/auth/email/send", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
   }));
 }
 
-/** Đổi mã lấy phiên đăng nhập; thành công thì máy chủ đặt cookie phiên. */
-export async function verifyEmailCode(email: string, code: string): Promise<void> {
-  await json(await fetch("/api/auth/email/verify", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }),
+export interface EmailLinkResult {
+  /** `confirm`: mở trên máy khác với máy đang chờ, cần người dùng xác nhận; `signed_in`: đã đăng nhập trình duyệt này. */
+  state: 'confirm' | 'signed_in' | 'denied';
+  /** Máy đang chờ, ví dụ "Chrome trên Windows" (chỉ khi `confirm`). */
+  device?: string;
+  /** Giờ gửi yêu cầu, giây Unix (chỉ khi `confirm`). */
+  requested_at?: number;
+  same_browser?: boolean;
+}
+
+/** Trang mở từ nút trong thư gửi token lên; `confirm`/`deny` là câu trả lời ở trang xác nhận. */
+export async function openEmailLink(token: string, action?: 'confirm' | 'deny'): Promise<EmailLinkResult> {
+  return json(await fetch("/api/auth/email/link", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, confirm: action === 'confirm', deny: action === 'deny' }),
   }));
 }
 
-/** Đổi token của nút đăng nhập trong thư lấy phiên đăng nhập cho chính trình duyệt này. */
-export async function openEmailLink(token: string): Promise<void> {
-  await json(await fetch("/api/auth/email/link", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
-  }));
+/** Trang "Kiểm tra hộp thư" hỏi thư của trình duyệt này đã được bấm chưa; `signed_in` thì máy chủ vừa đặt phiên. */
+export async function emailLoginStatus(): Promise<{ state: 'waiting' | 'signed_in' | 'denied' | 'expired' }> {
+  return json(await fetch("/api/auth/email/status", { method: "POST" }));
 }
 
 /** Hồ sơ người dùng tự điền trong Cài đặt. Máy chủ ghép nó vào mọi lượt chat. */

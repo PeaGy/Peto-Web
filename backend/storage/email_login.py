@@ -1,8 +1,17 @@
-"""Bảng của lối đăng nhập bằng email: tài khoản email, đường dẫn đăng nhập và mã 6 số đi cùng trong một thư.
+"""Bảng của đăng nhập bằng email và của việc gộp tài khoản theo email đã xác minh.
 
-Không lưu địa chỉ email. Cả hai bảng chỉ giữ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
-``features.accounts.email_login.email_hash``) và tên hiển thị đã che (``tr•••@gmail.com``); địa chỉ thật chỉ nằm trong
-bộ nhớ lúc gửi thư. Đường dẫn và mã chỉ lưu dạng băm.
+Không lưu địa chỉ email ở đâu cả: chỉ ``email_hash`` (SHA-256 của email đã chuẩn hóa, xem
+``features.accounts.email_login.email_hash``) và tên hiển thị đã che (``tr•••@gmail.com``). Token của đường dẫn trong
+thư và mã của yêu cầu (cookie của trình duyệt đã gõ email) cũng chỉ lưu dạng băm.
+
+- ``email_accounts``: email nào thuộc owner nào. Tài khoản đầu tiên có email đó (đăng nhập email, Google hay GitHub với
+  email đã xác minh) nhận nó; lối đăng nhập mới tinh về sau có cùng email thì vào chính owner đó. Owner Discord không bao
+  giờ có mặt ở đây.
+- ``account_identities``: mỗi danh tính Google/GitHub đã đăng nhập thuộc owner nào (để đổi email bên Google sau này
+  không tách ra tài khoản mới).
+- ``email_login_links``: mỗi thư đăng nhập một dòng, đi qua ``pending`` → ``approved`` (đã bấm/xác nhận, có owner) →
+  ``claimed`` (tab đang chờ đã nhận phiên); hoặc ``denied`` (người nhận thư bấm "Không phải mình"), ``replaced`` (có
+  thư mới hơn).
 """
 
 from __future__ import annotations
@@ -18,132 +27,188 @@ async def init_tables(db) -> None:
         """
         CREATE TABLE IF NOT EXISTS email_accounts (
             email_hash TEXT PRIMARY KEY,
-            owner TEXT NOT NULL UNIQUE,
+            owner TEXT NOT NULL,
+            created_at REAL NOT NULL
+        )
+        """
+    )
+    # Bản đầu của nhánh (chưa từng deploy) đặt UNIQUE trên owner; gộp tài khoản cần nhiều email cho một owner.
+    indexes = await (await db.execute("PRAGMA index_list(email_accounts)")).fetchall()
+    if any(row[2] and str(row[1]).startswith("sqlite_autoindex_email_accounts_2") for row in indexes):
+        await db.execute("ALTER TABLE email_accounts RENAME TO email_accounts_old")
+        await db.execute(
+            "CREATE TABLE email_accounts (email_hash TEXT PRIMARY KEY, owner TEXT NOT NULL, created_at REAL NOT NULL)"
+        )
+        await db.execute("INSERT INTO email_accounts SELECT email_hash, owner, created_at FROM email_accounts_old")
+        await db.execute("DROP TABLE email_accounts_old")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_accounts_owner ON email_accounts(owner)")
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_identities (
+            identity TEXT PRIMARY KEY,
+            owner TEXT NOT NULL,
             created_at REAL NOT NULL
         )
         """
     )
     await db.execute(
         """
-        CREATE TABLE IF NOT EXISTS email_login_codes (
+        CREATE TABLE IF NOT EXISTS email_login_links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email_hash TEXT NOT NULL,
-            code_hash TEXT NOT NULL,
+            masked TEXT NOT NULL,
+            link_hash TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            device TEXT NOT NULL DEFAULT '',
             created_at REAL NOT NULL,
             expires_at REAL NOT NULL,
-            attempts INTEGER NOT NULL DEFAULT 0,
-            used INTEGER NOT NULL DEFAULT 0,
-            link_hash TEXT NOT NULL DEFAULT '',
-            masked TEXT NOT NULL DEFAULT ''
+            state TEXT NOT NULL DEFAULT 'pending',
+            owner TEXT NOT NULL DEFAULT ''
         )
         """
     )
-    # Bảng của bản chỉ có mã (chưa từng deploy) thiếu hai cột của đường dẫn đăng nhập.
-    columns = {row[1] for row in await (await db.execute("PRAGMA table_info(email_login_codes)")).fetchall()}
-    for column in ("link_hash", "masked"):
-        if column not in columns:
-            await db.execute(f"ALTER TABLE email_login_codes ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_email_login_codes_email ON email_login_codes(email_hash, created_at)"
-    )
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_login_codes_link ON email_login_codes(link_hash)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_login_links_email ON email_login_links(email_hash, created_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_login_links_link ON email_login_links(link_hash)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_login_links_request ON email_login_links(request_hash)")
+    # Bảng mã 6 số của bản đầu (chưa từng deploy): luồng mã đã bỏ.
+    await db.execute("DROP TABLE IF EXISTS email_login_codes")
+
+
+# --- Thư đăng nhập ---------------------------------------------------------------------------------------------------
 
 
 async def recent_sends(email_hash: str, since: float) -> list[float]:
-    """Thời điểm các lần gửi mã cho email này từ ``since`` tới giờ, mới nhất trước."""
+    """Thời điểm các lần gửi thư cho email này từ ``since`` tới giờ, mới nhất trước."""
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT created_at FROM email_login_codes WHERE email_hash = ? AND created_at >= ? ORDER BY created_at DESC",
+            "SELECT created_at FROM email_login_links WHERE email_hash = ? AND created_at >= ? ORDER BY created_at DESC",
             (email_hash, since),
         )
         return [row[0] for row in await cursor.fetchall()]
 
 
-async def add_code(email_hash: str, code_hash: str, link_hash: str, masked: str, ttl: float, keep_for: float) -> int:
-    """Ghi thư mới (mã và đường dẫn), vô hiệu mọi thư cũ của email đó (chỉ thư gửi sau cùng còn dùng được) và dọn các
-    dòng quá ``keep_for``."""
+async def add_link(*, email_hash: str, masked: str, link_hash: str, request_hash: str, device: str, ttl: float,
+                   keep_for: float) -> int:
+    """Ghi thư mới; thư cũ chưa dùng của email đó thành ``replaced`` (chỉ thư sau cùng còn dùng được)."""
     now = time.time()
     async with db_connection.connect() as db:
-        await db.execute("DELETE FROM email_login_codes WHERE created_at < ?", (now - keep_for,))
-        await db.execute("UPDATE email_login_codes SET used = 1 WHERE email_hash = ? AND used = 0", (email_hash,))
+        await db.execute("DELETE FROM email_login_links WHERE created_at < ?", (now - keep_for,))
+        await db.execute("UPDATE email_login_links SET state = 'replaced' WHERE email_hash = ? AND state = 'pending'",
+                         (email_hash,))
         cursor = await db.execute(
-            "INSERT INTO email_login_codes (email_hash, code_hash, link_hash, masked, created_at, expires_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (email_hash, code_hash, link_hash, masked, now, now + ttl),
+            "INSERT INTO email_login_links (email_hash, masked, link_hash, request_hash, device, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (email_hash, masked, link_hash, request_hash, device, now, now + ttl),
         )
         await db.commit()
         return int(cursor.lastrowid)
 
 
-async def drop_code(code_id: int) -> None:
-    """Bỏ mã không gửi được: không để một mã người dùng chưa từng nhận chặn đường nhận mã sau."""
+async def drop_link(link_id: int) -> None:
+    """Bỏ thư không gửi được."""
     async with db_connection.connect() as db:
-        await db.execute("UPDATE email_login_codes SET used = 1 WHERE id = ?", (code_id,))
+        await db.execute("UPDATE email_login_links SET state = 'replaced' WHERE id = ?", (link_id,))
         await db.commit()
 
 
-async def current_code(email_hash: str) -> dict | None:
-    """Mã còn hiệu lực gần nhất của email, hoặc None."""
+async def pending_link(link_hash: str) -> dict | None:
+    """Thư còn dùng được ứng với token này, hoặc None."""
+    if not link_hash:
+        return None
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT id, code_hash, attempts FROM email_login_codes "
-            "WHERE email_hash = ? AND used = 0 AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
-            (email_hash, time.time()),
+            "SELECT id, email_hash, masked, request_hash, device, created_at FROM email_login_links "
+            "WHERE link_hash = ? AND state = 'pending' AND expires_at > ?",
+            (link_hash, time.time()),
         )
         row = await cursor.fetchone()
-    return {"id": row[0], "code_hash": row[1], "attempts": row[2]} if row else None
+    if not row:
+        return None
+    keys = ("id", "email_hash", "masked", "request_hash", "device", "created_at")
+    return dict(zip(keys, row))
 
 
-async def add_attempt(code_id: int, max_attempts: int) -> int:
-    """Tính thêm một lần nhập sai; đủ ``max_attempts`` thì mã bị hủy. Trả về số lần sai sau khi cộng."""
-    async with db_connection.connect() as db:
-        await db.execute(
-            "UPDATE email_login_codes SET attempts = attempts + 1, used = CASE WHEN attempts + 1 >= ? THEN 1 ELSE used END "
-            "WHERE id = ?",
-            (max_attempts, code_id),
-        )
-        cursor = await db.execute("SELECT attempts FROM email_login_codes WHERE id = ?", (code_id,))
-        row = await cursor.fetchone()
-        await db.commit()
-    return int(row[0]) if row else max_attempts
-
-
-async def consume_code(code_id: int) -> bool:
-    """Đánh dấu mã đã dùng. False nếu một yêu cầu khác vừa dùng nó trước (hai lần bấm cùng lúc)."""
+async def approve_link(link_id: int, owner: str) -> bool:
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "UPDATE email_login_codes SET used = 1 WHERE id = ? AND used = 0 AND expires_at > ?", (code_id, time.time())
+            "UPDATE email_login_links SET state = 'approved', owner = ? WHERE id = ? AND state = 'pending'",
+            (owner, link_id),
         )
         await db.commit()
         return cursor.rowcount == 1
 
 
-async def consume_link(link_hash: str) -> dict | None:
-    """Dùng đường dẫn đăng nhập một lần: trả về ``email_hash`` và tên đã che, hoặc None nếu đường dẫn sai, đã dùng (kể
-    cả khi mã trong cùng thư đã được nhập), đã có thư mới hơn hay đã hết hạn."""
-    if not link_hash:
-        return None
+async def deny_link(link_id: int) -> bool:
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT id, email_hash, masked FROM email_login_codes WHERE link_hash = ? AND used = 0 AND expires_at > ?",
-            (link_hash, time.time()),
+            "UPDATE email_login_links SET state = 'denied' WHERE id = ? AND state = 'pending'", (link_id,))
+        await db.commit()
+        return cursor.rowcount == 1
+
+
+async def request_state(request_hash: str, claim_window: float) -> tuple[str, str]:
+    """Trạng thái thư mới nhất của trình duyệt đã gõ email: (``waiting`` | ``signed_in`` | ``denied`` | ``expired``,
+    owner). ``signed_in`` chỉ trả về một lần: dòng chuyển sang ``claimed`` ngay trong câu lệnh đó."""
+    if not request_hash:
+        return "expired", ""
+    now = time.time()
+    async with db_connection.connect() as db:
+        cursor = await db.execute(
+            "SELECT id, state, owner, expires_at FROM email_login_links WHERE request_hash = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (request_hash,),
         )
         row = await cursor.fetchone()
         if not row:
-            return None
-        cursor = await db.execute("UPDATE email_login_codes SET used = 1 WHERE id = ? AND used = 0", (row[0],))
+            return "expired", ""
+        link_id, state, owner, expires_at = row
+        if state == "pending":
+            return ("waiting", "") if expires_at > now else ("expired", "")
+        if state == "approved" and now < expires_at + claim_window:
+            cursor = await db.execute(
+                "UPDATE email_login_links SET state = 'claimed' WHERE id = ? AND state = 'approved'", (link_id,))
+            await db.commit()
+            return ("signed_in", owner) if cursor.rowcount == 1 else ("expired", "")
+        return ("denied", "") if state == "denied" else ("expired", "")
+
+
+# --- Owner theo email và theo danh tính ------------------------------------------------------------------------------
+
+
+async def owner_for_email(email_hash: str) -> str | None:
+    async with db_connection.connect() as db:
+        cursor = await db.execute("SELECT owner FROM email_accounts WHERE email_hash = ?", (email_hash,))
+        row = await cursor.fetchone()
+    return str(row[0]) if row else None
+
+
+async def claim_email(email_hash: str, owner: str) -> None:
+    """Gắn email cho owner nếu chưa ai nhận. Không bao giờ chuyển email đã có chủ, không bao giờ gắn cho owner Discord."""
+    if owner.startswith("discord:"):
+        raise ValueError("owner Discord không được gắn email")
+    async with db_connection.connect() as db:
+        await db.execute("INSERT OR IGNORE INTO email_accounts (email_hash, owner, created_at) VALUES (?, ?, ?)",
+                         (email_hash, owner, time.time()))
         await db.commit()
-    return {"email_hash": row[1], "masked": row[2]} if cursor.rowcount == 1 else None
 
 
 async def email_owner(email_hash: str) -> str:
-    """Owner của tài khoản email; chưa có thì tạo với một mã ngẫu nhiên (``email:<32 ký tự hex>``)."""
+    """Owner của email; chưa có thì tạo tài khoản email mới (``email:<32 ký tự hex>``)."""
+    await claim_email(email_hash, f"email:{secrets.token_hex(16)}")
+    owner = await owner_for_email(email_hash)
+    assert owner is not None
+    return owner
+
+
+async def identity_owner(identity: str) -> str | None:
     async with db_connection.connect() as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO email_accounts (email_hash, owner, created_at) VALUES (?, ?, ?)",
-            (email_hash, f"email:{secrets.token_hex(16)}", time.time()),
-        )
-        cursor = await db.execute("SELECT owner FROM email_accounts WHERE email_hash = ?", (email_hash,))
+        cursor = await db.execute("SELECT owner FROM account_identities WHERE identity = ?", (identity,))
         row = await cursor.fetchone()
+    return str(row[0]) if row else None
+
+
+async def link_identity(identity: str, owner: str) -> None:
+    async with db_connection.connect() as db:
+        await db.execute("INSERT OR IGNORE INTO account_identities (identity, owner, created_at) VALUES (?, ?, ?)",
+                         (identity, owner, time.time()))
         await db.commit()
-    return str(row[0])

@@ -22,7 +22,7 @@ when the owner removed it (see "English model instructions, provider overlays, n
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice" in `docs/notes/chat.md`).
-Registration is **open**: Discord, Google, GitHub or a sign-in mail (link or code) — there is no allowlist.
+Registration is **open**: Discord, Google, GitHub or a sign-in mail — there is no allowlist. Google, GitHub and email with one verified address are one account; Discord never merges.
 
 ## Where to read before working on an area
 

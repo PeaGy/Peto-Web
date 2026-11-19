@@ -82,9 +82,8 @@ async def test_login_redirects_to_google(anon_client):
     assert response.status_code == 307
     location = response.headers["location"]
     assert location.startswith("https://accounts.google.com/o/oauth2/v2/auth")
-    # Không xin "email": màn hình đăng nhập chỉ hứa đọc tên và ảnh đại diện.
-    assert "scope=openid+profile" in location
-    assert "email" not in location
+    # "email" chỉ để gộp tài khoản theo email đã xác minh (lưu dấu băm); không xin gì thêm.
+    assert "scope=openid+profile+email&" in location
     assert "test-google-client-secret" not in location
     assert response.cookies.get(auth.GOOGLE_STATE_COOKIE)
 
@@ -113,8 +112,8 @@ async def test_login_redirects_to_github(anon_client):
     assert response.status_code == 307
     location = response.headers["location"]
     assert location.startswith("https://github.com/login/oauth/authorize")
-    # Không xin scope nào: chỉ hồ sơ công khai, không email, không repo.
-    assert "scope=&" in location or location.endswith("scope=")
+    # Chỉ đọc danh sách email để gộp tài khoản; không đụng repo.
+    assert "scope=user%3Aemail&" in location
     assert "test-github-client-secret" not in location
     assert response.cookies.get(auth.GITHUB_STATE_COOKIE)
 
