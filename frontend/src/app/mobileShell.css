@@ -28,9 +28,8 @@
   /* Điện thoại: nút Gửi chỉ còn mũi tên (bản phác chủ web chọn), chừa chỗ cho nút chọn model mà thanh không xuống hàng. */
   .composer-send .send { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .composer-send .send-text { display: none; }
-  /* Micro đang nghe: chỉ còn chấm đỏ, chữ "Đang nghe" vẫn là tên đọc của nút. */
-  .dictation-on { width: 36px; padding: 0; }
-  .dictation-label { display: none; }
+  /* Đang nghe trên điện thoại: sóng âm ngắn lại để ✕ và ✓ vẫn nằm một hàng. */
+  .dictation-wave > span:nth-child(-n + 8) { display: none; }
   /* Ô tìm ngôn ngữ 16px để iPhone không phóng to trang khi gõ. */
   .dictation-search { font-size: 16px; }
 }

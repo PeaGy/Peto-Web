@@ -32,6 +32,10 @@ export interface ChatDictation {
   stop(): void;
   /** Dừng nghe và trả về chữ đầy đủ (cả phần chưa chốt) để gửi ngay. */
   finishForSend(): string;
+  /** Nút ✕ lúc đang nghe: thôi nghe và bỏ mọi chữ nghe được lần này, ô nhắn trở lại như lúc bấm micro. */
+  cancel(): void;
+  /** Luồng micro để vẽ sóng âm lúc đang nghe; null khi không đo được (Safari, điện thoại: không mở micro thứ hai). */
+  meterStream: MediaStream | null;
   /** Người dùng gõ tiếp: ẩn lỗi cũ của micro. */
   clearError(): void;
   /** Mã ngôn ngữ nghe ("vi-VN"…), chọn ở menu cạnh micro; đổi khi đang nghe thì lần nghe sau mới theo. */
@@ -54,7 +58,12 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
   const [interim, setInterim] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [meterStream, setMeterStream] = useState<MediaStream | null>(null);
   const session = useRef<BrowserSpeechSession | null>(null);
+  // Chữ trong ô nhắn lúc bấm micro, để nút ✕ trả lại đúng như cũ.
+  const base = useRef('');
+  // Micro mở riêng chỉ để vẽ sóng âm khi nghe bằng micro mặc định (Chrome/Edge máy tính).
+  const meterOnly = useRef<MediaStream | null>(null);
   // Micro đã chọn được mở riêng rồi đưa track cho trình duyệt nhận giọng; đóng khi thôi nghe.
   const stream = useRef<MediaStream | null>(null);
   // Mỗi lần bấm micro một số mới: mở micro xong mà người dùng đã bấm dừng thì bỏ, không nghe nữa.
@@ -75,6 +84,9 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
   const releaseMic = useCallback(() => {
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
+    meterOnly.current?.getTracks().forEach((track) => track.stop());
+    meterOnly.current = null;
+    setMeterStream(null);
   }, []);
 
   const end = useCallback((keepInterim: boolean) => {
@@ -95,6 +107,7 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
     setError('');
     setNotice('');
     setPhase('starting');
+    base.current = textRef.current;
     const id = ++attempt.current;
     const fail = (message: string) => {
       session.current = null;
@@ -122,7 +135,22 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
         session.current = startBrowserSpeech('vi', handlers, { ...options, track });
       } catch (err) {
         fail(err instanceof Error ? err.message : 'Trình duyệt này chưa có tính năng nghe.');
+        return;
       }
+      if (track && stream.current) {
+        setMeterStream(stream.current);
+        return;
+      }
+      // Sóng âm cho micro mặc định: chỉ ở Chrome/Edge máy tính. Safari trên iPhone có thể ngắt nhận giọng khi trang mở
+      // thêm micro, nên ở đó chỉ hiện sóng âm chờ.
+      if (!canChooseMic) return;
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((opened) => {
+          if (attempt.current !== id) { opened.getTracks().forEach((item) => item.stop()); return; }
+          meterOnly.current = opened;
+          setMeterStream(opened);
+        })
+        .catch(() => { /* Không vẽ được sóng âm thì vẫn nghe bình thường. */ });
     };
     if (!canChooseMic || !mic.id) {
       // Micro mặc định: mở ngay trong lần bấm, vì Safari chỉ cho nghe khi còn trong cử chỉ của người dùng.
@@ -163,6 +191,14 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
 
   const stop = useCallback(() => end(true), [end]);
 
+  const cancel = useCallback(() => {
+    const before = base.current;
+    interimRef.current = '';
+    end(false);
+    textRef.current = before;
+    onTextRef.current(before);
+  }, [end]);
+
   const finishForSend = useCallback(() => {
     const full = appendSpeech(textRef.current, interimRef.current.trim());
     interimRef.current = '';
@@ -186,6 +222,8 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
       session.current = null;
       stream.current?.getTracks().forEach((track) => track.stop());
       stream.current = null;
+      meterOnly.current?.getTracks().forEach((track) => track.stop());
+      meterOnly.current = null;
     };
   }, [end]);
 
@@ -197,7 +235,7 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
   }, []);
 
   return {
-    supported, phase, interim, error, notice, start, stop, finishForSend, clearError, language, setLanguage,
-    canChooseMic, mic, setMic,
+    supported, phase, interim, error, notice, start, stop, finishForSend, cancel, meterStream, clearError, language,
+    setLanguage, canChooseMic, mic, setMic,
   };
 }

@@ -62,7 +62,23 @@ test('menu cạnh micro: chọn micro, tìm và đổi ngôn ngữ, nhớ qua F5
     await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
   }
   await noPageOverflow(page);
+  // Màn hình trống: ô nhắn ở giữa; menu phải nằm trọn trong màn hình (ngày 20/11 nó tràn lên, mất phần đầu).
+  const box = (await menu.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
   await expect(menu).toHaveScreenshot('dictation-menu.png', { mask: [menu.locator('.dictation-level-fill')] });
+  // Tên micro thật thường dài ("Default - Microphone (A303 Headset) (0b05:1c33)"): dòng phải cao lên, không đè dòng dưới.
+  const rows = await devices.evaluateAll((items) => {
+    const label = items[0].querySelector('.effort-option-label')!;
+    const before = label.textContent;
+    label.textContent = 'Default - Microphone (A303 Headset) (0b05:1c33) Communications';
+    const boxes = items.map((item) => item.getBoundingClientRect()).map((box) => ({ top: box.top, bottom: box.bottom, height: box.height }));
+    label.textContent = before;
+    return boxes;
+  });
+  expect(rows[0].height).toBeGreaterThan(40);
+  for (let index = 1; index < rows.length; index += 1) expect(rows[index].top).toBeGreaterThanOrEqual(rows[index - 1].bottom - 0.5);
 
   let chosen = '';
   if (!mobile) {
@@ -93,7 +109,8 @@ test('menu cạnh micro: chọn micro, tìm và đổi ngôn ngữ, nhớ qua F5
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: 'Nói để nhập' }).click();
-  await expect(page.getByRole('button', { name: 'Dừng nghe' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Xong nhập giọng nói' })).toBeVisible();
+  await expect(composer).toHaveAttribute('placeholder', /Đang (nghe|mở micro)…/);
   // Micro đã chọn được mở trước (getUserMedia) rồi mới bắt đầu nghe: chờ lần start thật.
   const startedList = () => page.evaluate(() => (window as unknown as { testDictation: { started: { lang: string; track: string | null }[] } }).testDictation.started);
   await expect.poll(async () => (await startedList()).length).toBeGreaterThan(0);
@@ -103,6 +120,8 @@ test('menu cạnh micro: chọn micro, tìm và đổi ngôn ngữ, nhớ qua F5
   expect(started.at(-1)?.track).toBe(mobile ? null : chosen);
   await page.evaluate(() => (window as unknown as { testDictation: { say(text: string, final: boolean): void } }).testDictation.say('こんにちは', true));
   await expect(composer).toHaveValue('こんにちは');
-  await page.getByRole('button', { name: 'Dừng nghe' }).click();
+  await noPageOverflow(page);
+  await expect(page.locator('.composer-bar')).toHaveScreenshot('dictation-listening.png', { mask: [page.locator('.dictation-wave')] });
+  await page.getByRole('button', { name: 'Xong nhập giọng nói' }).click();
   await expect(page.getByRole('button', { name: 'Nói để nhập' })).toBeVisible();
 });
