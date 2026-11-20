@@ -31,5 +31,7 @@
   /* Micro đang nghe: chỉ còn chấm đỏ, chữ "Đang nghe" vẫn là tên đọc của nút. */
   .dictation-on { width: 36px; padding: 0; }
   .dictation-label { display: none; }
+  /* Ô tìm ngôn ngữ 16px để iPhone không phóng to trang khi gõ. */
+  .dictation-search { font-size: 16px; }
 }
 

@@ -10,6 +10,7 @@ import type { Effort, ModelOption, WebSearchMode, QuotedSource } from "../../sha
 import { QuoteExcerpt } from './QuotedFollowup';
 import { isPastedTextFile, LONG_PASTE_CHARS, pasteAtSelection, pastedTextFile } from './longPaste';
 import PastedTextPreview from './PastedTextPreview';
+import DictationMenu from './DictationMenu';
 import { appendSpeech, useChatDictation } from './useChatDictation';
 
 const ACCEPT =
@@ -242,18 +243,21 @@ export default function Composer({
             {models.length > 1 && (
               <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
             )}
-            {dictation.supported && (listening ? (
-              <button type="button" className="dictation-on" aria-label="Dừng nghe" data-tip="Dừng nghe"
-                onClick={dictation.stop}>
-                <span className="dictation-dot" aria-hidden="true" />
-                <span className="dictation-label">{dictation.phase === 'starting' ? 'Đang mở micro…' : 'Đang nghe'}</span>
-              </button>
-            ) : (
-              <button type="button" className="dictation-mic" aria-label="Nói để nhập" data-tip="Nói để nhập"
-                onClick={dictation.start}>
-                <MicIcon />
-              </button>
-            ))}
+            {dictation.supported && <div className="dictation-group">
+              {listening ? (
+                <button type="button" className="dictation-on" aria-label="Dừng nghe" data-tip="Dừng nghe"
+                  onClick={dictation.stop}>
+                  <span className="dictation-dot" aria-hidden="true" />
+                  <span className="dictation-label">{dictation.phase === 'starting' ? 'Đang mở micro…' : 'Đang nghe'}</span>
+                </button>
+              ) : (
+                <button type="button" className="dictation-mic" aria-label="Nói để nhập" data-tip="Nói để nhập"
+                  onClick={dictation.start}>
+                  <MicIcon />
+                </button>
+              )}
+              <DictationMenu dictation={dictation} />
+            </div>}
             {streaming ? (
               <button type="button" className="stop" disabled={stopping} onClick={onStop}>
                 {stopping ? "Đang dừng…" : "Dừng"}
