@@ -161,6 +161,26 @@ the service's venv had not installed the new backend requirements. Web and Agent
 that converts dependency import failures to an actionable Vietnamese provider error. DEPLOY.md gives the exact
 venv install/import-check/restart commands; restarting alone never installs dependencies.
 
+### Voice input in the composer (micro)
+
+Owner's pick (2026-11-20, G5, from mockups): option A, the browser's own speech recognition (Web Speech API), free, with
+words appearing while you speak. Server transcription on the owner's OpenAI key (option B) was not chosen.
+
+- A round mic button sits left of Gửi (`features/chat/Composer.tsx`, `useChatDictation.ts`). It only shows where the
+  browser has `SpeechRecognition` (Chrome, Edge, Safari; Firefox has none, so no button). Clicking starts listening
+  in Vietnamese (`vi-VN`), inside the click so Safari allows it; the button becomes a "● Đang nghe" pill (only the red
+  dot on phones) that stops listening when clicked.
+- Final words are appended to the draft text (links pasted as chips stay); words still being heard show after them and
+  the textarea is read-only meanwhile. Stopping keeps the half-heard words as editable text. Gửi or Enter while
+  listening sends everything, including the half-heard part: the composer commits it to the draft, then submits once
+  App has the new draft. Switching conversation, hiding the tab or leaving the page stops listening and drops the
+  half-heard words.
+- It reuses `companion/speech/browserSpeech.ts` (restart after silence, stop after five quick failures, 10 s start
+  timeout, 8 s "sound but no words" notice) with `{ chat: true }`, which words its errors without pointing to
+  Companion settings. The Companion hearing engine (pause while Peto speaks, auto-send, key providers) is not used.
+- Chrome sends the audio to Google's recognition service; nothing goes through the Peto server.
+- Tests: `tests/chatDictation.test.tsx` (fake `SpeechRecognition`). Three Playwright baselines gained the mic icon.
+
 ### Chat request lifecycle (`POST /api/chat`)
 
 This is the most intricate part of the codebase. The endpoint returns a `StreamingResponse`
@@ -485,6 +505,13 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Voice input in the Chat composer (G5) (2026-11-20, branch `g5-chat-voice-input`, not merged)
+
+See "Voice input in the composer (micro)". Checked on the mock stack with a fake recognition class injected into the
+page (the built-in browser cannot reach a real recognition service): live words, the pill, sending mid-sentence, and a
+375 px phone bar that still fits on one row.
+
 
 ## LIVE `chat-core` for all three Chat models, low effort (2026-11-18)
 
