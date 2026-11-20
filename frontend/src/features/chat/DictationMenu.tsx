@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { DICTATION_LANGUAGES, languageOf, matchesLanguage, resolveMic } from './dictationPrefs';
 import type { ChatDictation } from './useChatDictation';
 
@@ -17,6 +17,20 @@ function Chevron({ back = false }: { back?: boolean }) {
 }
 
 interface Device { id: string; label: string }
+
+const GAP = 8;
+const EDGE = 12;
+const MAX_HEIGHT = 460;
+
+/** Mở lên hay xuống và cao bao nhiêu để menu không tràn khỏi màn hình. Ô nhắn nằm giữa màn hình lúc chưa có tin nhắn
+ * (chủ web gặp ngày 20/11/2026: menu mở lên với chiều cao theo cả trang, mất phần đầu), nên đo chỗ trống thật. */
+export function menuPlacement(trigger: { top: number; bottom: number }, viewport: number, natural: number) {
+  const above = Math.max(0, trigger.top - GAP - EDGE);
+  const below = Math.max(0, viewport - trigger.bottom - GAP - EDGE);
+  const wanted = Math.min(natural, MAX_HEIGHT);
+  const up = above >= wanted || above >= below;
+  return { up, maxHeight: Math.min(MAX_HEIGHT, up ? above : below) };
+}
 
 /** Mở micro đang chọn để đo âm lượng và đọc tên các micro (trình duyệt chỉ cho đọc tên sau khi được phép dùng micro). */
 function useMicrophones(active: boolean, mic: string, meter: RefObject<HTMLSpanElement | null>) {
@@ -84,6 +98,7 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
   const search = useRef<HTMLInputElement>(null);
   const meter = useRef<HTMLSpanElement>(null);
   const [current, setCurrent] = useState('');
+  const [place, setPlace] = useState<{ up: boolean; maxHeight: number }>({ up: true, maxHeight: MAX_HEIGHT });
   const { devices, problem } = useMicrophones(open && view === 'main' && dictation.canChooseMic, current, meter);
   const language = languageOf(dictation.language);
   const languages = DICTATION_LANGUAGES.filter((item) => matchesLanguage(item, query));
@@ -96,6 +111,18 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
   }, [selectedMic, current]);
   useEffect(() => { if (!open) setCurrent(''); }, [open]);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  // Đo lại khi mở, khi đổi giữa danh sách micro và ngôn ngữ, khi danh sách micro tải xong và khi đổi cỡ cửa sổ.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const box = trigger.current?.getBoundingClientRect();
+      if (!box || !menu.current) return;
+      setPlace(menuPlacement(box, window.innerHeight, menu.current.scrollHeight));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [open, view, devices, problem]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -143,7 +170,8 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
         <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
-    {open && <div ref={menu} id="dictation-options" className="effort-options dictation-options" role="menu"
+    {open && <div ref={menu} id="dictation-options" role="menu" style={{ maxHeight: place.maxHeight }}
+      className={place.up ? 'effort-options dictation-options' : 'effort-options dictation-options below'}
       aria-label={view === 'language' ? 'Ngôn ngữ nghe' : 'Nhập giọng nói'} onKeyDown={onMenuKey}>
       {view === 'main' ? <>
         {dictation.canChooseMic ? <>

@@ -168,11 +168,16 @@ words appearing while you speak. Server transcription on the owner's OpenAI key 
 
 - A round mic button sits left of Gửi (`features/chat/Composer.tsx`, `useChatDictation.ts`). It only shows where the
   browser has `SpeechRecognition` (Chrome, Edge, Safari; Firefox has none, so no button). Clicking starts listening
-  in Vietnamese (`vi-VN`), inside the click so Safari allows it; the button becomes a "● Đang nghe" pill (only the red
-  dot on phones) that stops listening when clicked.
+  in the chosen language (Vietnamese by default), inside the click so Safari allows it.
+- While listening, as in Claude (owner's screenshot, 2026-11-20): the empty box shows "Đang nghe…" in italics, and the
+  right of the bar becomes a wave (`DictationWave.tsx`, 18 bars of recent loudness, dots when quiet) with ✕ and ✓;
+  the model picker, mic and Gửi are hidden (Dừng stays while Peto is replying). ✓ stops and keeps the words; ✕ stops
+  and puts the box back exactly as it was when the mic was clicked. The wave reads a microphone stream only on
+  desktop Chrome/Edge (the chosen microphone's stream, or a second default-microphone stream); Safari and phones show
+  a waiting wave, because opening a second microphone could cut iPhone recognition.
 - Final words are appended to the draft text (links pasted as chips stay); words still being heard show after them and
-  the textarea is read-only meanwhile. Stopping keeps the half-heard words as editable text. Gửi or Enter while
-  listening sends everything, including the half-heard part: the composer commits it to the draft, then submits once
+  the textarea is read-only meanwhile. Stopping keeps the half-heard words as editable text. Enter while listening
+  sends everything, including the half-heard part: the composer commits it to the draft, then submits once
   App has the new draft. Switching conversation, hiding the tab or leaving the page stops listening and drops the
   half-heard words.
 - It reuses `companion/speech/browserSpeech.ts` (restart after silence, stop after five quick failures, 10 s start
@@ -190,6 +195,10 @@ words appearing while you speak. Server transcription on the owner's OpenAI key 
     track is accepted, a video track throws `InvalidStateError`. Elsewhere (Safari, Firefox, phones) the menu shows
     only "Micro mặc định của máy" and opening it does not ask for the microphone.
   - Opening the menu where choice is supported asks for the microphone (needed to read device names), like Claude.
+  - Placement (`menuPlacement`): it measures the room above and below the chevron and opens toward the larger side
+    with a height that fits (at most 460 px). On the empty screen the composer sits mid-page, and the first version
+    opened upward sized for the whole page, losing its top (owner's screenshot, 2026-11-20). Rows keep equal padding
+    when a long device name wraps.
   - The microphone is stored as id plus name: device ids change (cleared cookies, private windows; Playwright's
     Chromium issues new ids on every load), so the name finds it again; if neither is there, listening uses the
     default microphone with a notice instead of failing.
@@ -521,6 +530,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Dictation: menu placement and Claude-style listening bar (2026-11-20, branch `g5-dictation-ui`, not merged)
+
+After the owner's live test: the menu ran off the top of the screen, and they asked for Claude's listening state
+("Listening…", wave, ✕, ✓). See "Voice input in the composer (micro)".
+
 
 ## Microphone and language menu for Chat voice input (2026-11-20, branch `g5-dictation-menu`, not merged)
 

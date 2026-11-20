@@ -57,11 +57,14 @@ it('joins heard words to what is already typed', () => {
   expect(appendSpeech('Dòng một\n', 'dòng hai')).toBe('Dòng một\ndòng hai');
 });
 
-it('shows live words while listening, keeps final ones in the draft and stops on click', () => {
+it('shows live words while listening, keeps final ones in the draft and stops with ✓', () => {
   render(<Harness initial="Peto ơi" />);
   const recognition = listen();
   expect(recognition.lang).toBe('vi-VN');
-  expect(screen.getByRole('button', { name: 'Dừng nghe' }).textContent).toContain('Đang nghe');
+  // Như Claude: lúc nghe chỉ còn sóng âm, ✕ và ✓; micro, mũi tên và Gửi ẩn đi.
+  expect(screen.queryByRole('button', { name: 'Gửi' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Nói để nhập' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Hủy nhập giọng nói' })).toBeTruthy();
   recognition.say('tóm tắt giúp', false);
   expect(box().value).toBe('Peto ơi tóm tắt giúp');
   expect(box().readOnly).toBe(true);
@@ -69,31 +72,43 @@ it('shows live words while listening, keeps final ones in the draft and stops on
   expect(box().value).toBe('Peto ơi tóm tắt giúp mình');
   expect(box().readOnly).toBe(false);
   recognition.say('bài này', false);
-  fireEvent.click(screen.getByRole('button', { name: 'Dừng nghe' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Xong nhập giọng nói' }));
   // Phần đang nghe dở vẫn vào nháp để sửa.
   expect(box().value).toBe('Peto ơi tóm tắt giúp mình bài này');
   expect(recognition.abort).toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Nói để nhập' })).toBeTruthy();
 });
 
-it('Gửi while listening sends the words still being heard', () => {
+it('shows "Đang nghe…" in the empty box while listening', () => {
   render(<Harness />);
-  const recognition = listen();
-  recognition.say('chào Peto', false);
-  const send = screen.getByRole('button', { name: 'Gửi' });
-  expect(send).toHaveProperty('disabled', false);
-  fireEvent.click(send);
-  expect(sent).toEqual(['chào Peto']);
-  expect(box().value).toBe('');
-  expect(screen.getByRole('button', { name: 'Nói để nhập' })).toBeTruthy();
+  listen();
+  expect(box().placeholder).toBe('Đang nghe…');
+  expect(box().classList.contains('dictation-listening')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Xong nhập giọng nói' }));
+  expect(box().placeholder).toBe('Nhắn cho Peto…');
 });
 
-it('Enter while listening sends too, and late results after that are ignored', () => {
+it('✕ drops what was heard and puts the box back as it was', () => {
+  render(<Harness initial="Peto ơi" />);
+  const recognition = listen();
+  recognition.say('câu này bỏ đi');
+  recognition.say('và cả câu này', false);
+  expect(box().value).toBe('Peto ơi câu này bỏ đi và cả câu này');
+  fireEvent.click(screen.getByRole('button', { name: 'Hủy nhập giọng nói' }));
+  expect(box().value).toBe('Peto ơi');
+  expect(recognition.abort).toHaveBeenCalled();
+  recognition.say('chữ đến muộn');
+  expect(box().value).toBe('Peto ơi');
+  expect(screen.getByRole('button', { name: 'Gửi' })).toBeTruthy();
+});
+
+it('Enter while listening sends everything, including the half-heard words; late results are ignored', () => {
   render(<Harness />);
   const recognition = listen();
   recognition.say('một câu hỏi');
+  recognition.say('nữa', false);
   fireEvent.keyDown(box(), { key: 'Enter' });
-  expect(sent).toEqual(['một câu hỏi']);
+  expect(sent).toEqual(['một câu hỏi nữa']);
   recognition.say('chữ đến muộn');
   expect(box().value).toBe('');
 });

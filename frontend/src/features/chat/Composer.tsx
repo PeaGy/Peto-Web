@@ -11,6 +11,7 @@ import { QuoteExcerpt } from './QuotedFollowup';
 import { isPastedTextFile, LONG_PASTE_CHARS, pasteAtSelection, pastedTextFile } from './longPaste';
 import PastedTextPreview from './PastedTextPreview';
 import DictationMenu from './DictationMenu';
+import DictationWave from './DictationWave';
 import { appendSpeech, useChatDictation } from './useChatDictation';
 
 const ACCEPT =
@@ -174,7 +175,8 @@ export default function Composer({
           value={shown}
           readOnly={Boolean(dictation.interim)}
           rows={1}
-          placeholder="Nhắn cho Peto…"
+          className={listening ? 'dictation-listening' : undefined}
+          placeholder={listening ? (dictation.phase === 'starting' ? 'Đang mở micro…' : 'Đang nghe…') : 'Nhắn cho Peto…'}
           aria-label="Nhắn cho Peto"
           enterKeyHint="send"
           onChange={(event) => {
@@ -240,30 +242,37 @@ export default function Composer({
           </div>
 
           <div className="composer-send">
-            {models.length > 1 && (
-              <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
-            )}
-            {dictation.supported && <div className="dictation-group">
-              {listening ? (
-                <button type="button" className="dictation-on" aria-label="Dừng nghe" data-tip="Dừng nghe"
-                  onClick={dictation.stop}>
-                  <span className="dictation-dot" aria-hidden="true" />
-                  <span className="dictation-label">{dictation.phase === 'starting' ? 'Đang mở micro…' : 'Đang nghe'}</span>
-                </button>
-              ) : (
+            {listening ? <>
+              {/* Đang nghe, như Claude: sóng âm, ✕ bỏ chữ vừa nghe, ✓ giữ chữ và thôi nghe. Enter vẫn gửi cả câu. */}
+              <DictationWave stream={dictation.meterStream} />
+              <button type="button" className="dictation-action" aria-label="Hủy nhập giọng nói"
+                data-tip="Hủy, bỏ chữ vừa nghe" onClick={dictation.cancel}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+              </button>
+              <button type="button" className="dictation-action done" aria-label="Xong nhập giọng nói"
+                data-tip="Xong, giữ chữ đã nghe" onClick={() => { dictation.stop(); textareaRef.current?.focus(); }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
+              </button>
+            </> : <>
+              {models.length > 1 && (
+                <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
+              )}
+              {dictation.supported && <div className="dictation-group">
                 <button type="button" className="dictation-mic" aria-label="Nói để nhập" data-tip="Nói để nhập"
                   onClick={dictation.start}>
                   <MicIcon />
                 </button>
-              )}
-              <DictationMenu dictation={dictation} />
-            </div>}
+                <DictationMenu dictation={dictation} />
+              </div>}
+            </>}
             {streaming ? (
               <button type="button" className="stop" disabled={stopping} onClick={onStop}>
                 {stopping ? "Đang dừng…" : "Dừng"}
               </button>
-            ) : (
-              <button type="submit" className="send" disabled={!canSend && !dictation.interim.trim()} aria-label="Gửi">
+            ) : !listening && (
+              <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
                 <span className="send-text">Gửi</span> <SendIcon />
               </button>
             )}
