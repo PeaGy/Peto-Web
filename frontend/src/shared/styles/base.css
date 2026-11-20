@@ -160,6 +160,13 @@ body {
    sau vẫn được đặt lại con trỏ hay độ mờ của nút tắt nếu cần. */
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* G4.3: nút và ô nhập không tự kế thừa phông, nên chỗ nào quên `font: inherit` thì trình duyệt vẽ chữ 13,33 px, ngoài
+   thang cỡ chữ của DESIGN.md, và bằng Arial thay cho Segoe UI của app (tên hội thoại, mục menu, danh sách Cài đặt, thẻ
+   kết nối từng hiện bằng Arial). :where() giữ độ ưu tiên bằng 0: mọi lớp đã đặt phông hay cỡ chữ riêng vẫn thắng.
+   Không kế thừa cả `font`: nhiều nút chỉ đặt font-size và dựa vào chiều cao dòng `normal`, lấy 1,6 của body sẽ làm
+   các hàng cao hẳn lên. Đổi sang Segoe UI vẫn làm các hàng đó cao thêm 2–3 px vì `normal` của Segoe UI lớn hơn Arial. */
+:where(button, input, select, textarea) { font-family: inherit; font-size: inherit; }
+
 /* Ô nhập chữ có viền dùng chung (tìm hội thoại lưu trữ, hộp đổi tên, trình sửa tài liệu…), cùng kiểu với ô trong Hồ
    sơ (.settings-input): nền --panel-2, bấm vào thì viền sáng lên. Không để vòng focus mặc định của trình duyệt, vì trên
    nền tối nó vẽ một viền đen dày. Ô nằm trong khung đã có viền riêng (composer, ô tìm trong thanh tiêu đề) thì không

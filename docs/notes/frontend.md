@@ -303,6 +303,38 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Type scale (G4.3) (2026-11-20, branch `g4.3-type-scale`, not merged)
+
+Audit item #18: a chat page measured 20 font sizes, and controls without a font rule fell back to the browser's
+13.33px. Measured again with `getComputedStyle` on a mock stack (chat with a table, menus, every Settings section):
+the visible 13.33px text was the composer's "Gửi"/"Dừng" pill; the rest were icon-only buttons, the "⋯" glyph, the
+skip link and one Settings input.
+
+- Found while measuring: buttons that set only `font-size` drew in **Arial** (Chromium's button default here), not the
+  app's "Segoe UI": conversation titles in the sidebar, action-menu items, the Settings section list, connector cards,
+  "Gửi", "⋯", "+".
+- `shared/styles/base.css`: `:where(button, input, select, textarea) { font-family: inherit; font-size: inherit; }`.
+  Zero specificity, so every existing class still wins. A first try with `font: inherit` also gave those buttons the
+  body's 1.6 line height and made rows clearly taller, so line height and weight are left alone. With the family alone
+  those rows are still 2–3px taller, because "Segoe UI"'s `normal` line height is larger than Arial's; that is the
+  visible change in the updated screenshots. A size-only rule (no Arial fix, no height change) is the fallback if the
+  owner prefers it.
+- Send/Stop pill: 13.5px like the effort chip beside it, `line-height: 16px` so it stays 34px high.
+- Off-scale sizes in the app shell moved onto the `DESIGN.md` scale: Settings "Cài đặt" heading 17 → 19 (same as the
+  page title), Dropdown group labels 11.5 → 12, document card details 11.5 → 12, document panel file size and note
+  10 → 11, Imagine option descriptions and the mobile tool label 10 → 11, file-drop overlay title 24 → 22.
+- Left as is, now listed in `DESIGN.md` §3 as graphic text: file-extension tags (10), Imagine's source badge (10), big
+  avatar initials (24), glyph buttons ("×" 24, "+" 20, Imagine 25), and the password reset title (28, from the new
+  login page). Scoped areas (Companion, Peto Media Player, Docs, Admin, Imagine's welcome) keep their own sizes.
+- `tests/typeScale.test.ts` fails when app-shell CSS (`app/`, `shared/`, chat, Settings, projects, connectors,
+  diagrams, the document panel) uses a px size outside the scale, and checks the base rule.
+- Tests: Vitest 1,197 passed (2 new), lint 0 errors, build passed. Twelve Playwright baselines re-shot (sidebar menu,
+  chat markdown, profile, connectors, project sidebar/chat). Three of the old baselines (`chat-markdown-pc`, `profile-*`,
+  `project-chat-pc`) had been taken before the page finished rendering (old "Sao chép" labels, no table actions, the
+  pre-load Settings list); they only passed because `toHaveScreenshot` retries until a frame matches. The new ones show
+  the finished page. Full local run: 328 passed; the 7 failures were load timing (3 passed on a one-worker rerun; the
+  archive and Companion settings routing tests also fail on `main` on this machine). CI not run yet.
+
 ## Vite 8.3.8 and Vitest 5.0.5 for security advisories (2026-11-20, branch `vite-security`, not merged)
 
 Vite's critical dev-server advisory GHSA-p4f5-76q4-ffq7 (patched in 8.3.7, 8.2.5, 8.1.7, 7.3.8, 6.4.6) covered the

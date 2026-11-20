@@ -183,7 +183,7 @@
 .studio-menu-list .effort-option { height: 38px; gap: 8px; padding: 0 8px; }
 .studio-menu-list .effort-option-label { white-space: nowrap; }
 .studio-menu-list .studio-option-described { height: auto; min-height: 52px; padding: 7px 8px; }
-.studio-menu-list .effort-option-label small { display: block; white-space: normal; color: var(--muted); font-size: 10px; line-height: 1.35; margin-top: 3px; }
+.studio-menu-list .effort-option-label small { display: block; white-space: normal; color: var(--muted); font-size: 11px; line-height: 1.35; margin-top: 3px; }
 .studio-menu-list .effort-option > svg:first-child { color: var(--muted); }
 
 .studio-send { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; }

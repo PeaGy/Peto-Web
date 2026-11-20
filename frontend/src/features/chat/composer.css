@@ -115,7 +115,10 @@
   border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
+  /* Cùng cỡ với nút mức suy nghĩ bên cạnh; dòng 16 px giữ nút cao 34 px như khi còn chữ mặc định 13,33 px. */
+  font-size: 13.5px;
   font-weight: 600;
+  line-height: 16px;
   cursor: pointer;
 }
 

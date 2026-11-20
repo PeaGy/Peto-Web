@@ -114,23 +114,33 @@ Only these places may write hex directly. Any other new colour becomes a token.
   `features/companion/chat/fonts/`), loaded only when Companion opens (owner's call, 2026-10-26).
 - **Code font:** `Consolas, "Cascadia Code", monospace`.
 - **Buttons and inputs do not inherit the font by themselves:** always write `font: inherit`, then set `font-size`.
+  Since G4.3 (2026-11-20) `shared/styles/base.css` also has
+  `:where(button, input, select, textarea) { font-family: inherit; font-size: inherit; }` as a zero-specificity safety
+  net, so a forgotten rule inherits the app font and the parent's size instead of the browser's 13.33px (in Arial, as
+  measured in Chromium on Windows). Line height and weight are not inherited: many rows set only `font-size` and rely
+  on `line-height: normal`. New controls still write `font: inherit` and their own size.
 
 ### Size scale in use
 
 | Size | Used for |
 | --- | --- |
-| 11px | Tiny secondary lines: descriptions in the "+" menu, file sizes |
-| 12px | Secondary lines, the note under the composer, the "Đã dừng" tag, copy buttons |
+| 11px | Tiny secondary lines: descriptions in the "+" menu and Imagine option menus, file sizes, the document panel note |
+| 12px | Secondary lines, the note under the composer, the "Đã dừng" tag, copy buttons, Dropdown group labels |
 | 12.5px | Settings hints, per-step times in the work log |
 | 13px | Sidebar section labels ("Gần đây"), Settings row descriptions, empty hints |
-| 13.5px | Chips (effort), the work log, account name, the Save button |
+| 13.5px | Chips (effort), the work log, account name, the Save button, the composer Send/Stop pill (line height 16px) |
 | 14px | Conversation rows, menu items, Dropdown fields, Settings inputs, tables inside answers |
 | 14.5px | Sidebar navigation items, Settings row labels and group titles |
 | 15px | Default UI text |
 | 16px | Answer and message text (`.bubble`, line height 1.7); every input on touch screens |
-| 19–20px | Settings page title (19), dialog titles (20) |
-| 22px | Greeting, Admin page title |
-| 26–34px | Centred desktop greeting (30, weight 600, `letter-spacing: -0.01em`), login page title (34, same tracking) |
+| 19–20px | Settings titles, both the "Cài đặt" list heading and the page title (19); dialog titles (20) |
+| 22px | Greeting, Admin page title, the file-drop overlay title |
+| 26–34px | Centred desktop greeting (30, weight 600, `letter-spacing: -0.01em`), login page title (34, same tracking; 28 on the password reset pages) |
+
+Off the scale on purpose: text that is part of a graphic rather than reading text — the file-extension tag inside file
+icons (10px), Imagine's numbered badge on source images (10px), avatar initials (24px on the big avatar), glyph-only
+buttons such as "×" or "+" sized like icons (20–25px), simulated paper in document previews, and the scoped areas of §2
+(Companion, Peto Media Player, Docs, Admin, Imagine's welcome title). Anything else uses a size from the table.
 
 Weights: 400 body, 500 labels and navigation, 600 titles and primary buttons, 650 headings and bold text **inside
 answers**, 700 avatar initials and file-extension tags.

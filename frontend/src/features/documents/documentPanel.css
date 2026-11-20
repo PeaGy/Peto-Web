@@ -31,7 +31,7 @@
 .document-file-row > button > svg { flex-shrink: 0; color: var(--muted); }
 .document-file-row > button > span { min-width: 0; }
 .document-file-row strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
-.document-file-row small { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); }
+.document-file-row small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted); }
 .document-file-row > a { flex-basis: 28px; width: 28px; margin-right: 3px; }
 .document-file-row > a svg { width: 14px; }
 .document-panel-preview { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
@@ -47,7 +47,7 @@
 .document-panel-empty h3 { margin: 18px 0 0; color: var(--text); font-size: 16px; font-weight: 500; }
 .document-panel-empty p { max-width: 270px; margin: 8px 0; }
 .document-panel-empty button, .document-file-list [role="alert"] button { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; color: var(--text); background: var(--bg); cursor: pointer; }
-.document-panel-note { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; line-height: 1.5; }
+.document-panel-note { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.5; }
 .slide-notes { max-width: 850px; margin: 14px auto 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
 .slide-notes h3 { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .slide-notes p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }

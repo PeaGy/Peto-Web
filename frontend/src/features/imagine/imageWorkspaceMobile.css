@@ -51,7 +51,7 @@
 
 /* Công cụ đi lên từ đáy; ảnh chuyển vị trí theo vùng còn lại. */
 .mobile-tool-dock { padding: 4px 0 8px; animation: workspace-tool-enter 220ms cubic-bezier(.32,.72,0,1); }
-.mobile-tool-label { width: fit-content; margin: 0 auto 8px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.mobile-tool-label { width: fit-content; margin: 0 auto 8px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); color: var(--muted); font-size: 11px; text-transform: uppercase; }
 .workspace-mobile .workspace-tools { position: static; justify-content: center; gap: 12px; margin: 0; padding: 0; }
 .workspace-mobile .workspace-tools button { width: 44px; height: 44px; border-radius: 50%; background: var(--panel-2); }
 .workspace-mobile .workspace-tools button[aria-pressed="true"] { background: var(--text); color: var(--bg); box-shadow: none; }
