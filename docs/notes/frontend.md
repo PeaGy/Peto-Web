@@ -303,6 +303,16 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Vite 8.3.8 and Vitest 5.0.5 for security advisories (2026-11-20, branch `vite-security`, not merged)
+
+Vite's critical dev-server advisory GHSA-p4f5-76q4-ffq7 (patched in 8.3.7, 8.2.5, 8.1.7, 7.3.8, 6.4.6) covered the
+installed 8.2.2; `npm audit` also listed six other Vite advisories in 8.2.0–8.2.2 (launch-editor on Windows, cross-origin
+script through custom middleware, files outside `server.fs.allow`) and Vitest 5.0.0–5.0.2 (`@vitest/mocker` code
+injection). Now `vite ^8.3.8` and `vitest ~5.0.5` (5.1.1 was two days old, so the 5.0 patch line was kept), plus
+`npm audit fix` within existing ranges for `undici` 7.30.2 (jsdom, high), `qs` 6.17.1 and `dompurify` 3.4.18 (ships with
+Mermaid); `npm audit` reports 0. Production serves the built `dist` and never runs the dev server, so the live site was
+not exposed; the risk was the dev server on the owner's machine (and the Playwright web server).
+
 ## Browser tests back in CI (2026-11-13, branch `ci-browser-tests`, not merged)
 
 Every "Kiểm tra frontend" run from #129 to #147 was cancelled at the job's 15-minute limit while Playwright ran (one,
