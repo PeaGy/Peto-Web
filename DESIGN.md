@@ -49,6 +49,7 @@ Dark is the default on `:root`; light lives on `:root[data-theme="light"]`.
 | `--accent` / `--on-accent` | `#ffffff` / `#141414` | `#0d0d0d` / `#ffffff` | Primary buttons, focus rings, hover borders |
 | `--user` | `#262626` | `#f0f0f0` | User bubble |
 | `--danger` | `#ff8a8a` | `#c22f45` | Errors and destructive actions |
+| `--danger-fill` / `--on-danger` | `#c73e48` / `#ffffff` | `#c22f45` / `#ffffff` | The one filled destructive button ("Xóa tài khoản"); white text passes contrast on both themes |
 | `--code-bg`, `--inline-code`, `--hl-*` | | | Code blocks, inline code, syntax colours |
 | `--menu-bg`, `--menu-line`, `--menu-hover`, `--menu-shadow` | `#242424`, `#313131`, white 7% | `#ffffff`, `#e3e3e3`, black 5% | Action menus (§8), Settings navigation hover |
 | `--seg-bg`, `--seg-on` | | | Segmented control |
@@ -348,6 +349,7 @@ Before writing a new component, find the same kind below and copy its sizes.
 | Primary | `--accent` background, `--on-accent` text, weight 600. Pill in the composer (Send); radius 10 in dialogs and Settings |
 | Secondary | `--panel-2` background, 1px `--line` border, radius 10, padding `9px 12px` (`.dialog-actions button`, `.load-more`) |
 | Danger | `--danger` text and border (`.danger-button`) |
+| Danger, filled | `--danger-fill` background, `--on-danger` text, 44 high, radius 10; only for the final step of an irreversible action that already needed typed confirmation (`.account-delete-submit`) |
 | Icon | `.icon-btn`, 36×36 |
 | Transparent | No background, `--muted` text, `--panel-2` on hover (copy buttons, in-row buttons) |
 

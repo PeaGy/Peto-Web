@@ -684,6 +684,14 @@ function AppContent() {
     }
   }
 
+  /** Cài đặt → Tài khoản → Xóa tài khoản xong: máy chủ đã xóa cookie, về màn hình đăng nhập như khi đăng xuất. */
+  function accountDeleted() {
+    handleUnauthorized();
+    setAuthError(null);
+    forgetChatLogin();
+    navigate('/', { replace: true });
+  }
+
   submitRevisionRef.current = submit;
   function replyControls(message: Message) {
     const family = validReplyVariants(message.reply_variants, conversationId, message.id);
@@ -741,7 +749,7 @@ function AppContent() {
   const settingsContext: AppSettingsContext = {
     auth, connectorResult, handleUnauthorized, streaming, deleting, metadataBusy, closeSettings, openConversation,
     removeConversationDraft, conversationIdRef, newConversation, setArchived, refreshConversations, activeProjectRef,
-    refreshProjectChats, theme, setTheme, motion, setMotion, setAuth, signOut,
+    refreshProjectChats, theme, setTheme, motion, setMotion, setAuth, signOut, accountDeleted,
   };
   const renderSettings = (section: SettingsSection, active: boolean) => renderAppSettings(section, active, settingsContext);
 

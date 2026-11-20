@@ -1,4 +1,5 @@
 import { Suspense, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from 'react';
+import AccountSettings from '../features/settings/AccountDeletion';
 import DiscordMemorySettings from '../features/settings/DiscordMemorySettings';
 import type { SettingsSection } from '../features/settings/SettingsDialog';
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from '../features/settings/settingsUi';
@@ -35,6 +36,8 @@ export type AppSettingsContext = {
   setMotion: (value: MotionChoice) => void;
   setAuth: Dispatch<SetStateAction<AuthState | null>>;
   signOut: () => Promise<void>;
+  /** Tài khoản vừa bị xóa: về màn hình đăng nhập như khi đăng xuất. */
+  accountDeleted: () => void;
 };
 
 const settingsLoading = (
@@ -44,7 +47,7 @@ const settingsLoading = (
 // `active`: mục đang được xem trong hộp đang mở; các mục chỉ tải dữ liệu lúc đó.
 export function renderAppSettings(section: SettingsSection, active: boolean, ctx: AppSettingsContext): ReactNode {
   const { auth, connectorResult, handleUnauthorized, streaming, deleting, metadataBusy, closeSettings, openConversation, removeConversationDraft,
-    conversationIdRef, newConversation, setArchived, refreshConversations, activeProjectRef, refreshProjectChats, theme, setTheme, motion, setMotion, setAuth, signOut } = ctx;
+    conversationIdRef, newConversation, setArchived, refreshConversations, activeProjectRef, refreshProjectChats, theme, setTheme, motion, setMotion, setAuth, signOut, accountDeleted } = ctx;
   switch (section) {
     case 'ket-noi':
       return <LazyBoundary><Suspense fallback={settingsLoading}>
@@ -94,7 +97,8 @@ export function renderAppSettings(section: SettingsSection, active: boolean, ctx
       );
     case "tai-khoan":
       return (
-        <SettingsGroup>
+        <AccountSettings key={auth.user?.id} user={auth.user} disabled={streaming || deleting} onUnauthorized={handleUnauthorized}
+          onDeleted={() => { closeSettings(); accountDeleted(); }}>
           <div className="settings-row settings-account">
             <AccountAvatar user={auth.user} size={40} />
             <div className="account-name">
@@ -124,7 +128,7 @@ export function renderAppSettings(section: SettingsSection, active: boolean, ctx
               Đăng xuất
             </button>
           </SettingsRow>
-        </SettingsGroup>
+        </AccountSettings>
       );
     case "agent":
       return (

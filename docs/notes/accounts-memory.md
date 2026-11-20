@@ -108,6 +108,32 @@ Only `discord:` owners carry a Discord ID, so `discord_id_from_owner` returns `"
 Google, GitHub and email accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
 is what keeps open registration from exposing members' long-term memory.
 
+### Deleting an account (Settings → Tài khoản → Xóa tài khoản)
+
+Owner's decisions (2026-11-20): typed confirmation ("XÓA"), deletion is immediate (no grace period), admin accounts
+(`PETO_OWNER_ACCOUNTS`) are blocked. The panel follows the owner's design: warning title, list of what goes, the Peto
+art on the right (sad; head down once "XÓA" is typed; happy while the pointer or focus is on "Hủy"), from
+`frontend/public/account-assets/peto-delete-*.webp`, cut from the owner's sheet.
+
+- `POST /api/account/delete` (`features/accounts/deletion.py`) with `{"confirm": "XÓA"}` (case, spaces and combining
+  accents ignored). 400 for anything else, 403 for an admin account, 409 while one of its chat turns is running (a
+  `running` row updated in the last 10 minutes; older ones are orphans from a restart).
+- It deletes every row whose table has an `owner` column, in one `BEGIN IMMEDIATE` transaction (children such as
+  messages, document versions and exports follow by `ON DELETE CASCADE`), including `users`, `account_identities`,
+  `email_accounts` and `account_passwords`, so signing in again with the same Google/GitHub/email starts an empty
+  account. Then it removes the upload folders of its conversations and Imagine jobs and the listed attachment and image
+  files, only inside `PETO_UPLOAD_DIR`. `usage_events` has no owner and stays. The Discord bot's memory is elsewhere
+  and read-only, so it is untouched (the panel says so for Discord accounts). GitHub connector tokens are only deleted
+  locally, as with "Ngắt kết nối" (not revoked at GitHub).
+- Session revocation: cookies and Companion AIRI sync tokens are signed owner keys with a timestamp, with no session
+  store. Deletion writes `deleted_accounts(owner_hash, deleted_at)` (SHA-256 of the owner, not the owner itself), and
+  `auth.live_session_owner` / `airi_sync.live_token_owner` refuse anything signed before that moment. They back
+  `current_owner`, `/api/auth/me`, the AIRI gateway and AIRI sync, so another browser still signed in gets 401 and
+  cannot write into the deleted account. Marks older than the longest session or token lifetime are pruned on the next
+  deletion. Agent devices are rows in `agent_devices`, so they stop working with the delete itself.
+- The Privacy Policy and Terms (`/docs/quyen-rieng-tu/`, `/docs/dieu-khoan/`) now point to the button instead of
+  "email the operator", dated 20/11/2026.
+
 ### User profile (Settings → Hồ sơ)
 
 `features/accounts/profile.py` stores a self-written profile per owner in `user_profiles` — kept apart
@@ -292,6 +318,15 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
 # Dated log (newest first)
+
+## Delete account (G5) (2026-11-20, branch `g5-delete-account`, not merged)
+
+Built from the owner's design (see "Deleting an account" above). A first try made `current_owner` require a `users`
+row; 28 test call sites sign cookies for owners without one, and it would also have logged out any real session whose
+row went missing, so revocation uses `deleted_accounts` timestamps instead and changes nothing for live accounts.
+Checked on the mock stack: desktop dark and light, phone 375 px with no sideways scroll, the three moods, a real
+deletion landing on the login page, and the old cookie then getting 401 on `/api/conversations` and `/api/chat`.
+
 
 ## Email and password like AIRI (2026-11-19, branch `email-login-fixes`)
 

@@ -11,6 +11,9 @@
   --on-accent: #141414;
   --user: #262626;
   --danger: #ff8a8a;
+  /* Nút xóa tô đầy (Xóa tài khoản): đỏ đậm để chữ trắng đủ tương phản trên cả hai nền. */
+  --danger-fill: #c73e48;
+  --on-danger: #ffffff;
   --code-bg: #1b1b1b;
   --drop-active: #1f1f1f;
   --overlay-soft: rgba(20, 20, 20, 0.72);
@@ -70,6 +73,8 @@
   --on-accent: #ffffff;
   --user: #f0f0f0;
   --danger: #c22f45;
+  --danger-fill: #c22f45;
+  --on-danger: #ffffff;
   --code-bg: #f6f6f6;
   --drop-active: #f0f0f0;
   --overlay-soft: rgba(255, 255, 255, 0.78);
