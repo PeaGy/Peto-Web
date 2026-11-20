@@ -533,7 +533,9 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 ## Dictation: menu placement and Claude-style listening bar (2026-11-20, branch `g5-dictation-ui`, not merged)
 
-After the owner's live test: the menu ran off the top of the screen, and they asked for Claude's listening state
+After the owner's live test: the menu ran off the top of the screen, two-line device names overlapped the next row
+(`.effort-option { height: 40px }` in `effortMenu.css`, loaded later, beat `.dictation-device`; now
+`.effort-option.dictation-device`, checked in the spec with a long name), and they asked for Claude's listening state
 ("Listening…", wave, ✕, ✓). See "Voice input in the composer (micro)".
 
 

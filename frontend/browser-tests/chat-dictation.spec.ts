@@ -68,6 +68,17 @@ test('menu cạnh micro: chọn micro, tìm và đổi ngôn ngữ, nhớ qua F5
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
   await expect(menu).toHaveScreenshot('dictation-menu.png', { mask: [menu.locator('.dictation-level-fill')] });
+  // Tên micro thật thường dài ("Default - Microphone (A303 Headset) (0b05:1c33)"): dòng phải cao lên, không đè dòng dưới.
+  const rows = await devices.evaluateAll((items) => {
+    const label = items[0].querySelector('.effort-option-label')!;
+    const before = label.textContent;
+    label.textContent = 'Default - Microphone (A303 Headset) (0b05:1c33) Communications';
+    const boxes = items.map((item) => item.getBoundingClientRect()).map((box) => ({ top: box.top, bottom: box.bottom, height: box.height }));
+    label.textContent = before;
+    return boxes;
+  });
+  expect(rows[0].height).toBeGreaterThan(40);
+  for (let index = 1; index < rows.length; index += 1) expect(rows[index].top).toBeGreaterThanOrEqual(rows[index - 1].bottom - 0.5);
 
   let chosen = '';
   if (!mobile) {

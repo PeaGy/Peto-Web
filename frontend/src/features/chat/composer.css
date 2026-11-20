@@ -180,8 +180,9 @@
   position: absolute; inset: 0; border-radius: inherit; background: var(--text);
   transform: scaleX(0); transform-origin: left;
 }
-/* Tên micro dài xuống hai dòng: lề trên dưới như nhau cho mọi dòng thì danh sách mới đều. */
-.dictation-device { height: auto; min-height: 36px; padding: 8px 10px; line-height: 1.35; }
+/* Tên micro dài xuống hai dòng: lề trên dưới như nhau cho mọi dòng thì danh sách mới đều. Hai lớp để thắng
+   `.effort-option { height: 40px }` (effortMenu.css nạp sau tệp này): chiều cao cố định làm tên hai dòng đè dòng dưới. */
+.effort-option.dictation-device { height: auto; min-height: 36px; padding: 8px 10px; line-height: 1.35; }
 .dictation-device .effort-option-label { overflow-wrap: anywhere; }
 .dictation-menu-note { margin: 4px 10px 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .dictation-menu-separator { height: 1px; margin: 6px 4px; background: var(--line); }
