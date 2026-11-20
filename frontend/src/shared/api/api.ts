@@ -268,6 +268,13 @@ export async function logout(): Promise<void> {
   await json(await fetch("/api/auth/logout", { method: "POST" }));
 }
 
+/** Cài đặt → Tài khoản → Xóa tài khoản: xóa ngay mọi dữ liệu; máy chủ đòi đúng chữ "XÓA" và chặn tài khoản quản trị. */
+export async function deleteAccount(confirm: string): Promise<void> {
+  await json(await fetch("/api/account/delete", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm }),
+  }));
+}
+
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
 export const GITHUB_LOGIN_URL = "/api/auth/github/login";

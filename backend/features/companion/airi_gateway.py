@@ -45,7 +45,7 @@ from ai.base import ProviderError
 from core import config, usage_events
 from core.config import AGENT_MODEL, RESPONSE_TIMEOUTS, SESSION_COOKIE, TURN_TIMEOUT_SECONDS
 from core.rate_limit import AdmissionDenied, admission
-from features.accounts.auth import session_owner
+from features.accounts.auth import live_session_owner
 from features.agent.api import _read_body
 from features.agent.gateway_images import prepare as prepare_images
 from features.companion import airi_request
@@ -96,12 +96,12 @@ def cache_key(owner: str) -> str:
     return "peto-airi-" + digest[:32]
 
 
-def _owner(request: Request) -> str:
+async def _owner(request: Request) -> str:
     if config.AIRI_DIR is None:
         # Trang AIRI chưa được phục vụ: cổng coi như không có.
         raise GatewayError(404, "Cổng Companion AIRI chưa được bật trên máy chủ này.", kind="invalid_request_error",
                            code="not_found")
-    owner = session_owner(request.cookies.get(SESSION_COOKIE))
+    owner = await live_session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         raise GatewayError(401, "Chưa đăng nhập Peto. Đăng nhập rồi mở lại trang này nhé.", kind="authentication_error",
                            code="invalid_api_key")
@@ -361,7 +361,7 @@ async def _first_event(request: Request, queue: asyncio.Queue):
 @router.get("/models")
 async def list_models(request: Request):
     try:
-        _owner(request)
+        await _owner(request)
     except GatewayError as err:
         return _error_response(err)
     return JSONResponse({"object": "list", "data": [{"id": MODEL_ID, "object": "model", "created": 0,
@@ -373,7 +373,7 @@ async def list_models(request: Request):
 @router.post("/chat/completions")
 async def chat_completions(request: Request):
     try:
-        owner = _owner(request)
+        owner = await _owner(request)
         try:
             raw = await _read_body(request, airi_request.MAX_REQUEST_BYTES, airi_request.TOO_LARGE)
         except HTTPException as err:

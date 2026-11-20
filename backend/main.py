@@ -16,6 +16,7 @@ from features.companion import player_api
 from features.companion import cards_api
 from features.accounts import profile as profile_api
 from features.accounts import discord_memory_api
+from features.accounts import deletion as account_deletion
 from features.voice import api as voice_api
 from core import static_files
 from core import airi_static
@@ -49,6 +50,7 @@ app.include_router(email_login.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
 app.include_router(discord_memory_api.router)
+app.include_router(account_deletion.router)
 app.include_router(memory_api.router)
 app.include_router(providers_api.router)
 app.include_router(player_api.router)

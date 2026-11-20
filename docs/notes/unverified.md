@@ -32,6 +32,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] The per-IP send limit behind the real Cloudflare Tunnel: two phones on different networks each get their own 10 sends an hour (tested only with a fake `CF-Connecting-IP`) — `accounts-memory.md`, "Email login (email and password, like AIRI)".
 - [ ] The login page on a real phone: the mail app's in-app browser opening the button link (no request cookie there, so it shows the confirmation page even on the same phone) — `accounts-memory.md`, "Email login (email and password, like AIRI)".
 
+- [ ] Deleting a real account on the live site: an email + Google merged account and a Discord account, the second
+  browser being signed out, and the deleted account's upload folders gone on the VPS (mock stack only) —
+  `accounts-memory.md`, "Deleting an account".
 - [ ] How well a real model sorts and routes memory notes into entries (only the mock has run) — `accounts-memory.md`, "Memory (Brain)".
 - [ ] Automatic memory extraction under the grounding contract with a real model (fake model/gateway only) — `accounts-memory.md`, "Conservative automatic memory attribution".
 

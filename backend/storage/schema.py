@@ -6,6 +6,7 @@ import aiosqlite
 from storage.documents import init_tables as init_document_tables
 from storage.projects import init_tables as init_project_tables
 from storage.connectors import init_tables as init_connector_tables
+from storage.deleted_accounts import init_tables as init_deleted_account_tables
 from storage import connection as db_connection
 
 
@@ -445,6 +446,7 @@ async def init_db() -> None:
         await init_document_tables(db)
         await init_project_tables(db)
         await init_connector_tables(db)
+        await init_deleted_account_tables(db)
         await db.execute('''CREATE TABLE IF NOT EXISTS user_avatars (
             owner TEXT PRIMARY KEY REFERENCES users(owner) ON DELETE CASCADE,
             data BLOB NOT NULL, version TEXT NOT NULL, updated_at REAL NOT NULL)''')

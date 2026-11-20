@@ -30,7 +30,7 @@ from itsdangerous import BadSignature, SignatureExpired
 
 from core import config
 from core.config import SESSION_COOKIE, provider_from_owner
-from features.accounts.auth import session_owner, signer
+from features.accounts.auth import issued_after_deletion, live_session_owner, signer
 from storage import airi_chats
 from storage.airi_chats import SyncError
 
@@ -86,6 +86,15 @@ def token_owner(token: object) -> str | None:
     return owner if isinstance(owner, str) and provider_from_owner(owner) else None
 
 
+async def live_token_owner(token: object) -> str | None:
+    """Như ``token_owner`` nhưng từ chối mã ký trước khi tài khoản bị xóa (``auth.issued_after_deletion``)."""
+    owner = token_owner(token)
+    if not owner:
+        return None
+    _, signed = _tokens.loads(token, max_age=TOKEN_MAX_AGE, return_timestamp=True)
+    return owner if await issued_after_deletion(owner, signed.timestamp()) else None
+
+
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message, "message": message}, status_code=status, headers={"Cache-Control": "no-store"})
 
@@ -100,7 +109,7 @@ def _enabled() -> bool:
 async def sync_session(request: Request):
     if not _enabled():
         return _error(404, "Đồng bộ Companion AIRI chưa được bật trên máy chủ này.")
-    owner = session_owner(request.cookies.get(SESSION_COOKIE))
+    owner = await live_session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         return _error(401, "Chưa đăng nhập Peto.")
     return JSONResponse({"userId": await sync_user_id(owner), "token": issue_token(owner), "expiresIn": TOKEN_MAX_AGE},
@@ -109,9 +118,9 @@ async def sync_session(request: Request):
 
 # --- REST hội thoại ------------------------------------------------------------------------------------------------
 
-def _bearer_owner(request: Request) -> str | None:
+async def _bearer_owner(request: Request) -> str | None:
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    return token_owner(token.strip()) if scheme.lower() == "bearer" else None
+    return await live_token_owner(token.strip()) if scheme.lower() == "bearer" else None
 
 
 def _text(value: object, limit: int, what: str, *, optional: bool = False) -> str | None:
@@ -167,7 +176,7 @@ def _members(raw: object) -> list[dict]:
 async def _rest(request: Request, action):
     if not _enabled():
         return _error(404, "Đồng bộ Companion AIRI chưa được bật trên máy chủ này.")
-    owner = _bearer_owner(request)
+    owner = await _bearer_owner(request)
     if not owner:
         return _error(401, "Mã đồng bộ không hợp lệ hoặc đã hết hạn. Mở lại trang Companion nhé.")
     try:
@@ -375,7 +384,7 @@ async def _authenticate(websocket: WebSocket) -> tuple[str, str, str] | int:
         name, invoke_id, content = request
         if name != "chat:authenticate":
             return CLOSE_UNAUTHORIZED
-        owner = token_owner(content.get("token") if isinstance(content, dict) else None)
+        owner = await live_token_owner(content.get("token") if isinstance(content, dict) else None)
         return (owner, name, invoke_id) if owner else CLOSE_UNAUTHORIZED
     return CLOSE_UNAUTHORIZED
 

@@ -129,14 +129,38 @@ def read_session(token: str | None) -> str | None:
 
 
 def session_owner(token: str | None) -> str | None:
-    """Owner trong cookie, hoặc None nếu cookie hỏng, hết hạn, hay khóa lạ."""
+    """Owner trong cookie, hoặc None nếu cookie hỏng, hết hạn, hay khóa lạ. Chưa kiểm tài khoản đã bị xóa chưa: chỗ
+    nào cho đọc hay ghi dữ liệu thì dùng ``live_session_owner``."""
     owner = read_session(token)
     return owner if owner and provider_from_owner(owner) else None
 
 
-def current_owner(request: Request) -> str:
-    """Dependency: bắt buộc đã đăng nhập."""
-    owner = session_owner(request.cookies.get(SESSION_COOKIE))
+async def issued_after_deletion(owner: str, issued_at: float) -> bool:
+    """Phiên (cookie hay mã đồng bộ) ký lúc ``issued_at`` còn dùng được không: sai khi nó có từ trước lần xóa tài khoản
+    gần nhất của owner này (``storage.deleted_accounts``)."""
+    from storage.deleted_accounts import deleted_at
+    at = await deleted_at(owner)
+    return at is None or issued_at > at
+
+
+async def live_session_owner(token: str | None) -> str | None:
+    """Như ``session_owner`` nhưng từ chối cookie ký trước khi tài khoản bị xóa. Cookie chỉ mang khóa owner có chữ ký,
+    không có kho phiên để thu hồi; xóa tài khoản xong thì cookie còn hạn ở máy khác vẫn đúng chữ ký."""
+    if not token:
+        return None
+    try:
+        data, signed = _serializer.loads(token, max_age=SESSION_MAX_AGE, return_timestamp=True)
+    except (BadSignature, SignatureExpired):
+        return None
+    owner = data.get("owner") if isinstance(data, dict) else None
+    if not isinstance(owner, str) or not owner or not provider_from_owner(owner):
+        return None
+    return owner if await issued_after_deletion(owner, signed.timestamp()) else None
+
+
+async def current_owner(request: Request) -> str:
+    """Dependency: bắt buộc đã đăng nhập, bằng phiên có sau lần xóa tài khoản gần nhất (nếu có)."""
+    owner = await live_session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         raise HTTPException(status_code=401, detail="Chưa đăng nhập")
     return owner
@@ -561,7 +585,7 @@ async def me(request: Request) -> dict:
         "companion_airi": companion_airi,
     }
 
-    owner = session_owner(request.cookies.get(SESSION_COOKIE))
+    owner = await live_session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         return anonymous
 
