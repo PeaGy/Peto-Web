@@ -115,8 +115,42 @@ async def test_the_real_app_sends_the_headers_and_accepts_reports(anon_client):
     assert response.status_code == 204
     assert response.headers['x-content-type-options'] == 'nosniff'
     health = await anon_client.get('/api/health')
-    assert health.headers['content-security-policy'] == "frame-ancestors 'none'"
-    assert 'report-uri /api/csp-report' in health.headers['content-security-policy-report-only']
+    # Từ 20/11/2026 trang chính chặn thật (PETO_CSP_ENFORCE mặc định bật): một header đầy đủ, gồm cả frame-ancestors.
+    enforced = health.headers['content-security-policy']
+    assert "frame-ancestors 'none'" in enforced and 'report-uri /api/csp-report' in enforced
+    assert "default-src 'self'" in enforced and ',' not in enforced
+    assert 'content-security-policy-report-only' not in health.headers
+
+
+@pytest.fixture
+def enforcing(site):
+    app, folder = site
+    app.user_middleware.clear()
+    app.middleware_stack = None
+    app.add_middleware(security_headers.SecurityHeaders, static_dir=folder, enforce=True)
+    return app
+
+
+@pytest.mark.parametrize('path', ['/', '/chat/abc', '/docs/', '/api/stream', '/khong-co'])
+async def test_enforce_mode_sends_one_blocking_policy(enforcing, path):
+    async with AsyncClient(transport=ASGITransport(app=enforcing), base_url='http://test') as client:
+        response = await client.get(path)
+    assert [name for name, _ in response.headers.multi_items()].count('content-security-policy') == 1
+    header = response.headers['content-security-policy']
+    assert expected_hash(THEME) in header and "frame-ancestors 'none'" in header
+    assert 'report-uri /api/csp-report' in header
+    assert 'content-security-policy-report-only' not in response.headers
+    assert response.headers['x-frame-options'] == 'DENY'
+
+
+def test_the_switch_reads_false_as_report_only(monkeypatch):
+    import importlib
+    from core import config
+    for value, expected in (('false', False), ('0', False), ('no', False), ('true', True), ('', True)):
+        monkeypatch.setenv('PETO_CSP_ENFORCE', value)
+        assert importlib.reload(config).CSP_ENFORCE is expected
+    monkeypatch.delenv('PETO_CSP_ENFORCE')
+    importlib.reload(config)
 
 
 AIRI_THEME = "\n      ;(function () { document.documentElement.classList.toggle('dark', true) })()\n    "
@@ -125,9 +159,10 @@ AIRI_INDEX = (f"<!doctype html><html><head><script>{AIRI_THEME}</script>"
               "<div id=\"app\"></div><button type=\"button\" onclick=\"location.reload()\">Retry</button></body></html>")
 
 
-@pytest.fixture
-async def airi_web(tmp_path, monkeypatch):
-    """Như main.py khi đặt PETO_AIRI_DIR: /companion/ (Companion bản AIRI) có chính sách riêng, phần còn lại giữ chính sách của trang chính."""
+@pytest.fixture(params=[False, True], ids=['report-only', 'enforce'])
+async def airi_web(tmp_path, monkeypatch, request):
+    """Như main.py khi đặt PETO_AIRI_DIR: /companion/ (Companion bản AIRI) có chính sách riêng, phần còn lại giữ chính sách của trang chính.
+    Chạy cả hai chế độ của PETO_CSP_ENFORCE: AIRI luôn chỉ báo cáo (bản build còn tải từ jsdelivr và huggingface)."""
     from core import airi_static
 
     async def identity():
@@ -140,7 +175,7 @@ async def airi_web(tmp_path, monkeypatch):
     (airi / 'index.html').write_text(AIRI_INDEX, encoding='utf-8')
     (airi / 'assets' / 'index-x.js').write_text('console.log(1)', encoding='utf-8')
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(security_headers.SecurityHeaders, static_dir=site, airi_dir=airi)
+    app.add_middleware(security_headers.SecurityHeaders, static_dir=site, airi_dir=airi, enforce=request.param)
     assert airi_static.mount(app, airi)
     assert static_files.mount(app, site)
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
@@ -158,6 +193,8 @@ async def test_airi_pages_get_their_own_report_only_policy(airi_web, path):
     assert response.status_code == 200
     assert response.headers['x-frame-options'] == 'DENY'
     header = response.headers['content-security-policy-report-only']
+    # Dù trang chính chặn thật, AIRI chỉ có header frame-ancestors chặn thật, phần còn lại chỉ báo cáo.
+    assert response.headers['content-security-policy'] == "frame-ancestors 'none'"
     script = directive(header, 'script-src')
     assert expected_hash(AIRI_THEME) in script and expected_hash(THEME) not in script
     assert f"'unsafe-hashes' {expected_hash('location.reload()')}" in script
@@ -171,15 +208,20 @@ async def test_airi_pages_get_their_own_report_only_policy(airi_web, path):
     assert 'report-uri /api/csp-report' in header
 
 
+def main_policy(response) -> str:
+    """Chính sách đầy đủ của trang chính, ở chế độ nào cũng được (chỉ báo cáo, hay chặn thật)."""
+    return response.headers.get('content-security-policy-report-only') or response.headers['content-security-policy']
+
+
 async def test_rest_of_the_site_keeps_its_policy(airi_web):
     web, _ = airi_web
-    header = (await web.get('/')).headers['content-security-policy-report-only']
+    header = main_policy(await web.get('/'))
     assert expected_hash(THEME) in header and expected_hash(AIRI_THEME) not in header
     assert "connect-src 'self' https:" in header and 'frame-src https://www.youtube.com' in header
     # Đường dẫn chỉ trông giống /companion, và cổng /api/companion/v1, thì không đổi chính sách.
-    other = (await web.get('/companionkhac')).headers['content-security-policy-report-only']
+    other = main_policy(await web.get('/companionkhac'))
     assert other == header
-    api = (await web.get('/api/companion/v1/models')).headers['content-security-policy-report-only']
+    api = main_policy(await web.get('/api/companion/v1/models'))
     assert expected_hash(AIRI_THEME) not in api and "connect-src 'self' https:" in api
 
 
