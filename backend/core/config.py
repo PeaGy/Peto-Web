@@ -145,6 +145,9 @@ SESSION_COOKIE_SECURE = os.getenv("PETO_COOKIE_SECURE", "").strip().lower() in {
 # Tên miền chính, ví dụ https://peto.peagy.com: trang mở bằng tên miền khác được chuyển sang đây (core/canonical_host.py).
 # Để trống thì không chuyển gì.
 CANONICAL_ORIGIN = os.getenv("PETO_CANONICAL_ORIGIN", "").strip()
+# CSP của trang chính chặn thật (từ 20/11/2026, sau 5 ngày log chỉ báo cáo sạch). Đặt false rồi khởi động lại để
+# quay về chỉ báo cáo nếu một nguồn hợp lệ bị chặn, không cần sửa code. Companion bản AIRI luôn chỉ báo cáo.
+CSP_ENFORCE = os.getenv("PETO_CSP_ENFORCE", "true").strip().lower() not in {"0", "false", "no"}
 
 # Ba cách đăng nhập. KHÔNG còn allowlist — đăng ký mở, ai vào cũng được. Đăng nhập khách bỏ ngày 6/10/2026 (ai cũng
 # tạo vô hạn tài khoản khách và tiêu hạn mức AI của web): khóa "guest:…" cũ không còn hợp lệ, cookie khách bị đăng xuất,

@@ -4,14 +4,17 @@ Bắt buộc ngay: ``X-Content-Type-Options: nosniff``, ``Referrer-Policy: stric
 vẫn nhận được nguồn trang), và không cho trang khác nhúng Peto vào khung (``X-Frame-Options: DENY`` cùng
 ``Content-Security-Policy: frame-ancestors 'none'``; app không tự nhúng trang của mình, bản in mở cửa sổ riêng).
 
-CSP đầy đủ mới ở chế độ ``Report-Only``: trình duyệt không chặn gì, chỉ gửi báo cáo về ``/api/csp-report``. Danh sách
+CSP đầy đủ của trang chính chặn thật từ 20/11/2026 (``PETO_CSP_ENFORCE``, mặc định bật): log chỉ báo cáo từ 15 tới 20/11
+không có vi phạm nào ngoài ``/companion``. Trình duyệt vẫn gửi báo cáo về ``/api/csp-report`` (``mode=enforce``), nên
+nguồn hợp lệ bị chặn nhầm hiện ra trong log; đặt ``PETO_CSP_ENFORCE=false`` rồi khởi động lại là quay về chỉ báo cáo. Danh sách
 nguồn lấy từ những gì frontend đang dùng: YouTube (iframe_api, khung phát, ảnh thu nhỏ), ảnh đại diện Discord, Google,
 GitHub, biểu tượng trang của Google, font Google của trang Docs, các API giọng nói khi người dùng tự nhập khóa (gọi thẳng
 từ trình duyệt, kể cả địa chỉ tùy chỉnh nên ``connect-src`` cho mọi ``https:``), blob/data cho Live2D, ảnh và âm thanh.
 Script nhúng sẵn trong ``index.html`` và ``404.html`` (gắn giao diện sáng/tối) được cho phép bằng mã băm SHA-256 tính từ
 đúng tệp đang phục vụ, không bằng ``'unsafe-inline'``.
 
-Companion bản AIRI ở ``/companion/`` (từ 15/11/2026, khi đặt ``PETO_AIRI_DIR``) có chính sách chỉ báo cáo riêng (``airi_policy``),
+Companion bản AIRI ở ``/companion/`` (từ 15/11/2026, khi đặt ``PETO_AIRI_DIR``) có chính sách riêng (``airi_policy``), luôn chỉ báo
+cáo: bản build còn tải từ cdn.jsdelivr.net và huggingface.co (82 báo cáo 16–20/11), phần Companion sẽ quyết,
 viết theo đúng những gì bản build AIRI dùng: script nhúng và ``onclick`` của ``index.html`` AIRI theo mã băm,
 WebAssembly, worker từ blob, kết nối data/blob. Không cho phép máy chủ đám mây nào của AIRI, không cho phép CDN font
 (font sẽ tự phục vụ). Phần còn lại của trang giữ chính sách cũ.
@@ -118,6 +121,8 @@ def policy(hashes: list[str]) -> str:
         'object-src': ["'none'"],
         'base-uri': ["'self'"],
         'form-action': ["'self'"],
+        # Như header frame-ancestors riêng (ENFORCED): khi chính sách này chặn thật thì nó cũng nói điều đó.
+        'frame-ancestors': ["'none'"],
         'report-uri': [REPORT_PATH],
     }
     return _join(sources)
@@ -176,8 +181,11 @@ class SecurityHeaders:
     """Middleware ASGI thuần: chỉ thêm header vào ``http.response.start``, không đọc hay giữ thân phản hồi (SSE vẫn
     chảy từng mảnh). Header mà route đã tự đặt thì giữ nguyên."""
 
-    def __init__(self, app, static_dir: Path, airi_dir: Path | None = None):
+    def __init__(self, app, static_dir: Path, airi_dir: Path | None = None, enforce: bool = False):
         self.app = app
+        # Trang chính: ``Content-Security-Policy`` (chặn thật) khi ``enforce``, không thì ``…-Report-Only``. AIRI luôn
+        # chỉ báo cáo.
+        self.enforce = enforce
         self.pages = _Pages(static_dir)
         # Chỉ khi Companion là bản AIRI (PETO_AIRI_DIR có index.html); không thì /companion… (Companion React) vẫn theo
         # chính sách của trang chính, vì nó cần YouTube và các nguồn khác của trang chính.
@@ -191,16 +199,20 @@ class SecurityHeaders:
             if message['type'] == 'http.response.start':
                 headers = list(message.get('headers') or [])
                 present = {name.lower() for name, _ in headers}
+                airi = self.airi is not None and _is_airi(scope.get('path', ''))
+                # Trang chính khi chặn thật: một header CSP đầy đủ (đã gồm frame-ancestors 'none') thay cho header
+                # frame-ancestors riêng. Route tự đặt CSP của nó thì giữ nguyên.
+                enforce = self.enforce and not airi and b'content-security-policy' not in present
                 for name, value in ENFORCED:
-                    if name not in present:
+                    if name not in present and not (enforce and name == b'content-security-policy'):
                         headers.append((name, value))
-                if b'content-security-policy-report-only' not in present:
-                    airi = self.airi is not None and _is_airi(scope.get('path', ''))
+                if enforce or b'content-security-policy-report-only' not in present:
                     try:
-                        report_only = self.airi.current() if airi else self.pages.current()
+                        value = self.airi.current() if airi else self.pages.current()
                     except OSError:
-                        report_only = airi_policy([], []) if airi else policy([])
-                    headers.append((b'content-security-policy-report-only', report_only.encode('latin-1')))
+                        value = airi_policy([], []) if airi else policy([])
+                    name = b'content-security-policy' if enforce else b'content-security-policy-report-only'
+                    headers.append((name, value.encode('latin-1')))
                 message = {**message, 'headers': headers}
             await send(message)
 

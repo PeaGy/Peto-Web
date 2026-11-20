@@ -25,7 +25,7 @@ from features.companion import airi_gateway
 from features.companion import airi_sync
 from ai import get_provider
 from core.identity import get_app_identity
-from core.config import AIRI_DIR, ALLOWED_ORIGINS, CANONICAL_ORIGIN, STATIC_DIR
+from core.config import AIRI_DIR, ALLOWED_ORIGINS, CANONICAL_ORIGIN, CSP_ENFORCE, STATIC_DIR
 from features.docs import api as docs_api
 from core.lifespan import lifespan
 from features.chat import api as chat_api
@@ -66,7 +66,7 @@ app.include_router(desktop_update.router)
 # đầy đủ mới ở chế độ chỉ báo cáo, báo cáo về /api/csp-report.
 # Trang mở bằng tên miền phụ chuyển sang tên miền chính (PETO_CANONICAL_ORIGIN); đăng ký trước để header bảo mật bọc ngoài.
 app.add_middleware(canonical_host.CanonicalHost, origin=CANONICAL_ORIGIN)
-app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR, airi_dir=AIRI_DIR)
+app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR, airi_dir=AIRI_DIR, enforce=CSP_ENFORCE)
 app.include_router(security_headers.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)

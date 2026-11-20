@@ -66,9 +66,13 @@ dense ledger and a narrative report. No per-account view, by the owner's call; A
 ### Security headers (`core/security_headers.py`)
 
 Every response, including static pages and SSE, gets `X-Content-Type-Options: nosniff`, `Referrer-Policy:
-strict-origin-when-cross-origin`, `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` (enforced;
-the app never frames itself, printing uses a popup). The full CSP is `Content-Security-Policy-Report-Only`: nothing is
-blocked, browsers report to `POST /api/csp-report`, which logs only `csp_violation directive=… blocked=<origin or keyword>
+strict-origin-when-cross-origin` and `X-Frame-Options: DENY` (the app never frames itself, printing uses a popup).
+**Since 2026-11-20 the full CSP of the main site is enforced** (`Content-Security-Policy`, one header that also carries
+`frame-ancestors 'none'`), controlled by `PETO_CSP_ENFORCE` (default on). The VPS logs from 15 to 20/11 had no report
+outside `/companion`. If a legitimate source gets blocked, the log shows `csp_violation … mode=enforce`; set
+`PETO_CSP_ENFORCE=false` and restart to go back to `Content-Security-Policy-Report-Only` without a code change (then only
+`Content-Security-Policy: frame-ancestors 'none'` is enforced, as before). Browsers report to `POST /api/csp-report`
+either way, which logs only `csp_violation directive=… blocked=<origin or keyword>
 page=/<first path segment> mode=…` (no full URL, query, ids or samples; 16 KB body cap; at most 120 lines a minute per
 process). Inline scripts in `index.html`/`404.html` are allowed by SHA-256 hashes computed from the served files and
 refreshed when they change, never `'unsafe-inline'`. `'unsafe-eval'` is allowed because PixiJS 6 (Live2D) throws without
@@ -79,7 +83,9 @@ voice and hearing providers are called from the browser, custom base URLs includ
 bodies stream untouched).
 
 When `PETO_AIRI_DIR` is set (to a build with an `index.html`), Companion is the AIRI build and `/companion` and
-`/companion/…` responses (pages, assets and worker scripts) get a separate report-only policy, `airi_policy` (since
+`/companion/…` responses (pages, assets and worker scripts) get a separate policy, `airi_policy`, that stays
+report-only even when the main site enforces (its build still loads from `cdn.jsdelivr.net` and `huggingface.co`:
+82 reports on the VPS from 16 to 20/11; the Companion side decides whether to allow or self-host them) (since
 2026-11-15, at `/airi/` until package 5a); the rest of the site, `/api/companion/…` included, keeps the policy above.
 Without it, the React Companion at `/companion` keeps the site policy. It is built from what
 the AIRI stage-web build uses: the inline scripts of AIRI's `index.html` by hash, its inline `onclick` by hash with
@@ -148,6 +154,17 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 created (old databases keep it, unused).
 
 # Dated log (newest first)
+
+## CSP enforced on the main site (2026-11-20, branch `csp-enforce`, not merged)
+
+Read-only check of the VPS journal (kept from 2026-11-15): 82 `csp_violation` lines, all `page=/companion` (AIRI:
+`cdn.jsdelivr.net` script and connect, `huggingface.co` connect), none on the main site, none dropped. The main policy
+is now sent as `Content-Security-Policy` behind `PETO_CSP_ENFORCE`. Checked on the mock stack serving the build with
+the backend: login page, Chat with Mermaid diagrams and a table, Docs (Google fonts), `/download/`, Imagine, the React
+Companion with Live2D and every Settings section, no violation; a script injected from `https://evil.example` was
+refused and logged with `mode=enforce`. Playwright does not cover this: it runs on Vite's dev server, which sends no
+CSP. Backend tests run both modes, and the AIRI pages in both.
+
 
 ## One main domain (2026-11-17, branch `canonical-domain`, not merged)
 
