@@ -10,6 +10,7 @@ import type { Effort, ModelOption, WebSearchMode, QuotedSource } from "../../sha
 import { QuoteExcerpt } from './QuotedFollowup';
 import { isPastedTextFile, LONG_PASTE_CHARS, pasteAtSelection, pastedTextFile } from './longPaste';
 import PastedTextPreview from './PastedTextPreview';
+import { appendSpeech, useChatDictation } from './useChatDictation';
 
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
@@ -24,6 +25,16 @@ export function SendIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
     </svg>
   );
 }
@@ -79,6 +90,28 @@ export default function Composer({
   const [converted, setConverted] = useState<{ file: File; expected: string; restored: string; caret: number } | null>(null);
   const [preview, setPreview] = useState<File | null>(null);
   useEffect(() => { setConverted(null); setPreview(null); }, [contextKey]);
+  // Micro: chữ nghe được nối vào phần chữ của nháp, link đã dán giữ nguyên.
+  const dictation = useChatDictation(text, (value) => onDraftChange(joinDraft(value, links)), contextKey);
+  const listening = dictation.phase !== 'off';
+  const shown = dictation.interim ? appendSpeech(text, dictation.interim) : text;
+  // Bấm Gửi khi đang nghe: chốt cả phần đang nghe dở vào nháp, đợi App nhận nháp mới rồi mới gửi.
+  const [sendAfterDictation, setSendAfterDictation] = useState(false);
+  useEffect(() => {
+    if (!sendAfterDictation) return;
+    setSendAfterDictation(false);
+    if (!streaming && canSend) void onSubmit();
+  }, [sendAfterDictation, streaming, canSend, onSubmit]);
+  const submit = () => {
+    if (listening || dictation.interim) {
+      const full = dictation.finishForSend();
+      if (full !== text) {
+        onDraftChange(joinDraft(full, links));
+        setSendAfterDictation(true);
+        return;
+      }
+    }
+    if (!streaming && canSend) void onSubmit();
+  };
   useEffect(() => { if (converted && (streaming || !files.some(item => item.file === converted.file))) setConverted(null); }, [files, streaming, converted]);
   return (
     <form
@@ -86,7 +119,7 @@ export default function Composer({
       className="composer-wrap"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!streaming && canSend) void onSubmit();
+        submit();
       }}
     >
       <div className="composer" ref={boxRef}>
@@ -137,12 +170,17 @@ export default function Composer({
 
         <textarea
           ref={textareaRef}
-          value={text}
+          value={shown}
+          readOnly={Boolean(dictation.interim)}
           rows={1}
           placeholder="Nhắn cho Peto…"
           aria-label="Nhắn cho Peto"
           enterKeyHint="send"
-          onChange={(event) => onDraftChange(joinDraft(event.target.value, links))}
+          onChange={(event) => {
+            if (dictation.interim) return;
+            if (dictation.error) dictation.clearError();
+            onDraftChange(joinDraft(event.target.value, links));
+          }}
           onPaste={(event) => {
             const pasted = Array.from(event.clipboardData.files);
             if (pasted.length) {
@@ -176,7 +214,7 @@ export default function Composer({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
               event.preventDefault();
-              if (!streaming && canSend) void onSubmit();
+              submit();
             }
           }}
         />
@@ -204,18 +242,34 @@ export default function Composer({
             {models.length > 1 && (
               <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
             )}
+            {dictation.supported && (listening ? (
+              <button type="button" className="dictation-on" aria-label="Dừng nghe" data-tip="Dừng nghe"
+                onClick={dictation.stop}>
+                <span className="dictation-dot" aria-hidden="true" />
+                <span className="dictation-label">{dictation.phase === 'starting' ? 'Đang mở micro…' : 'Đang nghe'}</span>
+              </button>
+            ) : (
+              <button type="button" className="dictation-mic" aria-label="Nói để nhập" data-tip="Nói để nhập"
+                onClick={dictation.start}>
+                <MicIcon />
+              </button>
+            ))}
             {streaming ? (
               <button type="button" className="stop" disabled={stopping} onClick={onStop}>
                 {stopping ? "Đang dừng…" : "Dừng"}
               </button>
             ) : (
-              <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
+              <button type="submit" className="send" disabled={!canSend && !dictation.interim.trim()} aria-label="Gửi">
                 <span className="send-text">Gửi</span> <SendIcon />
               </button>
             )}
           </div>
         </div>
       </div>
+      {(dictation.error || dictation.notice) && (
+        <p className={dictation.error ? 'composer-note dictation-note error' : 'composer-note dictation-note'}
+          role={dictation.error ? 'alert' : 'status'}>{dictation.error || dictation.notice}</p>
+      )}
       {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf") &&
         <p className="composer-note">Peto đọc chữ và dẫn số trang trong PDF, nhận dạng cả trang scan khi máy chủ có OCR. Chữ từ ảnh có thể nhận sai; kết quả đọc sẽ hiện dưới tệp.</p>}
       {files.some((item) => isSpreadsheetFile(item.file)) &&

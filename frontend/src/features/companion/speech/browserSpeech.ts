@@ -57,14 +57,26 @@ export interface BrowserSpeechHandlers {
   onError(message: string): void;
 }
 
-function errorMessage(code: string, language: HearingLanguage): string {
+/** Chỗ dùng bộ nghe: Companion có trang Cài đặt → Nghe để đổi nguồn và ngôn ngữ, ô nhắn của Chat thì không. */
+export interface BrowserSpeechOptions {
+  chat?: boolean;
+}
+
+function errorMessage(code: string, language: HearingLanguage, chat = false): string {
   if (code === "not-allowed" || code === "service-not-allowed") {
     return "Chưa được phép dùng micro hoặc dịch vụ nhận giọng của trình duyệt. Bấm biểu tượng ổ khóa cạnh địa chỉ trang để cho phép.";
   }
-  if (code === "network") return "Trình duyệt không kết nối được dịch vụ nhận giọng. Kiểm tra mạng hoặc chọn nguồn nghe khác trong Cài đặt.";
+  if (code === "network") {
+    return chat
+      ? "Trình duyệt không kết nối được dịch vụ nhận giọng. Kiểm tra mạng rồi bấm micro để thử lại."
+      : "Trình duyệt không kết nối được dịch vụ nhận giọng. Kiểm tra mạng hoặc chọn nguồn nghe khác trong Cài đặt.";
+  }
   if (code === "audio-capture") return "Không mở được micro. Kiểm tra micro rồi thử lại.";
   if (code === "language-not-supported") {
-    return `Trình duyệt này chưa nghe được ${language === "vi" ? "tiếng Việt" : "tiếng Anh"}. Đổi ngôn ngữ hoặc nguồn nghe trong Cài đặt.`;
+    const spoken = language === "vi" ? "tiếng Việt" : "tiếng Anh";
+    return chat
+      ? `Trình duyệt này chưa nghe được ${spoken}. Thử Chrome, Edge hoặc Safari.`
+      : `Trình duyệt này chưa nghe được ${spoken}. Đổi ngôn ngữ hoặc nguồn nghe trong Cài đặt.`;
   }
   return "Trình duyệt ngừng nghe giữa chừng. Bấm micro để nghe lại.";
 }
@@ -81,7 +93,9 @@ export interface BrowserSpeechSession {
 }
 
 /** Nghe tới khi gọi `stop()`. Phiên hết sau im lặng thì mở lại, nhưng không lặp vô hạn nếu khởi động thất bại. */
-export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserSpeechHandlers): BrowserSpeechSession {
+export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserSpeechHandlers,
+  options: BrowserSpeechOptions = {}): BrowserSpeechSession {
+  const chat = Boolean(options.chat);
   const Klass = speechRecognitionClass();
   if (!Klass) throw new Error("Trình duyệt này chưa có tính năng nghe.");
   let stopped = false;
@@ -144,7 +158,9 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
       resultTimer = undefined;
       if (stopped) return;
       warned = true;
-      handlers.onNotice("Micro có âm thanh nhưng dịch vụ nhận giọng chưa trả chữ. Kiểm tra micro mặc định, mạng và ngôn ngữ trong Cài đặt Companion → Nghe; thử nguồn nghe khác nếu vẫn lỗi.");
+      handlers.onNotice(chat
+        ? "Micro có âm thanh nhưng dịch vụ nhận giọng chưa trả chữ. Kiểm tra micro mặc định của máy và mạng."
+        : "Micro có âm thanh nhưng dịch vụ nhận giọng chưa trả chữ. Kiểm tra micro mặc định, mạng và ngôn ngữ trong Cài đặt Companion → Nghe; thử nguồn nghe khác nếu vẫn lỗi.");
     }, 8000);
   };
 
@@ -208,7 +224,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
         interim = "";
       }
       stop();
-      handlers.onError(errorMessage(event.error, language));
+      handlers.onError(errorMessage(event.error, language, chat));
     };
     next.onend = () => {
       if (!current()) return;
@@ -229,7 +245,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
       quickEnds = Date.now() - startedAt < 1000 ? quickEnds + 1 : 0;
       if (quickEnds > 5) {
         stop();
-        handlers.onError(errorMessage("", language));
+        handlers.onError(errorMessage("", language, chat));
         return;
       }
       restartTimer = setTimeout(begin, 300);
@@ -239,13 +255,15 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
     startTimer = setTimeout(() => {
       if (!current()) return;
       stop();
-      handlers.onError("Dịch vụ nhận giọng của trình duyệt chưa khởi động. Kiểm tra quyền micro và mạng, hoặc chọn nguồn nghe khác trong Cài đặt Companion → Nghe.");
+      handlers.onError(chat
+        ? "Dịch vụ nhận giọng của trình duyệt chưa khởi động. Kiểm tra quyền micro và mạng rồi thử lại."
+        : "Dịch vụ nhận giọng của trình duyệt chưa khởi động. Kiểm tra quyền micro và mạng, hoặc chọn nguồn nghe khác trong Cài đặt Companion → Nghe.");
     }, 10000);
     try {
       next.start();
     } catch {
       stop();
-      handlers.onError(errorMessage("", language));
+      handlers.onError(errorMessage("", language, chat));
     }
   };
 

@@ -188,6 +188,7 @@ padding inside cards and dialogs is 16–24px.
 | Close button `.dialog-close` / `.settings-close` | 32×32 / 34×34, radius 9 |
 | Sidebar navigation item | 42 high, radius 12 |
 | Effort chip | 34 high, radius `999px` |
+| Composer mic / "Đang nghe" pill | 34×34 round, 1px `--line` border; listening: 34 high pill with an 8px `--danger` dot (dot only on phones) |
 | Action-menu item / option-menu item / Dropdown option | 36 / 40 / 38 (action and option items are 44 on touch) |
 | Settings input, Save button | 36 |
 | Dropdown field | 42 (36 inside Settings) |

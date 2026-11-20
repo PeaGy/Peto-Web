@@ -133,3 +133,19 @@
 .link-chip { max-width: 280px; }
 .link-chip-icon { display: inline-flex; flex: 0 0 auto; color: var(--muted); }
 .link-chip.github .link-chip-icon { color: var(--text); }
+
+/* Micro (nhập giọng nói, useChatDictation.ts): nút tròn cạnh nút Gửi; đang nghe thì thành viên "● Đang nghe", bấm để dừng. */
+.dictation-mic, .dictation-on {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; flex-shrink: 0;
+  border-radius: 999px; font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
+}
+.dictation-mic { width: 34px; padding: 0; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.dictation-on { padding: 0 13px 0 11px; border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--line)); background: var(--panel-2); color: var(--text); }
+.dictation-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); animation: dictation-pulse 1.4s ease-in-out infinite; }
+@keyframes dictation-pulse { 50% { opacity: 0.35; } }
+:root[data-motion="reduced"] .dictation-dot { animation: none; }
+@media (hover: hover) and (pointer: fine) {
+  .dictation-mic:hover { background: var(--panel-2); color: var(--text); }
+  .dictation-on:hover { background: var(--panel-3); }
+}
+.dictation-note.error { color: var(--danger); }
