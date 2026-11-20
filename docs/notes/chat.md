@@ -179,6 +179,22 @@ words appearing while you speak. Server transcription on the owner's OpenAI key 
   timeout, 8 s "sound but no words" notice) with `{ chat: true }`, which words its errors without pointing to
   Companion settings. The Companion hearing engine (pause while Peto speaks, auto-send, key providers) is not used.
 - Chrome sends the audio to Google's recognition service; nothing goes through the Peto server.
+- **Micro and language menu** (`DictationMenu.tsx`, `dictationPrefs.ts`, 2026-11-20, after Claude's dictation menu the
+  owner showed): a chevron next to the mic opens a level meter and the list of microphones (✓ on the one in use), then
+  "Nhập giọng nói → Ngôn ngữ ›" with a search box (accent-insensitive, also by code) over 22 languages, Vietnamese and
+  both Englishes first. No "Tự động": Web Speech needs the language up front. Choices live in `localStorage`
+  (`peto-dictation-language`, `peto-dictation-mic`); a change made while listening applies to the next session.
+  - Choosing a microphone uses `SpeechRecognition.start(track)` (spec'd, Chrome intent to ship for desktop 133). A
+    browser without it silently ignores the track, so support is read from `navigator.userAgentData` (Chromium,
+    Chrome or Edge 133+, not mobile) instead of probed. Tried on 2026-11-20 in the Claude app's Chromium 156: an audio
+    track is accepted, a video track throws `InvalidStateError`. Elsewhere (Safari, Firefox, phones) the menu shows
+    only "Micro mặc định của máy" and opening it does not ask for the microphone.
+  - Opening the menu where choice is supported asks for the microphone (needed to read device names), like Claude.
+  - The microphone is stored as id plus name: device ids change (cleared cookies, private windows; Playwright's
+    Chromium issues new ids on every load), so the name finds it again; if neither is there, listening uses the
+    default microphone with a notice instead of failing.
+- Tests: `tests/dictationPrefs.test.ts`; `browser-tests/chat-dictation.spec.ts` (Chromium fake microphones, a fake
+  recognition class recording the language and the track's microphone; menu screenshot on PC and mobile).
 - Tests: `tests/chatDictation.test.tsx` (fake `SpeechRecognition`). Three Playwright baselines gained the mic icon.
 
 ### Chat request lifecycle (`POST /api/chat`)
@@ -505,6 +521,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Microphone and language menu for Chat voice input (2026-11-20, branch `g5-dictation-menu`, not merged)
+
+The owner asked for Claude's dictation menu. I had first said the microphone could not be chosen with browser speech;
+that was wrong (it came from the Companion note of 2026-09-24). See "Micro and language menu" above.
+
 
 ## Voice input in the Chat composer (G5) (2026-11-20, branch `g5-chat-voice-input`, not merged)
 

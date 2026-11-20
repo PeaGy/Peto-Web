@@ -149,3 +149,36 @@
   .dictation-on:hover { background: var(--panel-3); }
 }
 .dictation-note.error { color: var(--danger); }
+
+/* Mũi tên cạnh micro (DictationMenu.tsx): menu chọn micro và ngôn ngữ, cùng kiểu menu mức suy nghĩ, canh mép phải. */
+.dictation-group { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.dictation-menu { position: relative; display: inline-flex; }
+.dictation-more {
+  display: grid; place-items: center; width: 18px; height: 34px; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.dictation-more[aria-expanded="true"] { color: var(--text); }
+.dictation-more[aria-expanded="true"] .effort-chevron { transform: rotate(180deg); }
+@media (hover: hover) and (pointer: fine) { .dictation-more:hover:not(:disabled) { background: var(--panel-2); color: var(--text); } }
+.effort-options.dictation-options {
+  left: auto; right: 0; width: min(300px, calc(100vw - 32px)); max-height: min(460px, calc(100dvh - 160px));
+  transform-origin: bottom right;
+}
+.dictation-level { display: flex; align-items: center; gap: 10px; padding: 8px 10px 6px; color: var(--muted); }
+.dictation-level-track { position: relative; flex: 1; height: 4px; overflow: hidden; border-radius: 999px; background: var(--panel-2); }
+.dictation-level-fill {
+  position: absolute; inset: 0; border-radius: inherit; background: var(--text);
+  transform: scaleX(0); transform-origin: left;
+}
+.dictation-device { height: auto; min-height: 40px; padding: 7px 10px; line-height: 1.35; }
+.dictation-device .effort-option-label { overflow-wrap: anywhere; }
+.dictation-menu-note { margin: 4px 10px 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.dictation-menu-separator { height: 1px; margin: 6px 4px; background: var(--line); }
+.dictation-value { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.dictation-back { color: var(--muted); }
+.dictation-search {
+  width: calc(100% - 8px); height: 36px; margin: 2px 4px 6px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px;
+}
+.dictation-search:focus { outline: none; border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+.dictation-search::placeholder { color: var(--muted); }

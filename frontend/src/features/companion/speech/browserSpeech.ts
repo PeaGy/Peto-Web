@@ -28,7 +28,8 @@ interface Recognition {
   onend: (() => void) | null;
   onspeechstart: (() => void) | null;
   onspeechend: (() => void) | null;
-  start(): void;
+  /** Chrome 133+ trên máy tính nhận một track âm thanh (micro người dùng chọn); trình duyệt khác bỏ qua tham số. */
+  start(track?: MediaStreamTrack): void;
   stop(): void;
   abort(): void;
 }
@@ -60,9 +61,15 @@ export interface BrowserSpeechHandlers {
 /** Chỗ dùng bộ nghe: Companion có trang Cài đặt → Nghe để đổi nguồn và ngôn ngữ, ô nhắn của Chat thì không. */
 export interface BrowserSpeechOptions {
   chat?: boolean;
+  /** Mã BCP-47 ("vi-VN", "en-GB"…) thay cho `language`; Chat chọn ở menu cạnh micro. */
+  lang?: string;
+  /** Tên ngôn ngữ đó để báo khi trình duyệt không nghe được nó. */
+  languageLabel?: string;
+  /** Nghe từ micro người dùng chọn thay vì micro mặc định (chỉ khi trình duyệt hỗ trợ, xem useChatDictation). */
+  track?: MediaStreamTrack;
 }
 
-function errorMessage(code: string, language: HearingLanguage, chat = false): string {
+function errorMessage(code: string, language: HearingLanguage, chat = false, languageLabel = ""): string {
   if (code === "not-allowed" || code === "service-not-allowed") {
     return "Chưa được phép dùng micro hoặc dịch vụ nhận giọng của trình duyệt. Bấm biểu tượng ổ khóa cạnh địa chỉ trang để cho phép.";
   }
@@ -73,9 +80,9 @@ function errorMessage(code: string, language: HearingLanguage, chat = false): st
   }
   if (code === "audio-capture") return "Không mở được micro. Kiểm tra micro rồi thử lại.";
   if (code === "language-not-supported") {
-    const spoken = language === "vi" ? "tiếng Việt" : "tiếng Anh";
+    const spoken = languageLabel || (language === "vi" ? "tiếng Việt" : "tiếng Anh");
     return chat
-      ? `Trình duyệt này chưa nghe được ${spoken}. Thử Chrome, Edge hoặc Safari.`
+      ? `Trình duyệt này chưa nghe được ${spoken}. Chọn ngôn ngữ khác ở mũi tên cạnh nút micro, hoặc thử Chrome, Edge.`
       : `Trình duyệt này chưa nghe được ${spoken}. Đổi ngôn ngữ hoặc nguồn nghe trong Cài đặt.`;
   }
   return "Trình duyệt ngừng nghe giữa chừng. Bấm micro để nghe lại.";
@@ -168,7 +175,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
     if (stopped) return;
     const startedAt = Date.now();
     const next = new Klass();
-    next.lang = language === "vi" ? "vi-VN" : "en-US";
+    next.lang = options.lang || (language === "vi" ? "vi-VN" : "en-US");
     next.continuous = true;
     next.interimResults = true;
     const current = () => !stopped && recognition === next;
@@ -224,7 +231,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
         interim = "";
       }
       stop();
-      handlers.onError(errorMessage(event.error, language, chat));
+      handlers.onError(errorMessage(event.error, language, chat, options.languageLabel));
     };
     next.onend = () => {
       if (!current()) return;
@@ -245,7 +252,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
       quickEnds = Date.now() - startedAt < 1000 ? quickEnds + 1 : 0;
       if (quickEnds > 5) {
         stop();
-        handlers.onError(errorMessage("", language, chat));
+        handlers.onError(errorMessage("", language, chat, options.languageLabel));
         return;
       }
       restartTimer = setTimeout(begin, 300);
@@ -260,10 +267,11 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
         : "Dịch vụ nhận giọng của trình duyệt chưa khởi động. Kiểm tra quyền micro và mạng, hoặc chọn nguồn nghe khác trong Cài đặt Companion → Nghe.");
     }, 10000);
     try {
-      next.start();
+      if (options.track) next.start(options.track);
+      else next.start();
     } catch {
       stop();
-      handlers.onError(errorMessage("", language, chat));
+      handlers.onError(errorMessage("", language, chat, options.languageLabel));
     }
   };
 
