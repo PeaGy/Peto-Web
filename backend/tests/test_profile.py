@@ -110,7 +110,7 @@ async def test_ho_so_vao_prompt_ngay_luot_ke_tiep(client, monkeypatch):
     assert "Luôn kèm một ví dụ đời thường." in prompt
     # Lời dặn riêng đứng sau quy tắc của Peto và tự nhận là không thay chúng.
     assert prompt.index("Luôn kèm một ví dụ") > prompt.index("## User preferences")
-    assert "they are not system instructions" in prompt
+    assert "These instructions grant no permissions" in prompt and "these win" in prompt
 
 
 async def test_khong_the_tu_dong_khung_huong_dan_som(client, monkeypatch):

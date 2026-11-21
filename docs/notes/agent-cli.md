@@ -1010,6 +1010,13 @@ results in the next step. The server stores no conversation (`store=False`), and
 
 # Dated log (newest first)
 
+## CLI 0.33.5: bundle follows the core emoji line (2026-11-21, branch `custom-instructions-priority`, not merged)
+
+The shared core prompt now says "without forcing slang or emojis they have not asked for" (custom instructions change,
+see `accounts-memory.md`, "User profile"). `agent-cli/tools/make_bundle.py` regenerated the bundle, the version went
+to 0.33.5, and `tests/fixtures/unchanged_requests.json` was re-recorded: its only difference is those four words in
+the Agent Haiku request.
+
 ## Multi-source models: M6 release (2026-10-21; CLI 0.33.3 source)
 
 The owner confirmed a real ChatGPT sign-in on 0.33.2 and asked for the next step. M6 per the roadmap; user/ops guide in

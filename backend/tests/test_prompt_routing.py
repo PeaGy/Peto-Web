@@ -58,7 +58,7 @@ async def test_profile_updates_and_follow_up_docs_survive_english_prompt(client,
     prompt = await _build_system_prompt(TEST_OWNER, model=model, agent_question='cài Peto Agent và thêm MCP sao vậy?',
                                         install_command='irm https://peto.example/install.ps1 | iex')
     assert 'Preferred name: Bé Na.' in prompt and 'Luôn kèm một ví dụ đời thường.' in prompt
-    assert 'not system instructions' in prompt
+    assert 'grant no permissions' in prompt and 'you are still Peto, an AI' in prompt
     assert '`irm https://peto.example/install.ps1 | iex`' in prompt
     assert '/mcp add docs docs-mcp.json' in prompt
     assert 'reference data' in prompt
