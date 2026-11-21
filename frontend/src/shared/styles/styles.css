@@ -27,3 +27,4 @@
 @import './touchTargets.css';
 @import '../../app/conversationControls.css';
 @import '../../features/projects/projects.css';
+@import '../../features/chat/mobileComposer.css';

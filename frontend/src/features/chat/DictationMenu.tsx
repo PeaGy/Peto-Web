@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { DICTATION_LANGUAGES, languageOf, matchesLanguage, resolveMic } from './dictationPrefs';
 import type { ChatDictation } from './useChatDictation';
+import { ComposerSheet } from './ComposerSheet';
 
 // Menu ở mũi tên cạnh nút micro, theo mẫu của Claude chủ web gửi ngày 20/11/2026: thanh âm lượng và danh sách micro,
 // rồi "Ngôn ngữ ›" mở danh sách có ô tìm. Khác Claude: không có "Tự động" (Web Speech cần biết trước ngôn ngữ), và danh
@@ -88,7 +89,7 @@ function useMicrophones(active: boolean, mic: string, meter: RefObject<HTMLSpanE
   return { devices, problem };
 }
 
-export default function DictationMenu({ dictation, disabled }: { dictation: ChatDictation; disabled?: boolean }) {
+export default function DictationMenu({ dictation, disabled, compact = false }: { dictation: ChatDictation; disabled?: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'main' | 'language'>('main');
   const [query, setQuery] = useState('');
@@ -100,6 +101,20 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
   const [current, setCurrent] = useState('');
   const [place, setPlace] = useState<{ up: boolean; maxHeight: number }>({ up: true, maxHeight: MAX_HEIGHT });
   const { devices, problem } = useMicrophones(open && view === 'main' && dictation.canChooseMic, current, meter);
+  const [permissionBlocked, setPermissionBlocked] = useState(false);
+  useEffect(() => {
+    if (!open || !compact || dictation.canChooseMic || !navigator.permissions) return;
+    let active = true;
+    let status: PermissionStatus | undefined;
+    const update = () => setPermissionBlocked(status?.state === 'denied');
+    navigator.permissions.query({ name: 'microphone' }).then(result => {
+      if (!active) return;
+      status = result;
+      update();
+      status.addEventListener('change', update);
+    }).catch(() => {}); // Some browsers expose Permissions but cannot query the microphone.
+    return () => { active = false; status?.removeEventListener('change', update); };
+  }, [compact, open, dictation.canChooseMic]);
   const language = languageOf(dictation.language);
   const languages = DICTATION_LANGUAGES.filter((item) => matchesLanguage(item, query));
   const selectedMic = (devices && resolveMic(dictation.mic, devices.map((item) => ({ deviceId: item.id, label: item.label }))))
@@ -113,7 +128,7 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   // Đo lại khi mở, khi đổi giữa danh sách micro và ngôn ngữ, khi danh sách micro tải xong và khi đổi cỡ cửa sổ.
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || compact) return;
     const measure = () => {
       const box = trigger.current?.getBoundingClientRect();
       if (!box || !menu.current) return;
@@ -122,7 +137,7 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [open, view, devices, problem]);
+  }, [open, view, devices, problem, compact]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -157,20 +172,10 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
     } else if (event.key === 'Escape') {
       event.preventDefault();
       if (view === 'language') setView('main'); else close();
-    } else if (event.key === 'Tab') setOpen(false);
+    } else if (event.key === 'Tab' && !compact) setOpen(false);
   }
 
-  return <div ref={root} className="dictation-menu" onBlur={(event) => {
-    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
-  }}>
-    <button ref={trigger} type="button" className="dictation-more" disabled={disabled}
-      aria-haspopup="menu" aria-expanded={open} aria-controls="dictation-options"
-      aria-label="Cài đặt nhập giọng nói" data-tip="Micro và ngôn ngữ" onClick={toggle}>
-      <svg className="effort-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </button>
-    {open && <div ref={menu} id="dictation-options" role="menu" style={{ maxHeight: place.maxHeight }}
+  const options = <div ref={menu} id="dictation-options" role="menu" style={compact ? undefined : { maxHeight: place.maxHeight }}
       className={place.up ? 'effort-options dictation-options' : 'effort-options dictation-options below'}
       aria-label={view === 'language' ? 'Ngôn ngữ nghe' : 'Nhập giọng nói'} onKeyDown={onMenuKey}>
       {view === 'main' ? <>
@@ -191,7 +196,7 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
               {on && CHECK}
             </button>;
           })}
-        </> : <>
+        </> : permissionBlocked ? <p className="dictation-menu-note" role="status">Quyền truy cập micro đang bị chặn.</p> : <>
           <button type="button" role="menuitemradio" aria-checked="true" className="effort-option dictation-device on">
             <span className="effort-option-label">Micro mặc định của máy</span>{CHECK}
           </button>
@@ -231,6 +236,17 @@ export default function DictationMenu({ dictation, disabled }: { dictation: Chat
           {!languages.length && <p className="dictation-menu-note">Không có ngôn ngữ nào khớp.</p>}
         </div>
       </>}
-    </div>}
+    </div>;
+  return <div ref={root} className="dictation-menu" onBlur={(event) => {
+    if (!compact && event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
+  }}>
+    <button ref={trigger} type="button" className="dictation-more" disabled={disabled}
+      aria-haspopup={compact ? 'dialog' : 'menu'} aria-expanded={open} aria-controls="dictation-options"
+      aria-label="Cài đặt nhập giọng nói" data-tip="Micro và ngôn ngữ" onClick={toggle}>
+      <svg className="effort-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+    {open && (compact ? <ComposerSheet label="Cài đặt nhập giọng nói" onClose={close}>{options}</ComposerSheet> : options)}
   </div>;
 }

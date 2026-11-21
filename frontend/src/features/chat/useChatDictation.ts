@@ -209,6 +209,7 @@ export function useChatDictation(text: string, onText: (value: string) => void, 
   // Sang hội thoại khác, rời tab hay đóng trang: thôi nghe, bỏ phần chưa chốt (nó thuộc ô nhắn cũ).
   useEffect(() => {
     end(false);
+    setError('');
   }, [resetKey, end]);
   useEffect(() => {
     const hide = () => { if (document.visibilityState === 'hidden') end(false); };

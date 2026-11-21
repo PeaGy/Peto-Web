@@ -1,4 +1,7 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import { useCompact } from '../../shared/useCompact';
+import { ComposerSheet } from './ComposerSheet';
+import MobileChatSettings from './MobileChatSettings';
 import ComposerMenu from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
 import { isSpreadsheetFile } from "./attachments";
@@ -42,6 +45,7 @@ function MicIcon() {
 }
 
 interface ComposerProps {
+  projectPicker?: ReactNode;
   draft: string;
   onDraftChange: (value: string) => void;
   files: DraftFile[];
@@ -85,8 +89,9 @@ export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
   effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
-  model, models, onModelChange, formRef, boxRef, textareaRef, fileRef, contextKey, quote, onRemoveQuote, onJumpQuote,
+  model, models, onModelChange, formRef, boxRef, textareaRef, fileRef, contextKey, quote, onRemoveQuote, onJumpQuote, projectPicker,
 }: ComposerProps) {
+  const compact = useCompact();
   // Nháp gồm chữ đang gõ và các link đã dán (draftLinks.ts); ô chữ chỉ hiện phần chữ, link hiện thành thẻ.
   const { text, links } = splitDraft(draft);
   const [converted, setConverted] = useState<{ file: File; expected: string; restored: string; caret: number } | null>(null);
@@ -235,10 +240,10 @@ export default function Composer({
                 event.target.value = "";
               }}
             />
-            <ComposerMenu disabled={menuDisabled} webDisabled={webSearch === "off"}
+            <ComposerMenu compact={compact} disabled={menuDisabled} webDisabled={webSearch === "off"}
               onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
 
-            <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />
+            {!compact && <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />}
           </div>
 
           <div className="composer-send">
@@ -256,7 +261,7 @@ export default function Composer({
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
               </button>
             </> : <>
-              {models.length > 1 && (
+              {!compact && models.length > 1 && (
                 <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
               )}
               {dictation.supported && <div className="dictation-group">
@@ -264,7 +269,7 @@ export default function Composer({
                   onClick={dictation.start}>
                   <MicIcon />
                 </button>
-                <DictationMenu dictation={dictation} />
+                <DictationMenu compact={compact} dictation={dictation} />
               </div>}
             </>}
             {streaming ? (
@@ -279,7 +284,19 @@ export default function Composer({
           </div>
         </div>
       </div>
-      {(dictation.error || dictation.notice) && (
+      {compact && <div className="mobile-composer-settings">
+        {projectPicker}
+        <MobileChatSettings key={contextKey} model={model} models={models} onModelChange={onModelChange}
+          effort={effort} efforts={efforts} onEffortChange={onEffortChange} disabled={streaming || menuDisabled} />
+      </div>}
+      {compact && dictation.error ? (
+        <ComposerSheet label="Nhập giọng nói" onClose={dictation.clearError}>
+          <div className="sheet-mic-error">
+            <p role="alert">{dictation.error}</p>
+            <button type="button" onClick={dictation.clearError}>Đã hiểu</button>
+          </div>
+        </ComposerSheet>
+      ) : (dictation.error || dictation.notice) && (
         <p className={dictation.error ? 'composer-note dictation-note error' : 'composer-note dictation-note'}
           role={dictation.error ? 'alert' : 'status'}>{dictation.error || dictation.notice}</p>
       )}

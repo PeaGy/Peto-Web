@@ -13,12 +13,13 @@ import { useProjects } from '../features/projects/useProjects';
 import ProjectSidebar from '../features/projects/ProjectSidebar';
 import { projectActions, renderProjectDialogs, useProjectDialogs, type ProjectActionsContext } from '../features/projects/projectDialogs';
 import ProjectChatHeader from '../features/projects/ProjectChatHeader';
+import ComposerProjectPicker from '../features/projects/ComposerProjectPicker';
 import { ChatMessage } from '../features/chat/ChatMessage';
 import { disconnectStream, useReplyRecovery } from '../features/chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
-import { MenuIcon } from './navigationIcons';
+import { SidebarIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountSubtitle } from './accountUi';
 import { EFFORTS, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
 import { isReducedMotion, readMotionChoice, type MotionChoice } from '../shared/motion';
@@ -731,6 +732,9 @@ function AppContent() {
   };
   const projectHandlers = projectActions(projectContext);
   const { newProjectChat } = projectHandlers;
+  function openCreateProject() {
+    setProjectEdit('create'); setProjectName(''); setProjectError('');
+  }
 
   // Như Grok: đang ở Trò chuyện mà bấm lại thì mở cuộc mới. Từ Tạo ảnh quay về
   // thì giữ nguyên cuộc đang dở, vì người ta hay qua lại giữa hai tab.
@@ -779,7 +783,7 @@ function AppContent() {
 
       <Sidebar
         projects={<ProjectSidebar key={auth.user?.id} state={projectState} activeId={activeProjectId} conversationId={conversationId} disabled={streaming || deleting || projectBusy}
-          onCreate={() => {setProjectEdit('create');setProjectName('');setProjectError('');}} onNewChat={newProjectChat} onChat={id => void openConversation(id)}
+          onCreate={openCreateProject} onNewChat={newProjectChat} onChat={id => void openConversation(id)}
           onMenu={(item,rect) => setProjectMenu({item,...menuPosition(rect)})} onConversationMenu={(item,rect) => setConversationMenu({item,...menuPosition(rect)})}/>}
         sidebarRef={sidebarRef} sidebarOpen={sidebarOpen} collapsed={collapsed} streaming={streaming} deleting={deleting}
         appInfo={appInfo} auth={auth} view={view} imagineJobs={imagineJobs}
@@ -816,7 +820,7 @@ function AppContent() {
           aria-expanded={sidebarOpen} aria-controls="peto-sidebar"
           onClick={() => setSidebarOpen(true)}
         >
-          <MenuIcon />
+          <SidebarIcon />
         </button>
         {activeProjectId && <ProjectChatHeader name={projectState.projects.find(project=>project.id===activeProjectId)?.name}/>}
         <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={toggleDocumentPanel}><RightPanelIcon /></button>
@@ -904,6 +908,8 @@ function AppContent() {
           <span>Hội thoại nhập vai cũ chỉ còn để xem</span>
           <button type="button" disabled={streaming} onClick={() => newConversation()}>Bắt đầu hội thoại mới</button>
         </div> : <Composer
+          projectPicker={emptyChat && !routedConversationId && !conversationId && <ComposerProjectPicker state={projectState} activeId={activeProjectId}
+            disabled={streaming || deleting || projectBusy} onSelect={id => id ? newProjectChat(id) : newConversation()} onCreate={openCreateProject} />}
           contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId])}
           quote={draftQuote} onRemoveQuote={() => setDraftQuote(null)} onJumpQuote={jumpToMessage}
           draft={draft}

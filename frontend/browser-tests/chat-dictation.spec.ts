@@ -40,6 +40,29 @@ async function installRecognition(page: Page) {
   });
 }
 
+test('điện thoại giải thích khi micro bị chặn và giữ nguyên bản nháp', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile');
+  await mockPeto(page);
+  await page.addInitScript(() => {
+    class BlockedRecognition {
+      onerror?: (event: { error: string }) => void;
+      start() { setTimeout(() => this.onerror?.({ error: 'not-allowed' }), 0); }
+      stop() {}
+      abort() {}
+    }
+    Object.assign(window, { SpeechRecognition: BlockedRecognition });
+  });
+  await page.goto('/');
+  const draft = page.getByLabel('Nhắn cho Peto', { exact: true });
+  await draft.fill('Nháp vẫn còn');
+  await page.getByRole('button', { name: 'Nói để nhập' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Nhập giọng nói', exact: true });
+  await expect(sheet.getByRole('alert')).toContainText('Chưa được phép');
+  await sheet.getByRole('button', { name: 'Đã hiểu' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(draft).toHaveValue('Nháp vẫn còn');
+});
+
 test('menu cạnh micro: chọn micro, tìm và đổi ngôn ngữ, nhớ qua F5, nghe đúng micro và ngôn ngữ đã chọn', async ({ page }) => {
   // Giữ lựa chọn trong localStorage qua F5 (mặc định fixture xóa chúng mỗi lần tải trang).
   await mockPeto(page, { preservePreferences: true });

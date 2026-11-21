@@ -46,6 +46,49 @@ async function expandFolder(page:Page,name:string) {
   return folder;
 }
 
+test('ô nhắn điện thoại giữ một hàng thao tác và mở đúng dự án từ bảng dưới', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile');
+  const state = await projectsFixture(page);
+  await page.goto('/');
+  const composer = page.getByLabel('Nhắn cho Peto', { exact: true });
+  const project = page.getByRole('button', { name: /^Chọn dự án:/ });
+  const add = page.getByRole('button', { name: 'Thêm ảnh và tùy chọn' });
+  for (const width of [320, 390, 430]) {
+    await page.setViewportSize({ width, height: 740 });
+    await expect(project).toBeVisible();
+    const send = (await page.getByRole('button', { name: 'Gửi', exact: true }).boundingBox())!;
+    const plus = (await add.boundingBox())!;
+    expect(Math.abs((plus.y + plus.height / 2) - (send.y + send.height / 2))).toBeLessThan(2);
+    expect((await project.boundingBox())!.y).toBeGreaterThanOrEqual(plus.y + plus.height);
+    await noPageOverflow(page);
+  }
+  await add.click();
+  const addSheet = page.getByRole('dialog', { name: 'Thêm', exact: true });
+  await expect(addSheet).toBeVisible();
+  const box = (await addSheet.boundingBox())!;
+  expect(box.width).toBe(430);
+  expect(box.y + box.height).toBeCloseTo(740, 0);
+  await page.touchscreen.tap(25, 80);
+  await expect(addSheet).toHaveCount(0);
+  await composer.fill('Nháp ngoài dự án');
+  await project.click();
+  const sheet = page.getByRole('dialog', { name: 'Chọn dự án' });
+  const search = sheet.getByRole('searchbox');
+  await search.fill('không khớp');
+  await search.press('Enter');
+  await expect(sheet.getByText('Không tìm thấy dự án.')).toBeVisible();
+  expect(state.sent).toBeNull();
+  await search.fill('phần mềm');
+  await sheet.getByRole('button', { name: 'Báo cáo phần mềm' }).click();
+  await expect(project).toContainText('Báo cáo phần mềm');
+  await project.click();
+  await sheet.getByRole('button', { name: 'Ngoài dự án' }).click();
+  await expect(composer).toHaveValue('Nháp ngoài dự án');
+  await project.click();
+  await sheet.getByRole('button', { name: /Tạo dự án mới/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Tạo dự án' })).toBeVisible();
+});
+
 test('thu gọn mục Dự án trống kéo Gần đây lên và vẫn cho tạo dự án',async({page})=>{
   const state=await projectsFixture(page);state.projects=[];
   await page.goto('/');await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();await openSidebar(page);

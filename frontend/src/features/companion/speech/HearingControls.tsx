@@ -8,7 +8,7 @@
  * Bấm nhanh nút micro là tắt.
  */
 import {
-  useEffect, useId, useRef, useState, useSyncExternalStore,
+  useEffect, useId, useRef, useState,
   type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject,
 } from "react";
 import {
@@ -25,7 +25,7 @@ import {
   type HearingSource,
   type HearingState,
 } from "./hearingEngine";
-import { COMPACT_QUERY } from "../characters/characterView";
+import { useCompact } from '../../../shared/useCompact';
 import { listMicrophones, type Microphone } from "./hearingCapture";
 import { hearingProvider } from "./hearingProviders";
 import { Dropdown, Field } from "./voiceUi";
@@ -350,17 +350,6 @@ export function HearingBar() {
       )}
     </div>
   );
-}
-
-function subscribeCompact(listener: () => void) {
-  const query = window.matchMedia?.(COMPACT_QUERY);
-  query?.addEventListener?.("change", listener);
-  return () => query?.removeEventListener?.("change", listener);
-}
-
-/** Đang ở bố cục điện thoại (cùng mốc 720px với CSS). */
-function useCompact(): boolean {
-  return useSyncExternalStore(subscribeCompact, () => window.matchMedia?.(COMPACT_QUERY)?.matches === true, () => false);
 }
 
 function clock(ms: number): string {
