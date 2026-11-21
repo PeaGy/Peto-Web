@@ -140,7 +140,7 @@ export interface Conversation {
   persona?: Persona;
 }
 
-type ChatEvent =
+export type ChatEvent =
   | { type: 'player_command'; command: PlayerCommand }
   | { type: "meta"; conversation_id: string; effort: string; message?: Message; voice_stream?: boolean }
   | { type: "delta"; text: string }
@@ -161,7 +161,7 @@ type ChatEvent =
   | { type: "stopped" }
   | { type: "done"; message_id?: number | null };
 
-interface ChatHandlers {
+export interface ChatHandlers {
   onPlayerCommand?: (command: PlayerCommand) => Promise<void>;
   onStopped?: () => void;
   onMeta?: (conversationId: string, effort: string, message?: Message, voiceStream?: boolean) => void;
@@ -945,50 +945,103 @@ export async function sendMessage(
         if (!line) continue;
 
         const event = JSON.parse(line.slice(6)) as ChatEvent;
-        if (event.type === 'player_command') {
-          if (payload.mode === 'companion') await handlers.onPlayerCommand?.(event.command);
-        } else if (event.type === "meta") {
-          handlers.onMeta?.(event.conversation_id, event.effort, event.message, event.voice_stream === true);
-        } else if (event.type === "delta") {
-          handlers.onDelta?.(event.text);
-        } else if (event.type === "emotion") {
-          handlers.onEmotion?.(event.emotion, event.offset);
-        } else if (event.type === "replace") {
-          handlers.onReplace?.(event.text ?? "");
-        } else if (event.type === "thinking") {
-          handlers.onThinking?.(event.text, event.step);
-        } else if (event.type === "step") {
-          handlers.onStep?.(event.step);
-        } else if (event.type === "work") {
-          handlers.onWork?.(event.work);
-        } else if (event.type === "reading") {
-          handlers.onReading?.(event.text);
-        } else if (event.type === "search") {
-          handlers.onSearch?.(event.status);
-        } else if (event.type === "sources") {
-          handlers.onSources?.(event.sources);
-        } else if (event.type === 'source_activity') {
-          const web = normalizeWeb(event.web);
-          if (web) handlers.onSourceActivity?.(web);
-        } else if (event.type === 'artifact') {
-          handlers.onArtifact?.(event.artifact);
-        } else if (event.type === 'document_status') {
-          handlers.onDocumentStatus?.(event.text);
-        } else if (event.type === "file_lookup") {
-          handlers.onFileLookup?.(event.text, event.live);
-        } else if (event.type === "connector_lookup") {
-          handlers.onConnectorLookup?.(event.text, event.live);
-        } else if (event.type === "error") {
-          handlers.onError?.(event.message, event.status);
-          ended = true;
-        } else if (event.type === 'stopped') {
-          handlers.onStopped?.();
-          ended = true;
-        } else if (event.type === "done") {
-          handlers.onDone?.(typeof event.message_id === 'number' ? event.message_id : undefined);
-          ended = true;
-        }
+        if (await dispatchChatEvent(event, handlers, payload.mode ?? 'chat')) ended = true;
         if (ended) break;
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+
+/** Chuyển một sự kiện SSE của lượt chat tới đúng handler; true khi đó là sự kiện kết thúc (done, error, stopped).
+ * Dùng chung cho luồng của tab gửi (sendMessage) và luồng đồng bộ trực tiếp từ tab khác (watchChatLive). */
+export async function dispatchChatEvent(event: ChatEvent, handlers: ChatHandlers, mode: ConversationMode = 'chat'): Promise<boolean> {
+  if (event.type === 'player_command') {
+    if (mode === 'companion') await handlers.onPlayerCommand?.(event.command);
+  } else if (event.type === "meta") {
+    handlers.onMeta?.(event.conversation_id, event.effort, event.message, event.voice_stream === true);
+  } else if (event.type === "delta") {
+    handlers.onDelta?.(event.text);
+  } else if (event.type === "emotion") {
+    handlers.onEmotion?.(event.emotion, event.offset);
+  } else if (event.type === "replace") {
+    handlers.onReplace?.(event.text ?? "");
+  } else if (event.type === "thinking") {
+    handlers.onThinking?.(event.text, event.step);
+  } else if (event.type === "step") {
+    handlers.onStep?.(event.step);
+  } else if (event.type === "work") {
+    handlers.onWork?.(event.work);
+  } else if (event.type === "reading") {
+    handlers.onReading?.(event.text);
+  } else if (event.type === "search") {
+    handlers.onSearch?.(event.status);
+  } else if (event.type === "sources") {
+    handlers.onSources?.(event.sources);
+  } else if (event.type === 'source_activity') {
+    const web = normalizeWeb(event.web);
+    if (web) handlers.onSourceActivity?.(web);
+  } else if (event.type === 'artifact') {
+    handlers.onArtifact?.(event.artifact);
+  } else if (event.type === 'document_status') {
+    handlers.onDocumentStatus?.(event.text);
+  } else if (event.type === "file_lookup") {
+    handlers.onFileLookup?.(event.text, event.live);
+  } else if (event.type === "connector_lookup") {
+    handlers.onConnectorLookup?.(event.text, event.live);
+  } else if (event.type === "error") {
+    handlers.onError?.(event.message, event.status);
+    return true;
+  } else if (event.type === 'stopped') {
+    handlers.onStopped?.();
+    return true;
+  } else if (event.type === "done") {
+    handlers.onDone?.(typeof event.message_id === 'number' ? event.message_id : undefined);
+    return true;
+  }
+  return false;
+}
+
+/** Một sự kiện của lượt chat đang chạy ở tab hay thiết bị khác (features/chat/live.py). */
+export interface LiveEnvelope {
+  request_id: string;
+  conversation_id: string;
+  event: ChatEvent | { type: 'live_end' } | { type: 'live_partial' };
+}
+
+/**
+ * Đồng bộ trực tiếp tab Trò chuyện: một luồng SSE cho cả tài khoản. Trả về khi luồng đóng (máy chủ khởi động lại, mạng
+ * rớt, tab đọc chậm bị ngắt); người gọi tự kết nối lại. ``onReady`` chạy mỗi lần kết nối xong, trước phần phát lại.
+ */
+export async function watchChatLive(handlers: { onReady: () => void; onLive: (envelope: LiveEnvelope) => void },
+  signal: AbortSignal): Promise<void> {
+  const response = await fetch('/api/chat/live', { signal, headers: { Accept: 'text/event-stream' } });
+  if (response.status === 401) throw new UnauthorizedError();
+  if (!response.ok || !response.body) throw new Error(`Không mở được đồng bộ trực tiếp (${response.status}).`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const raw = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf('\n\n');
+        const line = raw.split('\n').find((item) => item.startsWith('data: '));
+        if (!line) continue;
+        const payload = JSON.parse(line.slice(6)) as { type: string } & Partial<LiveEnvelope>;
+        if (payload.type === 'live_ready') handlers.onReady();
+        else if (payload.type === 'live_full') throw new Error('Tài khoản đang mở quá nhiều tab Peto.');
+        else if (payload.type === 'live' && payload.request_id && payload.conversation_id && payload.event) {
+          handlers.onLive(payload as LiveEnvelope);
+        }
       }
     }
   } finally {

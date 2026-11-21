@@ -127,7 +127,8 @@ Short map; the full sections are in the note files named in each line.
   inside `admission.slot(owner)`, so throttling happens before any message is written; ownership is re-checked inside
   the slot; SQLite writes are shielded from cancellation; failures still persist partial text as `incomplete`; there
   is no automatic retry of a paid turn; Stop is acknowledged through `POST /api/chat/stop`. Background tasks, the
-  voice relay queue and the Agent device codes are process-local, so the backend runs as a single process. Details:
+  voice relay queue, the Agent device codes and the live Chat sync hub (`features/chat/live.py`) are process-local, so
+  the backend runs as a single process. Details:
   `docs/notes/chat.md` ("Chat request lifecycle").
 - **Configuration and database.** Environment variables are read in `core/config.py` (numbers clamped) and documented
   in `.env.example`; the two exceptions are listed in `docs/notes/admin-ops.md`. SQLite via aiosqlite in WAL mode;

@@ -144,3 +144,14 @@ async def delete_conversation(
     if not await db.delete_conversation(owner, conversation_id):
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
     return {"deleted": True}
+
+
+@router.get('/api/chat/live')
+async def chat_live(owner: str = Depends(current_owner)):
+    """Đồng bộ trực tiếp tab Trò chuyện (features/chat/live.py): một luồng SSE cho mọi hội thoại của tài khoản."""
+    from fastapi.responses import StreamingResponse
+    from features.chat import live
+    if live.full(owner):
+        raise HTTPException(429, 'Tài khoản đang mở quá nhiều tab Peto. Đóng bớt tab rồi tải lại trang.')
+    return StreamingResponse(live.stream(owner), media_type='text/event-stream',
+                             headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})

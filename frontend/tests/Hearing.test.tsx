@@ -21,6 +21,8 @@ vi.mock('../src/shared/api/api', async (original) => ({
   deleteConversation: vi.fn(),
   getCompanionMemory: vi.fn(),
   listCompanionCards: vi.fn(),
+  // Đồng bộ trực tiếp tab Trò chuyện mở /api/chat/live khi App vào tab Trò chuyện; các bài ở đây đếm fetch của nguồn nghe.
+  watchChatLive: vi.fn(() => new Promise(() => {})),
 }));
 
 // jsdom không dựng được Live2D thật; bộ kiểm tra micro vẫn phải chờ sân khấu sẵn sàng.
