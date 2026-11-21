@@ -40,6 +40,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] Custom instructions with real models after the 2026-11-21 frame change: the owner's kawaii text (greeting,
+  kaomoji, sign-off) followed by Grok, Luna and Haiku on casual messages, while a technical question stays exact and
+  identity rules hold (still Peto, an AI, no model name) — `accounts-memory.md`, "User profile".
 - [ ] Live sync between two real devices on the live site, behind Cloudflare: the long `GET /api/chat/live` stream
   stays open past 100 s idle (pings), text arrives as it streams (not buffered), a phone that sleeps reconnects and
   catches up, and the 20-tab limit is never hit by normal use (mock stack in two tabs only) — `chat.md`, "Live sync

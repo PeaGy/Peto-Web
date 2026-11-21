@@ -141,9 +141,22 @@ from `users`, which is overwritten from Discord/Google/GitHub on every login: fu
 Peto should call them, an occupation code from a fixed server-side list, and free-form
 instructions (1500 chars). `features.chat.prompt_context._build_system_prompt` re-reads it on **every** turn and
 appends `persona.build_profile_context` after the memory block, so an edit applies to the
-very next message. Instructions are fenced with `USER_INSTRUCTIONS_START/END`, copies of
-those markers are stripped from user text, and the block states it cannot override the
-rules above it. Validation errors are Vietnamese 400s, not Pydantic's English 422s.
+very next message. Instructions are fenced with `USER_INSTRUCTIONS_START/END` and copies of
+those markers are stripped from user text. Validation errors are Vietnamese 400s, not Pydantic's English 422s.
+
+**How strongly instructions apply (since 2026-11-21, like ChatGPT and Claude custom instructions).** The owner's
+kawaii instructions were ignored: Grok's own reasoning said "The system rules take precedence", because the old frame
+said to follow them only "when compatible with system rules", "Context boundaries" called them preferences that
+cannot override product policy, the default Personality and "without forcing slang or emojis" read as system rules,
+and the memory block told it to follow saved notes on how to answer. Now `prompts.context.PREFERENCES_RULE` says the
+instructions win over the default personality, casual-chat examples, style guidance and saved memory notes for tone,
+persona, greetings and sign-offs, emojis and kaomoji, length, formatting, language and forms of address. Only safety,
+honesty about being an AI, accuracy, privacy, not naming the model and tool capabilities still apply; a conflicting
+part is dropped and the rest followed; a requested persona changes how Peto sounds, not who it is; instructions grant
+no permissions and never justify refusing or weakening an answer. Matching edits: "## Personality" opens with "These
+are defaults…", "Context boundaries" says preferences may restyle how Peto talks but never grant permissions, the core
+emoji line says "…they have not asked for", and the memory block yields to profile preferences. Tests:
+`tests/test_custom_instructions.py`.
 
 `ProfileSettings.tsx` ties labels to inputs with `htmlFor` instead of wrapping them:
 every `<label>` is `user-select: none` for tap handling, and iOS Safari can refuse to
@@ -318,6 +331,12 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
 # Dated log (newest first)
+
+## Custom instructions win over the default personality (2026-11-21, branch `custom-instructions-priority`, not merged)
+
+See "How strongly instructions apply" under "User profile". Not yet tried with a real model: the live site runs the
+old prompt until deployed; the plan is to set the owner's kawaii text on a test account and chat with Grok there.
+
 
 ## Delete account (G5) (2026-11-20, branch `g5-delete-account`, not merged)
 
