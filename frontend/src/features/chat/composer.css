@@ -192,7 +192,8 @@
   width: calc(100% - 8px); height: 36px; margin: 2px 4px 6px; padding: 0 10px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px;
 }
-.dictation-search:focus { outline: none; border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+.dictation-search:focus,
+.sheet-projects input:focus { outline: none; border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
 .dictation-search::placeholder { color: var(--muted); }
 
 /* Project choices are shared between the desktop picker and the mobile sheet. */
