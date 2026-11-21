@@ -40,6 +40,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] Live sync between two real devices on the live site, behind Cloudflare: the long `GET /api/chat/live` stream
+  stays open past 100 s idle (pings), text arrives as it streams (not buffered), a phone that sleeps reconnects and
+  catches up, and the 20-tab limit is never hit by normal use (mock stack in two tabs only) — `chat.md`, "Live sync
+  of the Chat tab across tabs and devices".
 - [ ] Voice input with real speech recognition: Vietnamese accuracy in Chrome and Edge on Windows, Safari on iPhone
   (permission prompt from the mic button, words while speaking) and Chrome on Android (only a fake recognition class
   has run) — `chat.md`, "Voice input in the composer (micro)".

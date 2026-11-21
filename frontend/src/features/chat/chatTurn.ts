@@ -3,17 +3,16 @@ import type { NavigateFunction } from 'react-router';
 import { chatRoute } from '../../app/routes';
 import {
   UnauthorizedError, getMessages, sendMessage, stopChat,
-  type ChatAttachment, type ChatSelection, type Message, type OutgoingAttachment, type StopChatResult, type WebSearchMode, type WorkStep,
+  type ChatAttachment, type ChatSelection, type Message, type OutgoingAttachment, type StopChatResult, type WebSearchMode,
 } from '../../shared/api/api';
 import { fileToBase64, isImageFile } from './attachments';
 import type { EditDraft } from './chatDrafts';
 import { focusComposerIfOwned } from './ChatReplyStatus';
 import { messageText } from './draftLinks';
-import { normalizeWeb } from './sourceActivity';
+import { withArtifact, withSourceActivity, withSources, withStep, withThinking, withWork } from './replyEvents';
 import type { useChatDrafts } from './useChatDrafts';
 import type { useChatSelection } from './useChatSelection';
 import { networkInterrupted, type useReplyRecovery } from './useReplyRecovery';
-import { safeSources } from './WebSources';
 import { closeWork } from './WorkTimeline';
 
 // Gửi một lượt chat và Dừng nó. Tách khỏi App.tsx (G3.3, 13/11/2026) mà giữ nguyên thân hàm: App dựng `ChatTurnContext`
@@ -36,6 +35,8 @@ export type ChatTurnContext = Pick<Drafts, 'draft' | 'draftFiles' | 'editDrafts'
   replyRef: RefObject<ActiveReply | null>;
   retryRevision: RefObject<ChatRevision | undefined>;
   stopTicketRef: RefObject<StopTicket | null>;
+  /** Mã các lượt tab này tự gửi; đồng bộ trực tiếp (useLiveChat) không vẽ lại chúng lần nữa. */
+  ownRequests: RefObject<Set<string>>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   viewRef: RefObject<string>;
   activeProjectId: string | null;
@@ -92,6 +93,7 @@ export async function sendChatTurn(ctx: ChatTurnContext, revision?: ChatRevision
   const previousEdit = revision?.inlineEdit ? editDrafts.find(edit => edit.messageId === revision.target.id) : undefined;
   if (previousEdit && !canResumeEdit(previousEdit)) return;
   const requestId = previousEdit?.requestId ?? crypto.randomUUID();
+  ctx.ownRequests.current.add(requestId);
   const pendingEdit = revision?.inlineEdit && revision.target.id
     ? { messageId: revision.target.id, text: revision.text, requestId } : undefined;
   if (pendingEdit) saveEdit(pendingEdit);
@@ -162,13 +164,7 @@ export async function sendChatTurn(ctx: ChatTurnContext, revision?: ChatRevision
       return last?.role === "assistant" ? [...prev.slice(0, -1), change(last)] : prev;
     });
   };
-  // Bước tới sau khi bấm Dừng thì bỏ: nhật ký đã chốt ở lúc dừng.
-  const updateSteps = (change: (steps: WorkStep[]) => WorkStep[]) => {
-    if (controller.signal.aborted) return;
-    updateReply(last => ({
-      ...last, work: { ms: 0, ...last.work, steps: change((last.work?.steps ?? []).filter(step => step.kind !== 'wait')) },
-    }));
-  };
+  // Bước tới sau khi bấm Dừng thì bỏ: nhật ký đã chốt ở lúc dừng (các handler bên dưới kiểm controller.signal).
 
   const acceptMessage = (id: string, _usedEffort: string, storedMessage?: Message) => {
     if (session !== authVersion.current || (accepted && activeId === id)) return;
@@ -225,38 +221,24 @@ export async function sendChatTurn(ctx: ChatTurnContext, revision?: ChatRevision
         onStopped: () => { serverStopped = true; },
         onDelta: (chunk) => updateReply(last => ({ ...last, content: last.content + chunk })),
         onReplace: (rest) => updateReply(last => ({ ...last, content: rest })),
-        // Nhật ký "Đang làm" do máy chủ dựng (features/chat/work_log.py): mỗi bước tới là thêm hoặc thay theo id.
-        onStep: (step) => updateSteps(steps => {
-          const index = steps.findIndex(item => item.id === step.id);
-          if (index < 0) return [...steps, step];
-          const next = [...steps];
-          next[index] = { ...step, summary: step.summary ?? steps[index].summary };
-          return next;
-        }),
-        onThinking: (piece, id) => updateSteps(steps => steps.map(step => step.id === id ? { ...step, summary: (step.summary ?? '') + piece } : step)),
+        // Nhật ký "Đang làm" do máy chủ dựng (features/chat/work_log.py); cách cập nhật dùng chung với tab nhận lượt
+        // của thiết bị khác (replyEvents.ts).
+        onStep: (step) => { if (!controller.signal.aborted) updateReply(last => withStep(last, step)); },
+        onThinking: (piece, id) => { if (!controller.signal.aborted) updateReply(last => withThinking(last, piece, id)); },
         onWork: (work) => {
           if (controller.signal.aborted) return;
           finalWork = true;
-          const { web: rawWeb, ...rest } = work;
-          const web = normalizeWeb(rawWeb);
-          updateReply(last => ({ ...last, work: { ...rest, ...(web ? { web } : {}) } }));
+          updateReply(last => withWork(last, work));
         },
         onSources: (sources) => {
-          if (!controller.signal.aborted) updateReply(last => ({ ...last, sources: safeSources(sources) }));
+          if (!controller.signal.aborted) updateReply(last => withSources(last, sources));
         },
         onSourceActivity: (web) => {
-          if (!controller.signal.aborted) updateReply(last => ({ ...last, work: { ms: 0, steps: [], ...last.work, web } }));
+          if (!controller.signal.aborted) updateReply(last => withSourceActivity(last, web));
         },
         onArtifact: (artifact) => {
           if (controller.signal.aborted) return;
-          // Peto sửa cùng một tệp vài lần trong một lượt: bản mới thay thẻ của bản trước ngay tại chỗ, như máy chủ lưu.
-          updateReply(last => {
-            const artifacts = [...(last.artifacts || [])];
-            const index = artifacts.findIndex(item => item.id === artifact.id);
-            if (index >= 0) artifacts[index] = artifact;
-            else artifacts.push(artifact);
-            return { ...last, artifacts };
-          });
+          updateReply(last => withArtifact(last, artifact));
           if (isSelectedReply(reply)) setDocumentRefresh(value => value + 1);
         },
         onError: (message, status) => {

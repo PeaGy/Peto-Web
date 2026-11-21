@@ -21,7 +21,7 @@ from features.companion import cards as companion_cards
 from features.companion import quotes as companion_quotes
 import storage as db
 from storage import chat_turns, chat_quotes, connection as db_connection
-from features.chat import turn_control
+from features.chat import live, turn_control
 from features.chat import context as chat_context, context_budget, request_context, client_environment
 from shared import chat_history_tools
 from features.documents import reader as document_reader
@@ -954,7 +954,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             await companion_memory.remember(owner, MAX_HISTORY_MESSAGES)
 
     return StreamingResponse(
-        controlled_stream(),
+        # Tab Trò chuyện: phát lượt này cho các tab khác của cùng tài khoản (features/chat/live.py).
+        live.relay(owner, request_id if setup.mode == "chat" else None, controlled_stream()),
         background=BackgroundTask(name_after_response),
         media_type="text/event-stream",
         headers={

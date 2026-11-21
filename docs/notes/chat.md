@@ -206,6 +206,38 @@ words appearing while you speak. Server transcription on the owner's OpenAI key 
   recognition class recording the language and the track's microphone; menu screenshot on PC and mobile).
 - Tests: `tests/chatDictation.test.tsx` (fake `SpeechRecognition`). Three Playwright baselines gained the mic icon.
 
+### Live sync of the Chat tab across tabs and devices
+
+Owner's request (2026-11-21), modelled on Claude: two devices with the same conversation open both see a turn as it
+runs, the question, "Đang làm", the text streaming in, sources and files. ChatGPT only shows the other device's reply
+once it is done; Companion AIRI's sync (`airi_sync.py`) pushes finished messages only, because its brain runs in the
+browser. Chat replies are made on the server, so the server can relay every event.
+
+- **Server** (`features/chat/live.py`): `relay` wraps the `POST /api/chat` stream of `mode == "chat"` turns and copies
+  every SSE event from `meta` on (the user message is saved and the conversation known by then; earlier "reading"
+  events stay with the sending tab) into an in-process `Hub`, keyed by owner. `GET /api/chat/live` is one SSE stream
+  per tab for the whole account: `live_ready`, then a replay of every running turn from its start, then
+  `{"type": "live", "request_id", "conversation_id", "event"}` frames, with a `: ping` every 20 s (Cloudflare drops
+  idle connections after 100 s). A turn is kept for replay until `done`, `error` or `stopped`; if the sending stream
+  closes without one (tab closed, server stop), `live_end` is sent. Limits: 20 tabs per account (429), 2,000 queued
+  events per tab (a slow tab is dropped and reconnects), 4 MB replay per turn (a longer one replays as
+  `live_partial`). A failing publish is logged and never breaks the turn. Process memory only, like the turn registry
+  and the queues: Peto Web runs as one process. Nothing new is stored; no message text is logged.
+- **Browser** (`features/chat/useLiveChat.ts`): connects only while the Chat tab is shown, reconnects with backoff
+  (1, 2, 5, 10, 30 s). Turns this tab sent itself (`ownRequests`, filled by `sendChatTurn`) are skipped. For a turn
+  in the open conversation it loads the saved history up to that turn's question (the server saves the reply as it
+  goes, so the history is cut at the question id from `meta`), then builds the reply from the events with the same
+  helpers as the sending tab (`replyEvents.ts`: steps, thinking, work, sources, source activity, artifacts). When the
+  turn ends it reads the saved conversation again. A turn in another conversation only refreshes the conversation list
+  at its start and end, so a chat started on the other device appears at once. After a reconnect, a turn not replayed
+  within 0.8 s is taken as finished and read again.
+- **UI**: the receiving tab shows the turn exactly like the sending one (live bubble, "Đang làm" timer, Dừng in place
+  of Gửi). Dừng there stops the turn through `POST /api/chat/stop` with the turn's `request_id`, and every tab then
+  shows "Đã dừng". Sending is off while another device's turn runs in this conversation; switching conversations is
+  not blocked.
+- Tests: `tests/test_chat_live.py` (hub replay, owner isolation, Companion turns not shared, limits, `live_end`, a
+  broken publish, a real chat turn seen by another subscriber), `tests/liveChat.test.tsx`.
+
 ### Chat request lifecycle (`POST /api/chat`)
 
 This is the most intricate part of the codebase. The endpoint returns a `StreamingResponse`
@@ -530,6 +562,16 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Live sync of the Chat tab across devices (2026-11-21, branch `chat-live-sync`, not merged)
+
+See "Live sync of the Chat tab across tabs and devices". Checked with two tabs of one account on the mock stack (real
+backend serving the build): a turn sent in tab 1 showed in tab 2 with the question, the thinking steps and Dừng;
+Dừng in tab 2 stopped it in both; a new conversation from tab 1 appeared in tab 2's list and, opened mid-turn, showed
+the running steps; tab 2 asking back showed in tab 1; both tabs ended with identical messages, no duplicates, no
+console or server errors. The owner had first offered to reverse-engineer claude.ai with the REA skill; not needed,
+since the server side cannot be seen from a browser and Peto's design follows from its own streaming.
+
 
 ## Dictation: menu placement and Claude-style listening bar (2026-11-20, branch `g5-dictation-ui`, not merged)
 

@@ -53,6 +53,7 @@ import DocumentPanel, { RightPanelIcon } from '../features/documents/DocumentPan
 import { takeConnectorResult } from '../features/connectors/connectorApi';
 import SourcesPanel from '../features/chat/SourcesPanel';
 import { sendChatTurn, stopChatTurn, type ActiveReply, type ChatRevision, type ChatTurnContext, type StopTicket } from '../features/chat/chatTurn';
+import { useLiveChat } from '../features/chat/useLiveChat';
 import { QuoteSelection } from '../features/chat/QuotedFollowup';
 import { validReplyVariants } from '../features/chat/replyVariants';
 import type { DraftQuote } from '../features/chat/chatDrafts';
@@ -163,7 +164,9 @@ function AppContent() {
   // Hội thoại nhập vai cũ đang mở: chế độ nhập vai bỏ ngày 2026-10-18, các hội thoại ấy chỉ còn để xem.
   const [legacyRoleplay, setLegacyRoleplay] = useState(false);
   const readOnly = archived || legacyRoleplay;
-  const replyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
+  const localReplyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
+  // Mã các lượt tab này tự gửi: đồng bộ trực tiếp (useLiveChat) bỏ qua chúng.
+  const ownRequests = useRef(new Set<string>());
   const rootContext = newChatContext(location.state, auth?.user?.id ?? '');
   const draftConversationId = view === 'chat' ? routedConversationId : conversationId;
   const { draft, setDraft, draftFiles, setDraftFiles, draftQuote, setDraftQuote, editDrafts, saveEdit, resolveEdit,
@@ -359,6 +362,16 @@ function AppContent() {
   const refreshProjectChats = projectState.refreshChats;
   const refreshConversations = useRefreshConversations(conversationList, { handleUnauthorized, refreshProjects, refreshProjectChats,
     activeProjectRef, setError });
+  // Lượt chat chạy ở tab hay thiết bị khác của cùng tài khoản hiện ở đây, chữ chạy dần (features/chat/live.py). Chỉ mở
+  // kết nối ở tab Trò chuyện; quay lại tab này thì máy chủ phát lại ngay lượt đang chạy.
+  const live = useLiveChat({
+    enabled: Boolean(auth?.authenticated) && view === 'chat', conversationId: view === 'chat' ? conversationId : null, loadingConversation,
+    localBusy: streaming, ownRequests, setMessages, refreshConversations, onUnauthorized: handleUnauthorized,
+    onDocument: () => setDocumentRefresh(value => value + 1),
+  });
+  const remoteReply = live.remote;
+  const replyVisible = localReplyVisible || Boolean(remoteReply);
+  const replyStopping = remoteReply ? remoteReply.stopping : stopping;
 
   const recovery = useReplyRecovery({
     scope: auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
@@ -643,10 +656,10 @@ function AppContent() {
     emptyChat, handleUnauthorized, isSelectedReply, loadFailed, loadingConversation, messages, navigate, nearBottom,
     readOnly, recovery, refreshConversations, replyRef, resolveEdit, retryRevision, saveEdit, setConversationId,
     setDocumentRefresh, setEditTarget, setError, setMessages, setNotice, setRetryAvailable, setShowJump,
-    setSourcesIndex, setStopping, setStreaming, snapshotDraft, stopTicketRef, textareaRef, viewRef, webSearch,
+    setSourcesIndex, setStopping, setStreaming, snapshotDraft, stopTicketRef, textareaRef, viewRef, webSearch, ownRequests,
   };
   const submit = (revision?: ChatRevision) => sendChatTurn(turn, revision);
-  const stop = () => stopChatTurn(turn);
+  const stop = () => remoteReply ? void live.stopRemote() : stopChatTurn(turn);
 
   async function changeConversation(item: Pick<Conversation, 'id' | 'project_id'>, change: {title?: string; pinned?: boolean; archived?: boolean}) {
     if (metadataBusy || (change.archived !== undefined && abortRef.current)) return;
@@ -707,7 +720,7 @@ function AppContent() {
     }
     return controls;
   }
-  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
+  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !remoteReply && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
 
   // Chừa đủ chỗ cho menu rộng 196px và cao tối đa ~250px (mục 44px trên màn cảm ứng), cách mép 8px.
   function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-204)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-262))};}
@@ -794,7 +807,7 @@ function AppContent() {
         contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId])}
         onFiles={addFiles}>
       <main className={emptyChat ? "chat empty-state" : "chat"} aria-label="Trò chuyện với Peto">
-        <ChatReplyStatus busy={replyVisible} stopping={stopping} scope={JSON.stringify([auth.user?.id, conversationId])} last={messages.at(-1)} />
+        <ChatReplyStatus busy={replyVisible} stopping={replyStopping} scope={JSON.stringify([auth.user?.id, conversationId])} last={messages.at(-1)} />
         <div className="chat-tools">
         <button
           type="button"
@@ -843,7 +856,7 @@ function AppContent() {
                 <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') { e.preventDefault(); cancelEdit(); }}}/>
                 <div><button type="button" onClick={cancelEdit}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
               </form> : undefined}
-              live={replyVisible && !stopping && index === messages.length - 1}
+              live={replyVisible && !replyStopping && index === messages.length - 1}
               writing={replyVisible && index === messages.length - 1}
               // Lượt cuối đã dừng/hỏng và được lưu: chỉ thử lại khi người dùng bấm, bằng request ID mới.
               onRetry={(message.stopped || (message.id && message.status === 'incomplete' && message.turn_state !== 'running'))
@@ -898,8 +911,8 @@ function AppContent() {
           files={draftFiles}
           onAddFiles={addFiles}
           onRemoveFile={removeDraftFile}
-          streaming={streaming}
-          stopping={stopping}
+          streaming={streaming || Boolean(remoteReply)}
+          stopping={replyStopping}
           canSend={canSend}
           onSubmit={submit}
           onStop={stop}
