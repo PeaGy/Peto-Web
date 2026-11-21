@@ -13,7 +13,9 @@ export function ComposerSheet({ label, onClose, children }: {
   return <dialog ref={ref} className="composer-sheet" aria-label={label}
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => {
-      if (event.target === event.currentTarget && event.clientY < event.currentTarget.getBoundingClientRect().top) onClose();
+      if (event.target !== event.currentTarget) return;
+      const box = event.currentTarget.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX >= box.right || event.clientY < box.top || event.clientY >= box.bottom) onClose();
     }}>
     <button type="button" className="sheet-handle" aria-label="Đóng bảng" onClick={onClose}
       onPointerDown={event => {

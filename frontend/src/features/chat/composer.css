@@ -194,3 +194,20 @@
 }
 .dictation-search:focus { outline: none; border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
 .dictation-search::placeholder { color: var(--muted); }
+
+/* Project choices are shared between the desktop picker and the mobile sheet. */
+.sheet-heading, .sheet-project-list p { color: var(--muted); font-size: 14px; }
+.sheet-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: var(--text);
+  text-align: start; font: inherit; overflow-wrap: anywhere; cursor: pointer;
+}
+.sheet-option small { display: block; font-size: 13px; color: var(--muted); }
+.sheet-option[aria-pressed="true"]::after { content: '✓' / ''; flex: none; font-size: 18px; color: var(--accent); }
+.sheet-projects { display: flex; flex-direction: column; height: min(46dvh, 380px); }
+.sheet-projects input {
+  width: 100%; padding: 10px 6px; border: 0; border-bottom: 1px solid var(--line);
+  background: transparent; color: var(--text); font: inherit; font-size: 16px;
+}
+.sheet-project-list { flex: 1; overflow: auto; overscroll-behavior: contain; }
+.sheet-project-list p { margin-inline: 6px; }

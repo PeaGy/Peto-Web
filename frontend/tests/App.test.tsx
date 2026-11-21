@@ -75,6 +75,20 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+it('chọn dự án từ dưới ô nhập desktop và lấy lại nháp khi quay về ngoài dự án', async () => {
+  vi.mocked(projectApi.listProjects).mockResolvedValue([{ id: 'P', name: 'Báo cáo', created_at: 1, updated_at: 1 }]);
+  await openApp();
+  const draft = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+  fireEvent.change(draft, { target: { value: 'Nháp cá nhân' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Chọn dự án: Dự án' }));
+  const picker = screen.getByRole('dialog', { name: 'Chọn dự án' });
+  fireEvent.click(within(picker).getByRole('button', { name: 'Báo cáo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Chọn dự án: Báo cáo' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Chọn dự án' })).getByRole('button', { name: 'Ngoài dự án' }));
+  await waitFor(() => expect(draft.value).toBe('Nháp cá nhân'));
+  expect(api.sendMessage).not.toHaveBeenCalled();
+});
+
 describe('soạn tiếp trong lúc Peto trả lời', () => {
   it('giữ chữ qua xác nhận tin đầu đến muộn, Enter không gửi thêm, hoàn tất không tự gửi', async () => {
     const done = deferred<void>();
@@ -2443,12 +2457,12 @@ describe('Chọn model', () => {
     return vi.mocked(api.sendMessage).mock.calls[0][0];
   };
 
-  it('nút Peto bên trái nút Gửi đổi sang 6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
+  it('nút model dưới ô nhập đổi sang 6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
     signIn(MODELS);
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
     const trigger = screen.getByRole('button', { name: 'Model: Peto' });
-    expect(trigger.closest('.composer-send')?.lastElementChild?.getAttribute('aria-label')).toBe('Gửi');
+    expect(trigger.closest('.desktop-composer-settings')).not.toBeNull();
     fireEvent.click(trigger);
     const menu = await screen.findByRole('menu', { name: 'Model' });
     expect(within(menu).getByRole('menuitemradio', { name: /Peto/ }).getAttribute('aria-checked')).toBe('true');

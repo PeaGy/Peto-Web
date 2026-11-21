@@ -16,10 +16,7 @@
     display: inline;
     vertical-align: middle;
     margin: 0;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(24px, 6.6vw, 31px);
     line-height: 1.25;
-    font-weight: 500;
     overflow-wrap: anywhere;
   }
   .chat > .chat-tools > button:is(.chat-menu, .document-panel-toggle) { background: transparent; box-shadow: none; backdrop-filter: none; }
@@ -53,8 +50,8 @@
   .mobile-composer-settings > button :is(span, strong) {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .mobile-project-trigger { max-width: 43%; }
-  .mobile-project-trigger svg { flex: none; color: var(--muted); }
+  .composer-project-trigger { max-width: 43%; }
+  .composer-project-trigger svg { flex: none; color: var(--muted); }
   .mobile-model-trigger { margin-inline-start: auto; }
   .mobile-model-trigger strong { font-weight: 500; }
   .mobile-model-trigger span { color: var(--muted); }
@@ -81,22 +78,7 @@
   .composer-sheet h2 { margin: 0 6px 8px; font-size: 16px; font-weight: 600; }
   .composer-sheet .composer-options strong, .composer-sheet .effort-option { font-size: 15px; }
   .composer-sheet .composer-options small { font-size: 13px; }
-  .sheet-heading, .sheet-project-list p { color: var(--muted); font-size: 14px; }
   .sheet-heading { margin: 6px 0 0; padding: 10px 6px 3px; border-top: 1px solid var(--line); }
-  .sheet-option {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
-    min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: var(--text);
-    text-align: start; font: inherit; overflow-wrap: anywhere; cursor: pointer;
-  }
-  .sheet-option small { display: block; font-size: 13px; color: var(--muted); }
-  .sheet-option[aria-pressed="true"]::after { content: '✓' / ''; flex: none; font-size: 18px; color: var(--accent); }
-  .sheet-projects { display: flex; flex-direction: column; height: min(46dvh, 380px); }
-  .sheet-projects input {
-    width: 100%; padding: 10px 6px; border: 0; border-bottom: 1px solid var(--line);
-    background: transparent; color: var(--text); font: inherit; font-size: 16px;
-  }
-  .sheet-project-list { flex: 1; overflow: auto; overscroll-behavior: contain; }
-  .sheet-project-list p { margin-inline: 6px; }
   .sheet-mic-error { padding: 0 6px 8px; }
   .sheet-mic-error p { margin: 4px 0 16px; }
   .sheet-mic-error button {

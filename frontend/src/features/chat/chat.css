@@ -70,7 +70,7 @@
   gap: 8px;
   max-width: 440px;
 }
-.welcome h1 { color: var(--text); font-size: 22px; margin: 8px 0 0; text-wrap: balance; }
+.welcome h1 { color: var(--text); font-size: 22px; font-weight: 600; margin: 8px 0 0; text-wrap: balance; }
 
 /* Cuộc trò chuyện còn trống: lời chào và ô nhắn đứng chung một khối giữa màn
    hình như Claude, hơi lệch lên trên cho cân mắt. Canh
@@ -81,9 +81,11 @@
   .chat.empty-state { padding-bottom: 10vh; }
   .chat.empty-state > .messages { flex: none; overflow: visible; margin-top: auto; }
   .chat.empty-state .chat-dock > .composer-wrap { margin-bottom: auto; }
-  .chat.empty-state .welcome { flex-direction: row; gap: 14px; max-width: 100%; text-align: left; }
-  .chat.empty-state .welcome .avatar { width: 44px; height: 44px; }
-  .chat.empty-state .welcome h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
+  .chat.empty-state .welcome { flex-direction: row; gap: 10px; max-width: min(656px, 100%); text-align: left; }
+  .chat.empty-state .welcome .avatar { flex: none; width: 34px; height: 34px; }
+  .chat.empty-state .welcome h1 {
+    margin: 0; font-size: 30px; letter-spacing: -0.01em; overflow-wrap: anywhere;
+  }
   .chat.empty-state .composer-note { text-align: center; }
 }
 

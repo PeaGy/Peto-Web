@@ -63,7 +63,7 @@ interface ComposerProps {
   onToggleWeb: () => void;
   /** Menu dấu cộng tắt khi đang trả lời hoặc khi người dùng đang ở tab khác. */
   menuDisabled: boolean;
-  /** Model cho tin sắp gửi, chọn ở nút bên trái nút Gửi. Dưới hai model thì không hiện nút. */
+  /** Model dùng cho tin sắp gửi. */
   model: string;
   models: ModelOption[];
   onModelChange: (value: string) => void;
@@ -242,8 +242,6 @@ export default function Composer({
             />
             <ComposerMenu compact={compact} disabled={menuDisabled} webDisabled={webSearch === "off"}
               onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
-
-            {!compact && <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />}
           </div>
 
           <div className="composer-send">
@@ -261,9 +259,6 @@ export default function Composer({
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
               </button>
             </> : <>
-              {!compact && models.length > 1 && (
-                <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
-              )}
               {dictation.supported && <div className="dictation-group">
                 <button type="button" className="dictation-mic" aria-label="Nói để nhập" data-tip="Nói để nhập"
                   onClick={dictation.start}>
@@ -284,11 +279,17 @@ export default function Composer({
           </div>
         </div>
       </div>
-      {compact && <div className="mobile-composer-settings">
+      <div className={compact ? 'mobile-composer-settings' : 'desktop-composer-settings'}>
         {projectPicker}
-        <MobileChatSettings key={contextKey} model={model} models={models} onModelChange={onModelChange}
+        {compact ? <MobileChatSettings key={contextKey} model={model} models={models} onModelChange={onModelChange}
           effort={effort} efforts={efforts} onEffortChange={onEffortChange} disabled={streaming || menuDisabled} />
-      </div>}
+        : <div className="desktop-model-settings">
+          {models.length > 1
+            ? <ModelMenu value={model} options={models} disabled={streaming || menuDisabled} onChange={onModelChange} />
+            : <span>{models[0]?.label ?? 'Peto'}</span>}
+          <EffortMenu value={effort} options={efforts} disabled={streaming || menuDisabled} onChange={onEffortChange} />
+        </div>}
+      </div>
       {compact && dictation.error ? (
         <ComposerSheet label="Nhập giọng nói" onClose={dictation.clearError}>
           <div className="sheet-mic-error">

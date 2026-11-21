@@ -15,7 +15,7 @@ export default function ComposerProjectPicker({ state, activeId, disabled, onSel
     if (id !== activeId) onSelect(id);
   }
   return <>
-    <button type="button" className="mobile-project-trigger" aria-label={`Chọn dự án: ${name}`}
+    <button type="button" className="composer-project-trigger" aria-label={`Chọn dự án: ${name}`}
       disabled={disabled} aria-haspopup="dialog" aria-expanded={open && !disabled}
       onClick={() => { setQuery(''); setOpen(true); }}>
       <span>{name}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
