@@ -1,6 +1,6 @@
 import type { CSSProperties, Ref, ReactNode } from 'react';
 import { COLLAPSED_SIDEBAR_WIDTH, useSidebarResize } from './useSidebarResize';
-import type { AppInfo, AuthState, Conversation, ImagineJob } from '../shared/api/api';
+import { isConversation, type AppInfo, type AuthState, type Conversation, type ImagineJob } from '../shared/api/api';
 import type { AccountMenuPlace } from './AccountMenu';
 import type { AppView } from './preferences';
 import { PetoAvatar, AccountAvatar, accountSubtitle } from './accountUi';
@@ -141,12 +141,12 @@ export default function Sidebar({
             <div
               key={conversation.id}
               className={
-                conversation.id === conversationId ? "conv active" : "conv"
+                isConversation(conversation, conversationId) ? "conv active" : "conv"
               }
             >
               <button
                 className="conv-open"
-                aria-current={conversation.id === conversationId ? "page" : undefined}
+                aria-current={isConversation(conversation, conversationId) ? "page" : undefined}
                 data-tip data-tip-side="right"
                 onClick={() => void openConversation(conversation.id)}
                 disabled={streaming || deleting}

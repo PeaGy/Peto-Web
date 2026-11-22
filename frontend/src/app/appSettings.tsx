@@ -3,7 +3,7 @@ import AccountSettings from '../features/settings/AccountDeletion';
 import DiscordMemorySettings from '../features/settings/DiscordMemorySettings';
 import type { SettingsSection } from '../features/settings/SettingsDialog';
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from '../features/settings/settingsUi';
-import type { AuthState } from '../shared/api/api';
+import { isConversation, type AuthState } from '../shared/api/api';
 import type { MotionChoice } from '../shared/motion';
 import LazyBoundary from '../shared/ui/LazyBoundary';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
@@ -58,8 +58,8 @@ export function renderAppSettings(section: SettingsSection, active: boolean, ctx
         <ArchivedConversations key={auth.user?.id} open={active} disabled={streaming || deleting || metadataBusy}
           onUnauthorized={handleUnauthorized} onOpen={id => {closeSettings(); void openConversation(id);}}
           onChanged={(item, deleted) => {
-            if (deleted) removeConversationDraft(item.id);
-            if (item.id === conversationIdRef.current) {
+            if (deleted) for (const version of item.version_ids ?? [item.id]) removeConversationDraft(version);
+            if (isConversation(item, conversationIdRef.current)) {
               if (deleted) newConversation();
               else setArchived(false);
             }

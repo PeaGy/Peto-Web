@@ -138,6 +138,13 @@ export interface Conversation {
   message_count: number;
   /** Máy chủ cũ chưa trả trường này thì coi như trợ lý. */
   persona?: Persona;
+  /** Mọi bản của cuộc trò chuyện này (tạo lại câu trả lời tách bản mới): thanh bên chỉ hiện một dòng cho cả nhóm. */
+  version_ids?: string[];
+}
+
+/** Dòng này là cuộc trò chuyện đang mở, kể cả khi đang xem một bản khác của nó (nút ‹ 1/2 › dưới câu trả lời). */
+export function isConversation(item: Pick<Conversation, 'id' | 'version_ids'>, id: string | null | undefined): boolean {
+  return !!id && (item.id === id || !!item.version_ids?.includes(id));
 }
 
 export type ChatEvent =

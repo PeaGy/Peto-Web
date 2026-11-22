@@ -40,6 +40,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] One sidebar row per version group on the live site: "Màu sắc Part 4 và Morioh" (three versions) shows once,
+  stays highlighted while ‹ 1/2 › opens an older version, and rename, pin, archive, move and delete act on the whole
+  group (tested with the mock provider and unit tests only) — `chat.md`, "One sidebar row per version group".
 - [ ] The search-promise fix with real Grok in "auto": a price or comparison question either searches in the first
   round (the new prompt rule) or, after a bare "để mình lục xem…", gets one forced search whose answer replaces the
   promise; how often `announces_search` fires on ordinary replies in the VPS log — `chat.md`, "Promise to search,

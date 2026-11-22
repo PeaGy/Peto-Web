@@ -5,6 +5,7 @@ import uuid
 import aiosqlite
 from fastapi import HTTPException
 from storage import connection
+from storage.conversations import GROUP_MEMBERS
 
 MAX_PROJECTS, MAX_FILES, MAX_BYTES = 50, 20, 64 * 1024 * 1024
 
@@ -93,7 +94,9 @@ async def move_conversation(owner, conversation_id, project_id):
         await db.execute('BEGIN IMMEDIATE')
         if project_id is not None and not await (await db.execute('SELECT 1 FROM projects WHERE owner=? AND id=?', (owner, project_id))).fetchone():
             raise HTTPException(404, 'Không tìm thấy dự án')
-        cursor = await db.execute("UPDATE conversations SET project_id=? WHERE owner=? AND id=? AND mode='chat'", (project_id, owner, conversation_id))
+        # Cả nhóm phiên bản chuyển cùng nhau (storage.conversations.GROUP_MEMBERS).
+        cursor = await db.execute(f"UPDATE conversations SET project_id=? WHERE owner=? AND mode='chat' AND id IN ({GROUP_MEMBERS})",
+                                  (project_id, owner, owner, conversation_id, owner, conversation_id))
         if not cursor.rowcount:
             raise HTTPException(404, 'Không tìm thấy hội thoại')
         await db.commit()

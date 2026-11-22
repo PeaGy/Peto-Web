@@ -62,6 +62,7 @@ import TooltipLayer from '../shared/ui/TooltipLayer';
 import {
   UnauthorizedError,
   deleteConversation,
+  isConversation,
   getAppInfo,
   getAuthState,
   getMessages,
@@ -617,13 +618,15 @@ function AppContent() {
   async function removeConversation(id: string) {
     if (abortRef.current || deleting) return;
     const session = authVersion.current;
-    const projectId = allConversations.find(item => item.id === id)?.project_id;
+    const item: Pick<Conversation, 'id' | 'project_id' | 'version_ids'> = allConversations.find(row => row.id === id) ?? { id };
+    const projectId = item.project_id;
     setDeleting(true);
     try {
+      // Máy chủ xóa cả nhóm phiên bản (mọi bản "Thử lại" của cuộc trò chuyện này).
       await deleteConversation(id);
       if (session !== authVersion.current) return;
-      removeConversationDraft(id);
-      if (id === conversationIdRef.current) newConversation();
+      for (const version of item.version_ids ?? [id]) removeConversationDraft(version);
+      if (isConversation(item, conversationIdRef.current)) newConversation();
       setDeleteTarget(null);
       await refreshConversations();
       if (projectId && projectId !== activeProjectRef.current) void refreshProjectChats(projectId);
@@ -662,14 +665,14 @@ function AppContent() {
   const submit = (revision?: ChatRevision) => sendChatTurn(turn, revision);
   const stop = () => remoteReply ? void live.stopRemote() : stopChatTurn(turn);
 
-  async function changeConversation(item: Pick<Conversation, 'id' | 'project_id'>, change: {title?: string; pinned?: boolean; archived?: boolean}) {
+  async function changeConversation(item: Pick<Conversation, 'id' | 'project_id' | 'version_ids'>, change: {title?: string; pinned?: boolean; archived?: boolean}) {
     if (metadataBusy || (change.archived !== undefined && abortRef.current)) return;
     const session = authVersion.current;
     setMetadataBusy(true);
     try {
       await updateConversation(item.id, change);
       if (session !== authVersion.current) return;
-      if (item.id === conversationIdRef.current && change.archived !== undefined) {
+      if (isConversation(item, conversationIdRef.current) && change.archived !== undefined) {
         if (change.archived) newConversation();
         else setArchived(false);
       }
