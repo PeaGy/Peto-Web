@@ -46,6 +46,10 @@ def kept(chunks) -> str:
 @pytest.mark.parametrize('reply', [
     PROMISE,
     'Hụt là đúng rồi... Mình kiểm tra lại cho chắc rồi spoil tiếp cho ad.',
+    # Lần thứ hai, sau bản sửa đầu (22/11/2026 07:20 UTC, câu hỏi về arc Ringo trong manga).
+    'Ba câu này mình không đoán tiếp nữa, đang đối lại đúng cảnh trong manga.',
+    'Đợi xíu, đang xác minh lại.',
+    "I'm checking the chapter now.",
     'Chờ tí mình tra giá mới nhất nha.',
     'Để Peto tìm thử nhé!',
     'Let me check the latest prices.',
@@ -61,6 +65,9 @@ def test_search_promises_are_recognised(reply):
     'Xin chào! Hôm nay bạn thế nào?',
     'Để xem nào, 2 + 2 = 4.',
     'You can check the docs later.',
+    'Bạn đang tìm bản nào vậy?',          # hỏi lại người dùng
+    'Cửa hàng đang mở cửa tới 9 giờ.',
+    'Gyro sống vì Ringo chỉ bắn trúng vai.',
 ])
 def test_plain_answers_are_not_promises(reply):
     assert not xai.announces_search(reply)

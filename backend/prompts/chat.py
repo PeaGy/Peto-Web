@@ -234,9 +234,10 @@ FOLLOW_UP_PROMPT = (
 # Grok viết "để mình lục xem…" rồi kết thúc lượt mà không tra (22/11/2026, hỏi giá Regera và Agera RS ở chế độ tự
 # động): lượt kết thúc ngay khi mô hình ngừng viết, không có "lát nữa".
 SEARCH_PROMISE_RULE = (
-    "Never say you will search, check or look something up unless you call the search tool in this same reply: your "
-    "turn ends when you stop writing, so a promise without the call leaves the user with no answer. If you decide not "
-    "to search, answer directly from what you know and say briefly that it is unverified."
+    "Never say you will search, check, verify or compare against a source, or that you are doing so now, unless you "
+    "call the search tool in this same reply: your turn ends when you stop writing, so a promise without the call "
+    "leaves the user with no answer. If you decide not to search, answer directly from what you know and say briefly "
+    "that it is unverified."
 )
 # ai/xai.py gửi lời nhắc này một lần, dưới dạng tin người dùng, khi một câu trả lời ngắn chỉ hứa tra web mà chưa tra.
 SEARCH_FOLLOW_UP_PROMPT = (

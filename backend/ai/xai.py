@@ -79,19 +79,27 @@ SEARCH_FOLLOW_UP = SEARCH_FOLLOW_UP_PROMPT
 # Câu hứa tra web ("để mình lục xem", "mình kiểm tra lại cho chắc", "let me check"): ngày 22/11/2026 Grok (chế độ tìm web
 # tự động) viết câu như vậy rồi kết thúc lượt mà không tra. Chỉ xét câu ngắn của lượt chưa tra lần nào.
 _SELF = r"(?:mình|tớ|tôi|tui|em|anh|chị|peto)"
-_LOOKUP = r"(?:tra|lục|tìm|kiểm|check|search|google|soi|xem)"
+# Động từ tra cứu, cả kiểu "đang đối lại đúng cảnh trong manga" (22/11/2026, lần thứ hai sau bản sửa đầu).
+_LOOKUP = (r"(?:tra(?: cứu| lại)?|lục|tìm|kiểm(?: tra)?|check|search|google|soi|xem lại|coi lại|đối chiếu|đối lại|"
+           r"so lại|rà|dò|soát|xác minh|verify|đọc lại)")
 _SEARCH_PROMISE = re.compile(
-    rf"\bđể {_SELF}(?: \w+)? {_LOOKUP}"
-    rf"|\b{_SELF} (?:sẽ |đi |thử |đang |phải )?(?:tra|lục|tìm|kiểm tra|check|search|google|soi)\b"
-    r"|\b(?:chờ|đợi) (?:mình|tớ|tí|chút|xíu|lát)\b[^.!?\n]{0,20}\b(?:tra|lục|tìm|kiểm tra|check)\b"
+    rf"\bđể {_SELF}(?: \w+)? (?:{_LOOKUP}|xem)\b"
+    rf"|\b{_SELF} (?:sẽ |đi |thử |đang |phải |cần )?{_LOOKUP}\b"
+    rf"|\b(?:sẽ|đang|đi|thử|phải|cần) (?:\w+ )?{_LOOKUP}\b"
+    rf"|\b(?:chờ|đợi) (?:mình|tớ|tí|chút|xíu|lát)\b[^.!?\n]{{0,25}}\b{_LOOKUP}\b"
+    r"|\bkhông đoán (?:tiếp|nữa|bừa|mò)\b"
     r"|\b(?:let me|lemme|i'll|i will|i'm going to|i am going to) (?:quickly |just )?"
-    r"(?:search|check|verify|google|look (?:it |that |this |them )?up|look into)\b",
+    r"(?:search|check|verify|google|look (?:it |that |this |them )?up|look into)\b"
+    r"|\bi'm (?:checking|verifying|looking (?:it |that |this )?up)\b",
     re.IGNORECASE)
 
 
 def announces_search(text: str) -> bool:
-    """Câu trả lời này chỉ hứa sẽ tra hay kiểm tra (không tra thật thì người dùng không nhận được câu trả lời)."""
-    return bool(_SEARCH_PROMISE.search(unicodedata.normalize("NFC", text).casefold().replace("’", "'")))
+    """Câu trả lời này chỉ hứa sẽ tra hay đang kiểm tra (không tra thật thì người dùng không nhận được câu trả lời).
+
+    Câu kết bằng dấu hỏi là câu hỏi lại người dùng ("Bạn đang tìm bản nào?"), không phải lời hứa tra."""
+    text = unicodedata.normalize("NFC", text).casefold().replace("’", "'").strip()
+    return not text.endswith("?") and bool(_SEARCH_PROMISE.search(text))
 
 
 def _dump(item) -> dict:
