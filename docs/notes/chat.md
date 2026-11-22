@@ -391,6 +391,12 @@ summary ticker, and a phase bar sized by time spent.
     characters, no tool call and text that `announces_search` matches (first-person "để mình lục/tra/tìm/kiểm/xem",
     "mình sẽ tra", "chờ tí mình tra", "let me check", "I'll look it up"; a second-person "bạn kiểm tra lại" does not
     match). The workbook nudge has priority when both apply.
+  - Widened the same day after a second miss on the deployed fix (07:20 UTC, a manga question: "Ba câu này mình không
+    đoán tiếp nữa, đang đối lại đúng cảnh trong manga.", `search=False`, no nudge because "đối lại" was not a known
+    verb). The detector now also takes "đang/sẽ/đi/thử/phải/cần" + a lookup verb without a subject, more verbs
+    ("đối chiếu", "đối lại", "xác minh", "rà", "dò", "soát", "xem lại", "đọc lại"…), "không đoán tiếp/nữa", and "I'm
+    checking"; a reply ending in "?" is a question back to the user and never counts. The rule also forbids saying
+    Peto is checking or comparing against a source right now.
   - The nudge round forces search (`required_search()`: `tool_choice="required"` and only the web tool, like the first
     round of "on") and, like the workbook follow-up, sends no `round` chunk. When the search starts, the promise is
     replaced and becomes a `note` step in the work log; the searched answer streams normally (not held).
@@ -583,7 +589,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
-## Promise to search without searching (2026-11-22, branch `search-promise-fix`, not merged)
+## Promise to search: wider detector (2026-11-22, branch `search-promise-wider`, not merged)
+
+The first fix (`5258cff`) was deployed and the Regera question searched in round 1, but a manga question still ended
+with "…đang đối lại đúng cảnh trong manga." and no search. See "Promise to search, then stop".
+
+## Promise to search without searching (2026-11-22, branch `search-promise-fix`, merged `5258cff`, deployed)
 
 See "Promise to search, then stop" under "Work log". Not yet tried with real Grok: the live site runs the old prompt
 until deployed; the plan is to repeat the Regera question in "auto" on peto.peagy.com and read the `Nhắc tìm web` log.
