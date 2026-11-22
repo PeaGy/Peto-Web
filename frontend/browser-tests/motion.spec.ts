@@ -1,6 +1,43 @@
 import { expect, test } from '@playwright/test';
 import { mockPeto, openSidebar } from './fixtures';
 
+for (const motion of ['full', 'reduced'] as const) {
+  test(`Bảng + và Model trên điện thoại mở và đóng theo chế độ ${motion}`, async ({ page, isMobile }) => {
+    test.skip(!isMobile);
+    await mockPeto(page);
+    await page.emulateMedia({ reducedMotion: motion === 'full' ? 'no-preference' : 'reduce' });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-motion', motion);
+
+    const transitions = await page.evaluateHandle(() => {
+      const events: string[] = [];
+      document.addEventListener('transitionend', event => {
+        const sheet = event.target;
+        if (sheet instanceof HTMLDialogElement && sheet.matches('.composer-sheet')) {
+          events.push(`${sheet.open ? 'open' : 'closed'} ${event.pseudoElement || 'sheet'} ${event.propertyName}`);
+        }
+      });
+      return events;
+    });
+    const expected = (phase: string) => [
+      `${phase} sheet opacity`, `${phase} ::backdrop opacity`,
+      ...(motion === 'full' ? [`${phase} sheet transform`] : []),
+    ];
+    for (const name of ['Thêm ảnh và tùy chọn', /^Model:/]) {
+      await transitions.evaluate(events => { events.length = 0; });
+      const trigger = page.getByRole('button', { name });
+      await trigger.tap();
+      const sheet = page.getByRole('dialog');
+      await expect.poll(() => transitions.jsonValue()).toEqual(expect.arrayContaining(expected('open')));
+      if (typeof name === 'string') await sheet.getByRole('button', { name: 'Đóng bảng' }).tap();
+      else await sheet.getByRole('group', { name: 'Mức suy nghĩ' }).getByRole('button').last().tap();
+      await expect.poll(() => transitions.jsonValue()).toEqual(expect.arrayContaining(expected('closed')));
+      if (motion === 'reduced') expect(await transitions.jsonValue()).not.toContain('open sheet transform');
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
 // Cài đặt → Giao diện → Chuyển động (13/10/2026): mặc định Mượt kể cả khi máy giảm chuyển động (cấu hình chung giả lập
 // máy giảm); người dùng chọn Giảm thì CSS theo :root[data-motion="reduced"] ngay, qua cả F5.
 test('Chuyển động mặc định Mượt dù máy giảm chuyển động; chọn Giảm thì tắt chuyển tiếp và giữ qua F5', async ({ page }) => {

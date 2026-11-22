@@ -15,7 +15,7 @@ export default function MobileChatSettings({ model, models, onModelChange, effor
       aria-label={`Model: ${modelLabel}, Mức suy nghĩ: ${effortLabel}`} disabled={disabled} onClick={() => setOpen(true)}>
       <strong>{modelLabel}</strong> <span>{effortLabel}</span>
     </button>
-    {open && !disabled && <ComposerSheet label="Model và mức suy nghĩ" onClose={() => setOpen(false)}>
+    <ComposerSheet open={open && !disabled} label="Model và mức suy nghĩ" onClose={() => setOpen(false)}>
       {models.length > 0 && <div role="group" aria-label="Model">
         {models.map(item => <button type="button" className="sheet-option" key={item.key}
           aria-pressed={item.key === model} onClick={() => { onModelChange(item.key); setOpen(false); }}>
@@ -29,6 +29,6 @@ export default function MobileChatSettings({ model, models, onModelChange, effor
           {item.label}
         </button>)}
       </div>
-    </ComposerSheet>}
+    </ComposerSheet>
   </>;
 }

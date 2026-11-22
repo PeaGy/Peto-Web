@@ -50,6 +50,6 @@ export default function ComposerMenu({ compact = false, disabled, webDisabled, o
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       {webDisabled && <span className="web-off-dot" aria-hidden="true" />}
     </button>
-    {open && (compact ? <ComposerSheet label="Thêm" onClose={close}>{options}</ComposerSheet> : options)}
+    {compact ? <ComposerSheet open={open} label="Thêm" onClose={close}>{options}</ComposerSheet> : open && options}
   </div>;
 }

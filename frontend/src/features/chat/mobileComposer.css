@@ -62,9 +62,23 @@
     padding: 0 max(14px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
     border: 1px solid var(--line); border-bottom: 0; border-radius: 18px 18px 0 0;
     color: var(--text); background: var(--panel-2); box-shadow: var(--dialog-shadow);
+    opacity: 0;
+    transform: translateY(100%);
+    transition: opacity 180ms var(--ease-out), transform 200ms var(--ease-drawer),
+      display 200ms allow-discrete, overlay 200ms allow-discrete;
   }
-  .composer-sheet[open] { display: flex; flex-direction: column; }
-  .composer-sheet::backdrop { background: rgb(0 0 0 / 58%); }
+  .composer-sheet[open] { display: flex; flex-direction: column; opacity: 1; transform: none; }
+  .composer-sheet::backdrop {
+    background: rgb(0 0 0 / 58%); opacity: 0;
+    transition: opacity 180ms var(--ease-out), display 180ms allow-discrete, overlay 180ms allow-discrete;
+  }
+  .composer-sheet[open]::backdrop { opacity: 1; }
+  .composer-sheet:not([open]), .composer-sheet:not([open])::backdrop { pointer-events: none; }
+  @starting-style {
+    .composer-sheet[open] { opacity: 0; transform: translateY(100%); }
+    .composer-sheet[open]::backdrop { opacity: 0; }
+  }
+  :root[data-motion="reduced"] .composer-sheet { transform: none; }
   .sheet-handle {
     display: grid; place-items: center; flex: none; align-self: center; width: 72px; height: 36px;
     border: 0; background: transparent; cursor: pointer; touch-action: none;

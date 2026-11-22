@@ -21,7 +21,7 @@ export default function ComposerProjectPicker({ state, activeId, disabled, onSel
       <span>{name}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="m5 9 7 7 7-7" stroke="currentColor" strokeWidth="2" /></svg>
     </button>
-    {open && !disabled && <ComposerSheet label="Chọn dự án" onClose={() => setOpen(false)}>
+    <ComposerSheet open={open && !disabled} label="Chọn dự án" onClose={() => setOpen(false)}>
       <div className="sheet-projects">
         <input type="search" aria-label="Tìm dự án" placeholder="Tìm dự án" value={query} onChange={e => setQuery(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }} />
@@ -35,6 +35,6 @@ export default function ComposerProjectPicker({ state, activeId, disabled, onSel
         </div>
         <button type="button" className="sheet-option" onClick={() => { setOpen(false); onCreate(); }}>＋ Tạo dự án mới</button>
       </div>
-    </ComposerSheet>}
+    </ComposerSheet>
   </>;
 }

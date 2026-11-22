@@ -1,16 +1,16 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
-export function ComposerSheet({ label, onClose, children }: {
-  label: string; onClose: () => void; children: ReactNode;
+export function ComposerSheet({ open = true, label, onClose, children }: {
+  open?: boolean; label: string; onClose: () => void; children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const dragStart = useRef<number | null>(null);
   useLayoutEffect(() => {
     const dialog = ref.current!;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
-  return <dialog ref={ref} className="composer-sheet" aria-label={label}
+    if (open) dialog.showModal();
+    return () => { if (dialog.open) dialog.close(); };
+  }, [open]);
+  return <dialog ref={ref} className="composer-sheet" aria-label={label} inert={!open}
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => {
       if (event.target !== event.currentTarget) return;

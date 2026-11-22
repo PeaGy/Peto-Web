@@ -247,6 +247,6 @@ export default function DictationMenu({ dictation, disabled, compact = false }: 
         <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
-    {open && (compact ? <ComposerSheet label="Cài đặt nhập giọng nói" onClose={close}>{options}</ComposerSheet> : options)}
+    {compact ? <ComposerSheet open={open} label="Cài đặt nhập giọng nói" onClose={close}>{options}</ComposerSheet> : open && options}
   </div>;
 }
