@@ -217,6 +217,22 @@ function AppContent() {
   const variantSwap = useRef<{ conversationId: string; messageId: number; anchorTop: number | null; loaded: boolean } | null>(null);
   // Lần thay tin nhắn đó không bám đáy: câu trả lời ở cuối mà dài hơn thì vẫn giữ mép trên, không cuộn xuống.
   const keepScroll = useRef(false);
+  // Gửi tin như Claude (22/11/2026): câu hỏi vừa gửi trượt lên gần đỉnh khung, câu trả lời viết dần xuống khoảng trống
+  // bên dưới, và khung không tự cuộn theo chữ, nên người dùng kéo lên xuống thoải mái trong lúc Peto viết. ``turnPin`` là
+  // vị trí (chỉ số dòng) câu hỏi đang được ghim; ``turnRoom`` là khối trống cuối khung (.turn-room) đủ để cuộn câu hỏi
+  // lên đỉnh khi câu trả lời còn ngắn. Khối trống giữ sau lượt (như Claude) và được tính lại khi khung đổi cỡ, không
+  // đụng tới padding của khung (trên điện thoại padding dưới đi theo chiều cao ô soạn tin); mở cuộc khác thì bỏ.
+  const turnPin = useRef<{ index: number; scrolled: boolean } | null>(null);
+  const turnRoom = useRef<{ index: number; room: number } | null>(null);
+  const turnRoomRef = useRef<HTMLDivElement>(null);
+  const wasStreaming = useRef(false);
+  const [turnRoomActive, setTurnRoomActive] = useState(false);
+  const clearTurnRoom = useCallback(() => {
+    turnPin.current = null;
+    turnRoom.current = null;
+    if (turnRoomRef.current) turnRoomRef.current.style.height = '0px';
+    setTurnRoomActive(false);
+  }, []);
   const messageFocusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const jumpToMessage = useCallback((id: number) => {
     if (!Number.isSafeInteger(id) || id <= 0) return;
@@ -438,9 +454,82 @@ function AppContent() {
     setShowJump(!nearBottom.current);
     keepScroll.current = true;
   }, [messages, conversationId]);
+  const fitTurn = useCallback(() => {
+    const pin = turnPin.current, container = messagesRef.current, spacer = turnRoomRef.current;
+    const index = pin?.index ?? turnRoom.current?.index ?? -1;
+    const row = container?.querySelectorAll<HTMLElement>(':scope > article')[index];
+    if (!container || !spacer || !row) return;
+    if (pin && turnRoom.current?.index !== pin.index) {
+      turnRoom.current = { index: pin.index, room: 0 };
+      setTurnRoomActive(true);
+    }
+    if (!turnRoom.current) return;
+    // Khối trống vừa đủ để cuộn tối đa đúng tới câu hỏi: bớt dần khi câu trả lời dài ra.
+    // Câu hỏi nằm ngay dưới padding trên của khung, như lúc nó là tin đầu tiên: trên điện thoại padding này chừa chỗ
+    // cho các nút đầu trang nổi bên trên.
+    const gap = parseFloat(getComputedStyle(container).paddingTop) || 0;
+    const top = Math.max(0, row.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - gap);
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const room = Math.max(0, Math.ceil(turnRoom.current.room + top - maxScroll));
+    if (room !== turnRoom.current.room) {
+      // Nội dung vừa ngắn lại (hết lượt, bỏ con trỏ đang viết): trình duyệt đã kéo vị trí cuộn xuống theo trước khi khối
+      // trống kịp bù, nên người đang đứng ở cuối được đưa về đúng chỗ cũ.
+      const clamped = room > turnRoom.current.room && container.scrollTop >= maxScroll - 1;
+      turnRoom.current.room = room;
+      spacer.style.height = `${room}px`;
+      if (clamped && !(pin && !pin.scrolled)) container.scrollTop = top;
+    }
+    if (pin && !pin.scrolled) {
+      pin.scrolled = true;
+      nearBottom.current = false;
+      container.scrollTo({ top, behavior: isReducedMotion() ? 'instant' : 'smooth' });
+    }
+  }, []);
+  useLayoutEffect(() => {
+    const started = streaming && !wasStreaming.current;
+    wasStreaming.current = streaming;
+    if (started) {
+      const index = messages.map(message => message.role).lastIndexOf('user');
+      turnPin.current = index >= 0 ? { index, scrolled: false } : null;
+    }
+    // Hết lượt thì thôi ghim (tin đồng bộ từ máy khác lại bám đáy như cũ); khối trống và chỗ đang đứng vẫn giữ, không
+    // cuộn xuống đáy lần cuối.
+    if (!streaming) {
+      if (turnPin.current) keepScroll.current = true;
+      turnPin.current = null;
+    }
+    fitTurn();
+  }, [streaming, messages, fitTurn]);
+  useEffect(() => {
+    const dock = chatDockRef.current;
+    if (!turnRoomActive) return;
+    // Bàn phím điện thoại, ô soạn tin cao lên (thông báo ngoại tuyến; trên điện thoại padding dưới của khung đi theo
+    // nó) hay đổi cỡ cửa sổ: tính lại khối trống ở khung hình sau. Theo dõi ô soạn tin chứ không theo dõi khung tin nhắn:
+    // padding của khung đổi ngay trong lượt báo của useComposerDock, theo dõi khung thì trình duyệt báo "ResizeObserver
+    // loop".
+    let frame = 0;
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitTurn);
+    };
+    const observer = dock && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null;
+    if (dock) observer?.observe(dock);
+    window.addEventListener('resize', schedule);
+    window.visualViewport?.addEventListener('resize', schedule);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', schedule);
+      window.visualViewport?.removeEventListener('resize', schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [turnRoomActive, fitTurn]);
   useEffect(() => {
     if (keepScroll.current) {
       keepScroll.current = false;
+      return;
+    }
+    if (turnPin.current) {
+      if (!nearBottom.current) setShowJump(true);
       return;
     }
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
@@ -578,6 +667,7 @@ function AppContent() {
     setEditTarget(null);
     setLegacyRoleplay(allConversations.find((item) => item.id === id)?.persona === "roleplay");
     if (!swap) {
+      clearTurnRoom();
       setMessages([]);
       setLoadingConversation(true);
       nearBottom.current = true;
@@ -637,6 +727,7 @@ function AppContent() {
     retryRevision.current = undefined;
     loadRef.current?.abort();
     loadVersion.current += 1;
+    clearTurnRoom();
     setLoadingConversation(false);
     setLoadFailed(false);
     nearBottom.current = true;
@@ -917,12 +1008,14 @@ function AppContent() {
               onPreview={previewDocument} onEdit={editDocument} />
           ))}
           <div ref={bottomRef} />
+          <div ref={turnRoomRef} className="turn-room" aria-hidden="true" />
           <QuoteSelection key={`${auth.user?.id}:${conversationId}`} containerRef={messagesRef}
             disabled={view !== 'chat' || readOnly || streaming || loadingConversation || loadFailed || settingsOpen || searchOpen || Boolean(editTarget) || !recovery.online || recovery.pending}
             onQuote={selectQuotedText} />
         </div>
 
         {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" data-tip onClick={event => {
+          turnPin.current = null;
           nearBottom.current = true;
           setShowJump(false);
           bottomRef.current?.scrollIntoView({ behavior: event.detail === 0 || isReducedMotion() ? 'instant' : 'smooth', block: "end" });

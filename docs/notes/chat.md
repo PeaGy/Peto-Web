@@ -457,6 +457,23 @@ summary ticker, and a phase bar sized by time spent.
     scroll range shrinks. A failed load falls back to the normal error state. Tests: the "Grok UX integration" block
     in `App.test.tsx` and "regenerate creates a real family" in `browser-tests/grok-chat-ux.spec.ts` (answer top stays
     within 2 px, PC and mobile).
+- **Sending pins the question to the top, like Claude** (since 2026-11-22). Before, the chat stuck to the bottom on
+  every streamed piece, so scrolling up while Peto wrote was pulled back down. Now, when a turn of this tab starts,
+  App pins the last user row (`turnPin`, by row index) and smooth-scrolls it to just below the top padding of
+  `.messages` (24 px on PC; 62 px on phones, which leaves room for the floating header buttons). A spacer after the
+  last row (`.turn-room`, its negative top margin cancels the 22 px flex gap) gets just enough height for the maximum
+  scroll to reach that spot while the answer is short; it shrinks as the answer grows, and nothing scrolls while
+  pinned. The container's own padding is never touched: on phones its bottom padding follows the composer height
+  (`--chat-dock-height`). The spacer is refitted on message changes and, in the next frame, when the composer
+  (`chatDockRef`), the window or the visual viewport resizes; observing `.messages` itself caused "ResizeObserver
+  loop" errors because `useComposerDock` changes its padding inside its own observer callback. If the content shrinks
+  (end of turn) and the browser has already pulled the scroll position down, the position is put back.
+  "Tin mới nhất" unpins and follows new text as before. When the turn ends the position and spacer stay (no last
+  jump to the bottom); opening another chat or a new one clears the spacer. Replies streamed from another device (live
+  sync) still follow the bottom. Tests: `browser-tests/chat-turn-pin.spec.ts` (a page-side fake stream: pinned within
+  2 px, a 300 px scroll-up during streaming is not undone, jump-to-latest follows, short answer keeps the question on
+  top, reload clears the spacer); the mobile `chat-offline` snapshot in `recovery.spec.ts` now shows the pinned
+  question.
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
 - **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
@@ -610,6 +627,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Claude-style pinned question while streaming (2026-11-22, branch `chat-turn-pin`, not merged)
+
+The owner asked for Claude's streaming feel: the sent question moves to the top, the answer writes downward, and the
+chat can be scrolled freely while Peto writes. See "Sending pins the question to the top" under "Work log".
+
 
 ## Reply version arrows swap in place (2026-11-22, branch `chat-variant-in-place`, not merged)
 

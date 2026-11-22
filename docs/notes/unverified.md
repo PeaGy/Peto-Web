@@ -40,6 +40,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] The pinned question while streaming on a real phone (iOS Safari and Android Chrome, keyboard open and closing
+  after send) and with real Grok streams, where work-log steps and sources appear above the text — `chat.md`,
+  "Sending pins the question to the top".
 - [ ] One sidebar row per version group on the live site: "Màu sắc Part 4 và Morioh" (three versions) shows once,
   stays highlighted while ‹ 1/2 › opens an older version, and rename, pin, archive, move and delete act on the whole
   group (tested with the mock provider and unit tests only) — `chat.md`, "One sidebar row per version group".

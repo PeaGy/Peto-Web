@@ -60,6 +60,10 @@
   gap: 22px;
 }
 
+/* Khối trống sau câu hỏi vừa gửi (App: turnRoom), cao do JS đặt. Lề âm bù khoảng gap của khung để nó chỉ thêm đúng
+   chiều cao của mình. */
+.messages > .turn-room { flex: none; height: 0; margin-top: -22px; }
+
 .welcome {
   margin: auto;
   text-align: center;
