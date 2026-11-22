@@ -2669,12 +2669,24 @@ describe('Grok UX integration — local model mocks only', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Tạo lại câu trả lời' }));
     await waitFor(() => expect(window.location.pathname).toBe('/chat/B'));
     expect(await screen.findByText('2/2')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Câu trả lời trước' }));
+    // ‹ › đổi câu trả lời tại chỗ (22/11/2026): khung tin nhắn không bị xóa trắng hay hiện "Đang mở hội thoại", ô câu
+    // trả lời vẫn là cùng một phần tử, nút vừa bấm giữ focus, và địa chỉ được thay chứ không thêm lịch sử.
+    const answer = screen.getByText('Bản thứ hai').closest('article');
+    const historyLength = window.history.length;
+    const previous = screen.getByRole('button', { name: 'Câu trả lời trước' });
+    previous.focus();
+    fireEvent.click(previous);
+    expect(screen.queryByText('Đang mở hội thoại')).toBeNull();
+    expect(screen.getByText('Bản thứ hai')).toBeTruthy();
     expect(await screen.findByText('Bản thứ nhất')).toBeTruthy();
     await waitFor(() => expect(window.location.pathname).toBe('/chat/A'));
-    expect(document.activeElement?.getAttribute('data-message-id')).toBe('20');
+    expect(screen.getByText('Bản thứ nhất').closest('article')).toBe(answer);
+    expect(answer?.getAttribute('data-message-id')).toBe('20');
+    expect(window.history.length).toBe(historyLength);
+    expect(screen.getByText('1/2')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Câu trả lời sau' }));
     expect(await screen.findByText('Bản thứ hai')).toBeTruthy();
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/B'));
     expect(api.sendMessage).toHaveBeenCalledOnce();
     expect(api.deleteConversation).not.toHaveBeenCalled();
   });

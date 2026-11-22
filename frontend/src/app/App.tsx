@@ -211,6 +211,12 @@ function AppContent() {
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
   const pendingMessageFocus = useRef<{ conversationId: string; messageId: number } | null>(null);
+  // Bấm ‹ › dưới câu trả lời (22/11/2026, như ChatGPT và Claude): chỉ câu trả lời đổi tại chỗ. Mỗi bản là một hội thoại
+  // riêng chép cùng các tin phía trên, nên tải ngầm bản kia rồi thay tin nhắn, giữ mép trên câu trả lời đứng yên
+  // (anchorTop: khoảng cách tới đỉnh khung tin nhắn) thay vì xóa trắng khung, hiện "Đang mở" rồi cuộn tới.
+  const variantSwap = useRef<{ conversationId: string; messageId: number; anchorTop: number | null; loaded: boolean } | null>(null);
+  // Lần thay tin nhắn đó không bám đáy: câu trả lời ở cuối mà dài hơn thì vẫn giữ mép trên, không cuộn xuống.
+  const keepScroll = useRef(false);
   const messageFocusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const jumpToMessage = useCallback((id: number) => {
     if (!Number.isSafeInteger(id) || id <= 0) return;
@@ -228,11 +234,15 @@ function AppContent() {
   useEffect(() => () => clearTimeout(messageFocusTimer.current), []);
   const navigationBusy = useRef(false);
   navigationBusy.current = readOnly || streaming || loadingConversation || loadFailed || deleting;
-  const openReplyVariant = useCallback((choice: ReplyVariant | undefined) => {
-    if (!choice || navigationBusy.current) return;
-    pendingMessageFocus.current = { conversationId: choice.conversation_id, messageId: choice.message_id };
+  const openReplyVariant = useCallback((choice: ReplyVariant | undefined, fromMessageId: number) => {
+    if (!choice || navigationBusy.current || variantSwap.current) return;
+    const container = messagesRef.current;
+    const answer = container?.querySelector<HTMLElement>(`article[data-message-id="${fromMessageId}"]`);
+    variantSwap.current = { conversationId: choice.conversation_id, messageId: choice.message_id, loaded: false,
+      anchorTop: container && answer ? answer.getBoundingClientRect().top - container.getBoundingClientRect().top : null };
     setSourcesIndex(null);
-    navigate({ pathname: chatRoute(choice.conversation_id), search: window.location.search });
+    // Thay địa chỉ, không thêm lịch sử: nút Quay lại rời cuộc trò chuyện chứ không lật lại từng bản.
+    navigate({ pathname: chatRoute(choice.conversation_id), search: window.location.search }, { replace: true });
   }, [navigate]);
   const regenerateAnswer = useCallback((id: number) => {
     if (navigationBusy.current) return;
@@ -412,7 +422,27 @@ function AppContent() {
     if (leavingForAiri && !airiUnreachable) openAiriCompanion(true);
   }, [leavingForAiri, airiUnreachable]);
 
+  useLayoutEffect(() => {
+    const swap = variantSwap.current;
+    if (!swap?.loaded || swap.conversationId !== conversationId) return;
+    variantSwap.current = null;
+    const container = messagesRef.current;
+    const answer = container?.querySelector<HTMLElement>(`article[data-message-id="${swap.messageId}"]`);
+    if (!container || !answer) return;
+    if (swap.anchorTop !== null) {
+      container.scrollTop += answer.getBoundingClientRect().top - container.getBoundingClientRect().top - swap.anchorTop;
+    } else {
+      answer.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+    nearBottom.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+    setShowJump(!nearBottom.current);
+    keepScroll.current = true;
+  }, [messages, conversationId]);
   useEffect(() => {
+    if (keepScroll.current) {
+      keepScroll.current = false;
+      return;
+    }
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
     else setShowJump(true);
   }, [messages, streaming]);
@@ -525,6 +555,9 @@ function AppContent() {
 
   async function loadConversation(id: string) {
     if (pendingMessageFocus.current?.conversationId !== id) pendingMessageFocus.current = null;
+    // Đổi bản bằng ‹ ›: giữ khung tin nhắn đang hiện tới khi bản kia tải xong (variantSwap).
+    const swap = variantSwap.current?.conversationId === id && !variantSwap.current.loaded ? variantSwap.current : null;
+    if (!swap) variantSwap.current = null;
     setSourcesIndex(null);
     recovery.cancel();
     loadRef.current?.abort();
@@ -535,7 +568,8 @@ function AppContent() {
     setRetryAvailable(false);
     retryRevision.current = undefined;
     setNotice(null);
-    setConversationId(id);
+    // Đổi bản: mã hội thoại mới đi cùng tin nhắn mới, để nút ‹ › của bản đang hiện không mất trong lúc tải.
+    if (!swap) setConversationId(id);
     conversationIdRef.current = id;
     chatSelection.restore(id);
     setArchived(Boolean(allConversations.find(item => item.id === id)?.archived));
@@ -543,11 +577,13 @@ function AppContent() {
     setActiveProjectId(allConversations.find(item => item.id === id)?.project_id ?? null);
     setEditTarget(null);
     setLegacyRoleplay(allConversations.find((item) => item.id === id)?.persona === "roleplay");
-    setMessages([]);
-    setLoadingConversation(true);
+    if (!swap) {
+      setMessages([]);
+      setLoadingConversation(true);
+      nearBottom.current = true;
+      setShowJump(false);
+    }
     setLoadFailed(false);
-    nearBottom.current = true;
-    setShowJump(false);
     setSidebarOpen(false);
     try {
       const live = replyRef.current;
@@ -565,9 +601,18 @@ function AppContent() {
         chatSelection.restore(id, settings);
       });
       if (version !== loadVersion.current) return;
+      if (swap) {
+        swap.loaded = true;
+        setConversationId(id);
+      }
       setMessages(loaded);
     } catch (err) {
       if (version !== loadVersion.current || controller.signal.aborted) return;
+      if (swap) {
+        variantSwap.current = null;
+        setConversationId(id);
+        setMessages([]);
+      }
       if (err instanceof UnauthorizedError) return handleUnauthorized();
       setLoadFailed(true);
       setError(err instanceof Error ? err.message : "Không mở được hội thoại");
@@ -717,8 +762,8 @@ function AppContent() {
     if (!controls) {
       controls = {
         index: family.index, count: family.choices.length,
-        onPrevious: () => openReplyVariant(family.choices[family.index - 1]),
-        onNext: () => openReplyVariant(family.choices[family.index + 1]),
+        onPrevious: () => openReplyVariant(family.choices[family.index - 1], message.id!),
+        onNext: () => openReplyVariant(family.choices[family.index + 1], message.id!),
       };
       variantControls.current.set(family, controls);
     }
