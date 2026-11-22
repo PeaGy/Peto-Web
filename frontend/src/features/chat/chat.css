@@ -115,6 +115,24 @@
   border-radius: 0;
   background: none;
 }
+/* Tin dài của người dùng gập còn 200 px, mờ dần 48 px cuối (UserMessageFold.tsx, như Claude). Chưa đo thì chặn ở
+   248 px để tin dài không cao vọt rồi co lại. */
+.user-fold[data-unmeasured] { max-height: 248px; overflow: hidden; }
+.user-fold.folded {
+  max-height: 200px; overflow: hidden;
+  mask-image: linear-gradient(#000 calc(100% - 48px), transparent);
+}
+.user-fold-toggle {
+  display: block; margin: 6px 0 0; padding: 2px 0; border: 0; background: none;
+  color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .user-fold-toggle:hover { color: var(--text); } }
+.user-fold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+@media print {
+  .user-fold.folded, .user-fold[data-unmeasured] { max-height: none; overflow: visible; mask-image: none; }
+  .user-fold-toggle { display: none; }
+}
+
 .user-message-text {
   min-width: 0;
   max-width: 100%;
