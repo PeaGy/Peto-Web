@@ -6,6 +6,22 @@ Moved out of `CLAUDE.md` on 2026-11-12 (G0.2). Write new notes for this area her
 
 # Dated log (newest first)
 
+## Gzip request bodies on the agent endpoints (2026-11-22, not deployed)
+
+A long ph session (33 turns, about 120,000 tokens per step) failed one turn at 21:36–21:43 with `Connection error`
+(`TRANSPORT`) after five retries. VPS logs (read over `ssh peto-vps`): 18 steps from 21:25 to 21:36:30 returned 200;
+then cloudflared logged `Incoming request ended abruptly: context canceled` for `/api/agent/v1/responses` and uvicorn
+`ClientDisconnect` inside `_read_body`, three times, while small GETs from the same IP kept answering. Peto Web was not
+restarted and the load was idle, so the large uploads were cut between the app and Cloudflare. The same cloudflared
+error hit `/responses` 7 times on 11-09, 3 on 11-11, 7 on 11-12 and 4 on 11-22.
+- `features/agent/api.py` `_read_body` (shared by `/step`, the gateway and the AIRI gateway) reads
+  `Content-Encoding: gzip`: the limit applies to the compressed and the inflated size (a small body that inflates past
+  it is refused while inflating, 413), a broken, truncated or trailing-data gzip body answers 400 `BAD_GZIP`, any other
+  encoding 415 `BAD_ENCODING`; plain bodies behave as before. Test: `test_agent_gateway.py`
+  "reads gzip bodies within the same limit".
+- ph `5671a72ac6` compresses every model request body of 16 KiB or more. **Deploy Peto Web before publishing a ph
+  build that contains it**: an older Peto Web reads the gzip bytes as JSON and answers 400.
+
 ## DSH 0.2.2-rc.3 merged into ph; update status window (2026-11-17)
 
 ph `peto` merged upstream `dsh-v0.2.2-rc.3` (merge `dc1091cd5a`, on `peto` from `2d6ed96254`; details in ph `PETO.md`).

@@ -19,6 +19,7 @@ import json
 import logging
 import secrets
 import time
+import zlib
 from collections.abc import AsyncIterator
 from datetime import datetime, time as clock, timedelta
 from zoneinfo import ZoneInfo
@@ -297,18 +298,48 @@ async def logout(device: dict = Depends(device_auth)) -> dict:
 TOO_LARGE = "Bước gửi lên quá lớn. Gõ /new (bản cũ: /moi) để bắt đầu hội thoại mới, hoặc đọc ít tệp và gửi ít ảnh hơn mỗi lần."
 
 
+BAD_ENCODING = "Cổng agent chỉ nhận thân yêu cầu không nén hoặc nén gzip."
+BAD_GZIP = "Thân yêu cầu nén gzip bị hỏng hoặc bị cắt dở."
+
+
 async def _read_body(request: Request, limit: int | None = None, message: str = TOO_LARGE) -> bytes:
-    """Đọc thân yêu cầu, dừng ngay khi quá ``limit`` byte (mặc định trần của /step)."""
+    """Đọc thân yêu cầu, dừng ngay khi quá ``limit`` byte (mặc định trần của /step).
+
+    Peto Harness nén gzip các bước lớn để đường gửi lên ngắn hơn. Trần áp cho cả phần nén lẫn phần đã giải nén, nên một
+    thân nén nhỏ nhưng nở to ("bom nén") cũng bị từ chối trước khi chiếm bộ nhớ.
+    """
     limit = AGENT_MAX_REQUEST_BYTES if limit is None else limit
     too_large = HTTPException(status_code=413, detail=message)
+    encoding = request.headers.get("content-encoding", "").strip().lower()
+    if encoding not in ("", "identity", "gzip"):
+        raise HTTPException(status_code=415, detail=BAD_ENCODING)
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > limit:
         raise too_large
     body = bytearray()
-    async for chunk in request.stream():
-        body.extend(chunk)
-        if len(body) > limit:
-            raise too_large
+    if encoding != "gzip":
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > limit:
+                raise too_large
+        return bytes(body)
+    inflater = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)  # chỉ nhận khung gzip
+    received = 0
+    try:
+        async for chunk in request.stream():
+            if not chunk:  # Starlette kết thúc luồng bằng một đoạn rỗng
+                continue
+            received += len(chunk)
+            if received > limit or inflater.eof:
+                raise too_large if received > limit else HTTPException(status_code=400, detail=BAD_GZIP)
+            # Giải nén tối đa limit + 1 byte: chạm mức đó nghĩa là thân thật vượt trần.
+            body.extend(inflater.decompress(chunk, limit + 1 - len(body)))
+            if len(body) > limit or inflater.unconsumed_tail:
+                raise too_large
+    except zlib.error:
+        raise HTTPException(status_code=400, detail=BAD_GZIP) from None
+    if not inflater.eof or inflater.unused_data:
+        raise HTTPException(status_code=400, detail=BAD_GZIP)
     return bytes(body)
 
 

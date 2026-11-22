@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import gzip
 import io
 import json
 import uuid
@@ -303,6 +304,40 @@ async def test_the_gateway_takes_bigger_requests_than_the_clis_step(anon_client,
     refused = await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=body)
     assert refused.status_code == 413
     assert refused.json()["error"]["message"] == gateway.TOO_LARGE
+
+
+async def test_the_gateway_reads_gzip_bodies_within_the_same_limit(anon_client, client, monkeypatch):
+    seen = {}
+
+    async def model(**kwargs):
+        seen["input_items"] = kwargs["input_items"]
+        yield AgentEvent("done", output=(), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    body = request()
+    body["input"][1]["content"][0]["text"] = "nén " * 2000
+    raw = json.dumps(body).encode()
+    gzip_headers = {**bearer(token), "content-type": "application/json", "content-encoding": "gzip"}
+    sent = await anon_client.post("/api/agent/v1/responses", headers=gzip_headers, content=gzip.compress(raw))
+    assert sent.status_code == 200, sent.text
+    assert "nén nén" in json.dumps(seen["input_items"], ensure_ascii=False)
+
+    # A small compressed body that inflates past the limit is refused before it is held in memory.
+    monkeypatch.setattr(gateway, "MAX_REQUEST_BYTES", 2048)
+    bomb = await anon_client.post("/api/agent/v1/responses", headers=gzip_headers, content=gzip.compress(raw))
+    assert bomb.status_code == 413
+    assert bomb.json()["error"]["message"] == gateway.TOO_LARGE
+
+    monkeypatch.setattr(gateway, "MAX_REQUEST_BYTES", 32 * 1024 * 1024)
+    for broken in (gzip.compress(raw)[:-20], b"not gzip at all", gzip.compress(raw) + b"tail"):
+        refused = await anon_client.post("/api/agent/v1/responses", headers=gzip_headers, content=broken)
+        assert refused.status_code == 400
+        assert refused.json()["error"]["message"] == agent_api.BAD_GZIP
+    other = await anon_client.post("/api/agent/v1/responses", content=raw,
+                                   headers={**gzip_headers, "content-encoding": "br"})
+    assert other.status_code == 415
+    assert other.json()["error"]["message"] == agent_api.BAD_ENCODING
 
 
 async def test_too_many_items_asks_for_a_new_session_without_taking_a_step(anon_client, client, monkeypatch):
