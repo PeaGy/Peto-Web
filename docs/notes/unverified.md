@@ -40,6 +40,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] The search-promise fix with real Grok in "auto": a price or comparison question either searches in the first
+  round (the new prompt rule) or, after a bare "để mình lục xem…", gets one forced search whose answer replaces the
+  promise; how often `announces_search` fires on ordinary replies in the VPS log — `chat.md`, "Promise to search,
+  then stop".
 - [ ] Custom instructions with real models after the 2026-11-21 frame change: the owner's kawaii text (greeting,
   kaomoji, sign-off) followed by Grok, Luna and Haiku on casual messages, while a technical question stays exact and
   identity rules hold (still Peto, an AI, no model name) — `accounts-memory.md`, "User profile".

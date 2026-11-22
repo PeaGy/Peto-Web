@@ -231,15 +231,32 @@ FOLLOW_UP_PROMPT = (
 )
 
 
+# Grok viết "để mình lục xem…" rồi kết thúc lượt mà không tra (22/11/2026, hỏi giá Regera và Agera RS ở chế độ tự
+# động): lượt kết thúc ngay khi mô hình ngừng viết, không có "lát nữa".
+SEARCH_PROMISE_RULE = (
+    "Never say you will search, check or look something up unless you call the search tool in this same reply: your "
+    "turn ends when you stop writing, so a promise without the call leaves the user with no answer. If you decide not "
+    "to search, answer directly from what you know and say briefly that it is unverified."
+)
+# ai/xai.py gửi lời nhắc này một lần, dưới dạng tin người dùng, khi một câu trả lời ngắn chỉ hứa tra web mà chưa tra.
+SEARCH_FOLLOW_UP_PROMPT = (
+    "[Automatic Peto reminder, not the user's words] Your last reply said you would search or check, but you did not "
+    "search, so the user still has no answer. Search the web now, then answer the question. Do not repeat the "
+    "announcement."
+)
+
+
 def search_prompt(mode: str, enabled: bool) -> str:
     """Luật tìm web theo đúng chế độ người dùng chọn cho lượt này."""
     if not enabled or mode == "off":
-        return "## Web search\nSearch is disabled. Do not claim online verification; explain the limitation when needed."
+        return ("## Web search\nSearch is disabled. Do not claim online verification or promise to search; explain the "
+                "limitation when needed.")
     choice = ("The user selected always-search: search before answering. " if mode == "on" else
-              "Search when explicitly requested, for supplied URLs to read/verify, or changing information. "
-              "Greetings, emotions, rewriting and stable knowledge normally need no search. ")
+              "Search when explicitly requested, for supplied URLs to read/verify, or changing information, including "
+              "current prices, specs and comparisons of real products. Greetings, emotions, rewriting and stable "
+              "knowledge normally need no search. ")
     return (
-        "## Web search\n" + choice +
+        "## Web search\n" + choice + SEARCH_PROMISE_RULE + " " +
         "Resolve meaning from supplied context; ask a focused question for unresolved ambiguous terms rather than "
         "searching all meanings, even in always-search mode. Start simple questions with a focused query; one or two "
         "relevant sources usually suffice. Stop when answered; continue only for gaps, contradictions or requested "

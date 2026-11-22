@@ -534,7 +534,7 @@
      "role": "user"
     }
    ],
-   "instructions": "Đặt tên\n\n## Web search\nSearch is disabled. Do not claim online verification; explain the limitation when needed.",
+   "instructions": "Đặt tên\n\n## Web search\nSearch is disabled. Do not claim online verification or promise to search; explain the limitation when needed.",
    "max_output_tokens": 1024,
    "model": "grok-4.7",
    "reasoning": {
@@ -567,7 +567,7 @@
      "cache_control": {
       "type": "ephemeral"
      },
-     "text": "Hồ sơ người dùng giả lập.\n\n## Web search\nSearch is disabled. Do not claim online verification; explain the limitation when needed.",
+     "text": "Hồ sơ người dùng giả lập.\n\n## Web search\nSearch is disabled. Do not claim online verification or promise to search; explain the limitation when needed.",
      "type": "text"
     }
    ],

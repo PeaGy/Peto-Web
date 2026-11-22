@@ -378,6 +378,26 @@ summary ticker, and a phase bar sized by time spent.
   - The follow-up's own text is held. Without a tool call it is dropped when short ("XONG") and kept when long (an
     error list the user asked to approve first), and the original answer stands.
   - Tests: `tests/test_follow_up.py`, with a fake Responses client and an end-to-end chat edit.
+- **Promise to search, then stop** (2026-11-22, model peto, web search "auto", conversation
+  `bc1bc1816a4e4d17ae6a103f8c21ef56`). Asked "thế regera đắt hơn agera rs nhỉ?", Grok answered only "…để mình lục xem
+  đồ ngốc này đoán đúng không~" and ended the turn: one round, 204 output tokens, `search=False`. A second report the
+  same week: "Mình kiểm tra lại cho chắc rồi spoil tiếp cho ad."
+  - Prompt: `prompts.chat.SEARCH_PROMISE_RULE`, in the "auto" and "on" search sections: never say you will search or
+    check unless the search is called in the same reply, since the turn ends when the model stops writing; without a
+    search, answer from knowledge and say it is unverified. "Auto" now names current prices, specs and comparisons of
+    real products as changing information. The search-off section also forbids promising a search.
+  - Safety net in `ResponsesProvider` (any service): one search nudge per turn (`SEARCH_FOLLOW_UP`) when search is
+    enabled, nothing has been searched yet this turn, rounds are left, and a round ends with at most `FOLLOW_UP_CHARS`
+    characters, no tool call and text that `announces_search` matches (first-person "để mình lục/tra/tìm/kiểm/xem",
+    "mình sẽ tra", "chờ tí mình tra", "let me check", "I'll look it up"; a second-person "bạn kiểm tra lại" does not
+    match). The workbook nudge has priority when both apply.
+  - The nudge round forces search (`required_search()`: `tool_choice="required"` and only the web tool, like the first
+    round of "on") and, like the workbook follow-up, sends no `round` chunk. When the search starts, the promise is
+    replaced and becomes a `note` step in the work log; the searched answer streams normally (not held).
+  - If the nudge round still does not search, its text follows the promise as the answer and a warning
+    "Nhắc tìm web: lần gọi nhắc vẫn không tra" is logged. Both cases log "Nhắc tìm web: …" at INFO.
+  - Tests: `tests/test_search_promise.py` (detector, prompt, forced search, no search after the nudge, no nudge for
+    long or plain answers, search off, after a real search, end-to-end chat with the stored answer and source).
 - **UI** (`WorkTimeline.tsx`; never a `workLog.ts` beside a `WorkLog.tsx`: the `LocalVoice` problem below).
   - **While running:** the header reads "Đang làm m:ss" on the client clock (`workStartedAt`), and every step has its own
     time.
@@ -562,6 +582,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Promise to search without searching (2026-11-22, branch `search-promise-fix`, not merged)
+
+See "Promise to search, then stop" under "Work log". Not yet tried with real Grok: the live site runs the old prompt
+until deployed; the plan is to repeat the Regera question in "auto" on peto.peagy.com and read the `Nhắc tìm web` log.
+
 
 ## Live sync of the Chat tab across devices (2026-11-21, branch `chat-live-sync`, not merged)
 
