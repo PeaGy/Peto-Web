@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from storage import connection as db_connection
 from core.config import UPLOAD_DIR
 from ai import models as ai_models
-from storage.conversations import conversation_settings, set_chat_selection
+from storage.conversations import GROUP_MEMBERS, conversation_settings, set_chat_selection
 from storage import chat_quotes, chat_lineage, chat_turns
 
 
@@ -87,8 +87,9 @@ async def update(owner, conversation_id, title=None, pinned=None, archived=None)
             values.append(int(archived))
         if not fields:
             raise HTTPException(400, 'Chưa có thay đổi')
-        result = await connection.execute(f"UPDATE conversations SET {', '.join(fields)} WHERE id=? AND owner=? AND mode='chat'",
-                                          (*values, conversation_id, owner))
+        result = await connection.execute(
+            f"UPDATE conversations SET {', '.join(fields)} WHERE owner=? AND mode='chat' AND id IN ({GROUP_MEMBERS})",
+            (*values, owner, owner, conversation_id, owner, conversation_id))
         if not result.rowcount:
             raise HTTPException(404, 'Không tìm thấy hội thoại')
         await connection.commit()
@@ -201,8 +202,8 @@ async def fork(owner, conversation_id, message_id, text, quoted_source=chat_quot
             group = source['branch_group'] or conversation_id
             now = time.time()
             await connection.execute('UPDATE conversations SET branch_group=? WHERE id=?', (group, conversation_id))
-            await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group,project_id,model,effort)
-                VALUES(?,?,?,?,?,'chat',?,'locked',?,?,?,?)""", (new_id,owner,source['title'],now,now,source['persona'],group,source['project_id'],source['model'],source['effort']))
+            await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group,project_id,model,effort,pinned)
+                VALUES(?,?,?,?,?,'chat',?,'locked',?,?,?,?,?)""", (new_id,owner,source['title'],now,now,source['persona'],group,source['project_id'],source['model'],source['effort'],source['pinned']))
             document_ids, message_ids = {}, {}
             last_user = None
             for row in rows:

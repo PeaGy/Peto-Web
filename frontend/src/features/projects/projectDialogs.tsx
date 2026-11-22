@@ -1,7 +1,7 @@
 import { useCallback, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { NavigateFunction } from 'react-router';
 import { SettingsIcon } from '../settings/settingsUi';
-import { UnauthorizedError, updateConversation, type Conversation } from '../../shared/api/api';
+import { UnauthorizedError, isConversation, updateConversation, type Conversation } from '../../shared/api/api';
 import { EditIcon } from '../../shared/ui/EditIcon';
 import TextEditDialog from '../../shared/ui/TextEditDialog';
 import ConversationMenu from '../../app/ConversationMenu';
@@ -111,7 +111,7 @@ async function moveConversation(id:string|null) {
   if(!moveTarget || metadataBusy)return;
   const session=authVersion.current;
   setMetadataBusy(true);setProjectError('');
-  try {await updateConversation(moveTarget.id,{project_id:id});if(session!==authVersion.current)return;if(conversationId===moveTarget.id){setActiveProjectId(id);}const old=moveTarget.project_id;setMoveTarget(null);await refreshConversations();if(old)void refreshProjectChats(old);if(id)void refreshProjectChats(id);}
+  try {await updateConversation(moveTarget.id,{project_id:id});if(session!==authVersion.current)return;if(isConversation(moveTarget,conversationId)){setActiveProjectId(id);}const old=moveTarget.project_id;setMoveTarget(null);await refreshConversations();if(old)void refreshProjectChats(old);if(id)void refreshProjectChats(id);}
   catch(err){if(session===authVersion.current){if(err instanceof UnauthorizedError)handleUnauthorized();else setProjectError(err instanceof Error ? err.message : 'Chưa chuyển được hội thoại.');}}
   finally{if(session===authVersion.current)setMetadataBusy(false);}
 }

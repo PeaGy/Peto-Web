@@ -84,8 +84,27 @@ async def latest_conversation(owner: str, mode: str) -> str | None:
         return row[0] if row else None
 
 
+# Các hội thoại cùng nhóm phiên bản với hội thoại ``id`` (tạo lại câu trả lời hay sửa câu hỏi tách thành bản mới cùng
+# ``branch_group``): với người dùng đó là một cuộc trò chuyện, nên đổi tên, ghim, lưu trữ, chuyển dự án và xóa áp cho cả
+# nhóm (22/11/2026). Hội thoại không thuộc nhóm nào (hay của Companion) chỉ là chính nó. Tham số: owner, id, owner, id.
+GROUP_MEMBERS = """SELECT g.id FROM conversations g
+    WHERE g.owner=? AND (g.id=? OR (g.mode='chat' AND g.branch_group<>'' AND g.branch_group=(
+        SELECT s.branch_group FROM conversations s WHERE s.owner=? AND s.id=? AND s.mode='chat')))"""
+
+
+async def group_members(owner: str, conversation_id: str) -> list[str]:
+    """Mã mọi bản trong nhóm phiên bản của một hội thoại (rỗng nếu không thấy hội thoại của chủ này)."""
+    async with db_connection.connect() as db:
+        rows = await (await db.execute(GROUP_MEMBERS, (owner, conversation_id, owner, conversation_id))).fetchall()
+    return [row[0] for row in rows]
+
+
 async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query: str = '', project_id: str | None = None, unassigned: bool = False, archived: bool = False) -> list[dict]:
-    """Hội thoại của tab Trò chuyện; mạch Companion không hiện ở thanh bên."""
+    """Hội thoại của tab Trò chuyện; mạch Companion không hiện ở thanh bên.
+
+    Mỗi nhóm phiên bản chỉ hiện một dòng như ChatGPT và Claude: bản sửa gần nhất (22/11/2026: bấm "Thử lại" ba lần thành
+    ba dòng trùng tên). ``version_ids`` là mã mọi bản cùng trạng thái lưu trữ, để trang biết bản đang mở thuộc dòng nào.
+    """
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
         def fold(value):
@@ -95,10 +114,19 @@ async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query
             """
             SELECT c.id, c.title, c.created_at, c.updated_at, c.persona, c.title_state, c.title_attempts, c.pinned, c.project_id, c.archived,
                    (SELECT COUNT(*) FROM messages m
-                     WHERE m.conversation_id = c.id) AS message_count
+                     WHERE m.conversation_id = c.id) AS message_count,
+                   CASE WHEN c.branch_group = '' THEN c.id ELSE (
+                     SELECT group_concat(v.id) FROM conversations v
+                      WHERE v.owner = c.owner AND v.mode = 'chat' AND v.archived = c.archived
+                        AND v.branch_group = c.branch_group) END AS version_ids
               FROM conversations c
              WHERE c.owner = ? AND c.mode = 'chat' AND c.archived = ?
                AND (? IS NULL OR c.project_id=?) AND (?=0 OR c.project_id IS NULL)
+               AND (c.branch_group = '' OR NOT EXISTS (
+                 SELECT 1 FROM conversations n
+                  WHERE n.owner = c.owner AND n.mode = 'chat' AND n.archived = c.archived
+                    AND n.branch_group = c.branch_group
+                    AND (n.updated_at > c.updated_at OR (n.updated_at = c.updated_at AND n.id > c.id))))
                AND (? = '' OR instr(search_fold(c.title), search_fold(?)) > 0 OR EXISTS (
                  SELECT 1 FROM messages s WHERE s.conversation_id=c.id AND instr(search_fold(s.content), search_fold(?)) > 0))
              ORDER BY c.pinned DESC, c.updated_at DESC, c.id DESC
@@ -106,7 +134,8 @@ async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query
             """,
             (owner, int(archived), project_id, project_id, int(unassigned), query, query, query, limit, offset),
         )
-        return [dict(row) for row in await cursor.fetchall()]
+        return [{**dict(row), 'version_ids': (row['version_ids'] or row['id']).split(',')}
+                for row in await cursor.fetchall()]
 
 
 async def get_messages(
@@ -255,6 +284,14 @@ async def set_title(owner: str, conversation_id: str, title: str) -> None:
             (cleaned, conversation_id, owner),
         )
         await db.commit()
+
+
+async def delete_conversation_group(owner: str, conversation_id: str) -> bool:
+    """Xóa một cuộc trò chuyện cùng mọi phiên bản của nó (nút Xóa ở thanh bên và trang Lưu trữ)."""
+    deleted = False
+    for member in await group_members(owner, conversation_id):
+        deleted = await delete_conversation(owner, member) or deleted
+    return deleted
 
 
 async def delete_conversation(owner: str, conversation_id: str) -> bool:

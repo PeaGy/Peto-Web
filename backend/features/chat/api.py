@@ -141,7 +141,7 @@ async def get_attachment(attachment_id: str, owner: str = Depends(current_owner)
 async def delete_conversation(
     conversation_id: str, owner: str = Depends(current_owner)
 ) -> dict:
-    if not await db.delete_conversation(owner, conversation_id):
+    if not await db.delete_conversation_group(owner, conversation_id):
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
     return {"deleted": True}
 

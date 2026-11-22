@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EditIcon } from '../../shared/ui/EditIcon';
-import type { Conversation } from '../../shared/api/api';
+import { isConversation, type Conversation } from '../../shared/api/api';
 import type { Project } from './projectApi';
 import type { useProjects } from './useProjects';
 
@@ -52,7 +52,7 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
         </div>
         {open && <div className="project-chats" id={`project-chats-${item.id}`}>
           {page?.items.map(chat => (
-            <div className={`conv${conversationId === chat.id ? ' active' : ''}`} key={chat.id}>
+            <div className={`conv${isConversation(chat, conversationId) ? ' active' : ''}`} key={chat.id}>
               <button className="conv-open" disabled={disabled} data-tip data-tip-side="right" onClick={() => onChat(chat.id)}>
                 <span className="conv-title" data-tip-overflow>{chat.title || 'Chưa có tiêu đề'}</span>
               </button>

@@ -435,6 +435,18 @@ summary ticker, and a phase bar sized by time spent.
     reply, no files) counts the same, so "Tạo lại" on it replaces it in place; editing that question still forks.
     Anything else still forks (`test_resending_a_stopped_last_question_stays_in_the_same_conversation`,
     `test_regenerating_a_silent_reply_stays_in_the_same_conversation`).
+  - **One sidebar row per version group** (since 2026-11-22, like ChatGPT and Claude). A fork shares `branch_group`
+    with its source, and the sidebar used to list every fork, so regenerating a finished reply looked like a new chat
+    each time (the owner saw "Màu sắc Part 4 và Morioh" three times after two retries). `list_conversations` now
+    returns only the most recently updated member of each group (same archive state) and adds `version_ids`, the ids
+    of all members; search, project lists and the archive page use the same query. The frontend's
+    `isConversation(row, id)` marks the row active while another version is open (the ‹ 1/2 › variant buttons) and
+    closes the open chat when its group is archived or deleted.
+  - Rename, pin, archive and project moves update the whole group (`storage.conversations.GROUP_MEMBERS`); a new fork
+    copies `pinned` from its source. `DELETE /api/conversations/{id}` deletes every version (the owner chose this on
+    2026-11-22: one row is one chat, so deleting it removes the older replies too). Companion conversations have no
+    group and are unaffected. Model and effort stay per version. Tests: `tests/test_branch_sidebar.py`,
+    `frontend/tests/conversationVersions.test.ts`.
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
 - **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
@@ -588,6 +600,13 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## One sidebar row per version group (2026-11-22, branch `chat-one-row-per-branch`, not merged)
+
+"Thử lại" on a finished reply kept appearing to create new chats: by design it forks a version, and the sidebar listed
+every version. Earlier fixes (2026-10-08 stopped replies, 2026-11-17 silent replies) only kept those two cases in
+place. See "One sidebar row per version group" under "Work log"; delete removes all versions (owner's choice).
+
 
 ## Promise to search: wider detector (2026-11-22, branch `search-promise-wider`, not merged)
 

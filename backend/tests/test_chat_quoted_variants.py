@@ -195,7 +195,10 @@ async def test_family_scope_excludes_other_owner_companion_archive_and_deleted_o
             await sql.execute('INSERT INTO chat_message_lineage VALUES(?,?,?,?,?)', (aid, aid, question['message']['id'], '', ''))
             await sql.commit()
     assert len((await history(client, cid))[-1]['reply_variants']['choices']) == 3
-    await client.patch(f"/api/conversations/{fork['conversation_id']}", json={'archived': True})
+    # Thanh bên lưu trữ cả nhóm (test_branch_sidebar.py); dữ liệu cũ vẫn có thể có riêng một bản bị lưu trữ.
+    async with connection.connect() as sql:
+        await sql.execute('UPDATE conversations SET archived=1 WHERE id=?', (fork['conversation_id'],))
+        await sql.commit()
     assert len((await history(client, cid))[-1]['reply_variants']['choices']) == 2
     await db.delete_conversation(TEST_OWNER, cid)
     survivor = (await history(client, third['conversation_id']))[-1]
@@ -269,7 +272,13 @@ async def test_moving_a_variant_to_another_project_removes_it_from_the_family(cl
     fork, _ = await send(client, cid, 'Question', branch=question['message']['id'])
     assert len((await history(client, cid))[-1]['reply_variants']['choices']) == 2
     project = await projects.create_project(TEST_OWNER, 'Separate context')
+    # Chuyển dự án qua thanh bên đưa cả nhóm đi cùng (test_branch_sidebar.py), nên vẫn đủ hai bản; dữ liệu cũ có một bản
+    # nằm ở dự án khác thì bản đó không thuộc họ phiên bản.
     await projects.move_conversation(TEST_OWNER, fork['conversation_id'], project['id'])
+    assert len((await history(client, cid))[-1]['reply_variants']['choices']) == 2
+    async with connection.connect() as sql:
+        await sql.execute('UPDATE conversations SET project_id=NULL WHERE id=?', (cid,))
+        await sql.commit()
     assert 'reply_variants' not in (await history(client, cid))[-1]
     assert 'reply_variants' not in (await history(client, fork['conversation_id']))[-1]
     await projects.move_conversation(TEST_OWNER, fork['conversation_id'], None)
