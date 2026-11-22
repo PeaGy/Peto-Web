@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import json
+import re
+import unicodedata
 from time import perf_counter
 import anyio
 from collections.abc import AsyncIterator
@@ -37,7 +39,7 @@ from features.companion import player_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
 from features.chat import capabilities, request_context
 from prompts.chat import (CODE_PROMPT, FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
-                          RUNTIME_PLACEMENT_PROMPT, SEARCH_FALLBACK_PROMPT)
+                          RUNTIME_PLACEMENT_PROMPT, SEARCH_FALLBACK_PROMPT, SEARCH_FOLLOW_UP_PROMPT)
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
@@ -73,6 +75,23 @@ PULSE_SECONDS = 10.0
 # kết thúc lượt, nên người dùng không nhận được tệp nào.
 FOLLOW_UP_CHARS = 300
 FOLLOW_UP = FOLLOW_UP_PROMPT
+SEARCH_FOLLOW_UP = SEARCH_FOLLOW_UP_PROMPT
+# Câu hứa tra web ("để mình lục xem", "mình kiểm tra lại cho chắc", "let me check"): ngày 22/11/2026 Grok (chế độ tìm web
+# tự động) viết câu như vậy rồi kết thúc lượt mà không tra. Chỉ xét câu ngắn của lượt chưa tra lần nào.
+_SELF = r"(?:mình|tớ|tôi|tui|em|anh|chị|peto)"
+_LOOKUP = r"(?:tra|lục|tìm|kiểm|check|search|google|soi|xem)"
+_SEARCH_PROMISE = re.compile(
+    rf"\bđể {_SELF}(?: \w+)? {_LOOKUP}"
+    rf"|\b{_SELF} (?:sẽ |đi |thử |đang |phải )?(?:tra|lục|tìm|kiểm tra|check|search|google|soi)\b"
+    r"|\b(?:chờ|đợi) (?:mình|tớ|tí|chút|xíu|lát)\b[^.!?\n]{0,20}\b(?:tra|lục|tìm|kiểm tra|check)\b"
+    r"|\b(?:let me|lemme|i'll|i will|i'm going to|i am going to) (?:quickly |just )?"
+    r"(?:search|check|verify|google|look (?:it |that |this |them )?up|look into)\b",
+    re.IGNORECASE)
+
+
+def announces_search(text: str) -> bool:
+    """Câu trả lời này chỉ hứa sẽ tra hay kiểm tra (không tra thật thì người dùng không nhận được câu trả lời)."""
+    return bool(_SEARCH_PROMISE.search(unicodedata.normalize("NFC", text).casefold().replace("’", "'")))
 
 
 def _dump(item) -> dict:
@@ -320,6 +339,8 @@ class _ResponsesRun:
         # Manifest công cụ đã báo trong khối runtime gần nhất: vòng nào khác thì nối thêm một bản snapshot mới.
         self.shown_manifest = None
         self.follow_up_next = False
+        # Nhắc tra web (announces_search): tối đa một lần mỗi lượt; lần gọi nhắc bắt buộc tra và phát chữ như thường.
+        self.search_nudge = self.search_nudge_next = self.search_nudged = False
         self.round_index = 0
         self.finalizing = False
 
@@ -433,6 +454,7 @@ class _ResponsesRun:
         for round_index in range(self.max_rounds + 1):
             self.round_index = round_index
             self.follow_up, self.follow_up_next = self.follow_up_next, False
+            self.search_nudge, self.search_nudge_next = self.search_nudge_next, False
             # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
             self.finalizing = self.tools_enabled and (self.search_fallback or round_index == self.max_rounds
                                                       or self.calls_used >= self.max_calls)
@@ -441,10 +463,10 @@ class _ResponsesRun:
             self.plan = capabilities.select(documents=self.document_session, files=self.files, history=self.chat_history,
                 github_state=self.github_state, github_reason=self.github_reason, search_enabled=self.search_enabled,
                 web_search=self.web_search, tools_enabled=self.tools_enabled, finalizing=self.finalizing,
-                required_search=self.search_enabled and self.web_search == 'on' and round_index == 0 and not self.finalizing,
+                required_search=self.required_search(),
                 search_fallback=self.search_fallback, code_reason=self.code_reason)
             self.round_started = perf_counter()
-            if self.tools_enabled and not self.follow_up:
+            if self.tools_enabled and not self.follow_up and not self.search_nudge:
                 # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
                 # tiếp không có mốc riêng: phía chat coi câu báo lần trước vẫn là bản nháp của lần gọi này, để khi Grok gọi
                 # công cụ thì câu báo thành câu dẫn trong nhật ký.
@@ -464,6 +486,11 @@ class _ResponsesRun:
             async with aclosing(self._run_tools()) as chunks:
                 async for chunk in chunks:
                     yield chunk
+
+    def required_search(self) -> bool:
+        """Vòng này phải tra web: chế độ luôn tra ở lần gọi đầu, hoặc lần gọi nhắc sau câu hứa tra mà chưa tra."""
+        return self.search_enabled and not self.finalizing and (
+            (self.web_search == 'on' and self.round_index == 0) or self.search_nudge)
 
     def _request(self) -> dict:
         """Tham số gọi Responses của vòng này; khối runtime nối vào đuôi input, kiểm ngân sách request thật."""
@@ -496,7 +523,7 @@ class _ResponsesRun:
             logger.info("Kết thúc tra cứu: vòng=%d công_cụ_đã_gọi=%d github=%s", self.round_index, self.calls_used, bool(self.github_schemas))
         if self.search_enabled:
             create_kwargs["include"].append("web_search_call.action.sources")
-            if self.web_search == "on" and self.round_index == 0 and not finalizing:
+            if self.required_search():
                 # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
                 create_kwargs["tool_choice"] = "required"
         if snapshot is not None:
@@ -526,7 +553,7 @@ class _ResponsesRun:
         self.output_items: list[dict] = []
         self.completed = False
         self.recovering_search = False
-        self.emitted_text = self.follow_up       # lần gọi nhắc: câu báo lần trước vẫn đang hiện
+        self.emitted_text = self.follow_up or self.search_nudge   # lần gọi nhắc: câu báo lần trước vẫn đang hiện
         self.noted = False
         self.written: list[str] = []     # chữ lần gọi này đã phát
         # Chữ của lần gọi nhắc được giữ lại: Grok gọi công cụ thì phát (thành câu dẫn cùng câu báo), không gọi thì đó
@@ -710,6 +737,9 @@ class _ResponsesRun:
             if self.web_search == "on" and not self.search_finished and not self.sources:
                 raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")
             self.decision = 'return'
+            if self.search_nudge and not self.search_ids:
+                logger.warning("Nhắc tìm web: lần gọi nhắc vẫn không tra, chữ thêm %d ký tự", len("".join(self.written).strip()))
+                return
             if self.follow_up:
                 # Nhắc rồi vẫn không gọi công cụ: câu báo giữ nguyên làm câu trả lời. Chữ ngắn thêm vào (như "XONG")
                 # bỏ đi; chữ dài là nội dung thật (danh sách lỗi khi người dùng dặn chờ đồng ý) thì giữ.
@@ -726,6 +756,17 @@ class _ResponsesRun:
                 self.payload_input.extend(self.output_items)
                 self.payload_input.append({"role": "user", "content": [{"type": "input_text", "text": FOLLOW_UP}]})
                 logger.info("Nhắc làm tiếp: lần gọi %d chỉ viết %d ký tự, chưa gọi công cụ", self.round_index + 1,
+                            len(written_text))
+                self.decision = 'continue'
+            elif self.search_enabled and not self.search_ids and not self.search_nudged and not self.finalizing \
+                    and self.round_index + 1 < self.max_rounds and 0 < len(written_text) <= FOLLOW_UP_CHARS \
+                    and announces_search(written_text):
+                # Câu báo ở lại trên màn hình: lần gọi nhắc tra web thì nó thành câu dẫn trong nhật ký (như câu viết
+                # trước lúc tra), không tra thì câu trả lời viết tiếp sau nó.
+                self.search_nudged = self.search_nudge_next = True
+                self.payload_input.extend(self.output_items)
+                self.payload_input.append({"role": "user", "content": [{"type": "input_text", "text": SEARCH_FOLLOW_UP}]})
+                logger.info("Nhắc tìm web: lần gọi %d chỉ hứa tra (%d ký tự), chưa tra", self.round_index + 1,
                             len(written_text))
                 self.decision = 'continue'
             return
