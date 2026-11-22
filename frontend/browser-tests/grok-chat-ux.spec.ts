@@ -164,13 +164,27 @@ test('regenerate creates a real family and preserves both answers across reload'
   await expect(page.getByRole('group', { name: 'Phiên bản câu trả lời' })).toContainText('2/2');
   expect(payloads).toHaveLength(1);
   expect(payloads[0]).toMatchObject({ branch_message_id: 1, message: 'Hãy so sánh và đưa ví dụ mã.' });
+  // ‹ › chỉ đổi câu trả lời tại chỗ (22/11/2026): mép trên câu trả lời đứng yên, không có màn "Đang mở hội thoại".
+  const answerTop = async () => (await page.locator('article[data-role="assistant"]').last().boundingBox())!.y;
+  const before = await answerTop();
   await page.getByRole('button', { name: 'Câu trả lời trước' }).click();
-  await expect(page.locator('article[data-message-id="2"]')).toBeFocused();
+  await expect(page).toHaveURL(/\/chat\/A$/);
   await expect(page.getByRole('group', { name: 'Phiên bản câu trả lời' })).toContainText('1/2');
+  await expect(page.locator('article[data-message-id="2"]')).toBeVisible();
+  expect(Math.abs(await answerTop() - before)).toBeLessThan(2);
+  await expect(page.getByText('Đang mở hội thoại')).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole('group', { name: 'Phiên bản câu trả lời' })).toContainText('1/2');
+  const reloaded = await answerTop();
   await page.getByRole('button', { name: 'Câu trả lời sau' }).click();
-  await expect(page.locator('article[data-message-id="4"]')).toBeFocused();
+  await expect(page.locator('article[data-message-id="4"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/chat\/B$/);
+  // Bản ngắn hơn: khung chỉ cuộn được tới hết nội dung, nên câu trả lời chỉ được dời xuống đúng phần cuộn bị mất.
+  const room = await page.locator('.messages').evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
+  const moved = await answerTop() - reloaded;
+  expect(room).toBeLessThan(1);
+  expect(moved).toBeGreaterThan(-2);
+  if (moved > 2) expect(await page.locator('.messages').evaluate(element => element.scrollTop)).toBeLessThan(1);
   await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
   await page.screenshot({ path: info.outputPath('variants-light.png') });
   expect(payloads).toHaveLength(1);

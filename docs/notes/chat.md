@@ -447,6 +447,16 @@ summary ticker, and a phase bar sized by time spent.
     2026-11-22: one row is one chat, so deleting it removes the older replies too). Companion conversations have no
     group and are unaffected. Model and effort stay per version. Tests: `tests/test_branch_sidebar.py`,
     `frontend/tests/conversationVersions.test.ts`.
+  - **‹ › swaps the answer in place** (since 2026-11-22, like ChatGPT and Claude). The arrows used to navigate to the
+    other version's route, which blanked the chat, showed "Đang mở hội thoại", reloaded every message and scrolled to
+    the answer. Now `openReplyVariant` records the answer's offset from the top of `.messages` (`variantSwap`),
+    replaces the URL (no history entry: Back leaves the chat), and `loadConversation` keeps the current messages and
+    `conversationId` on screen until the other version has loaded, then sets both together. Rows are keyed by index,
+    so the answer is the same element and the clicked arrow keeps focus. A layout effect restores the answer's top
+    offset and skips the next stick-to-bottom scroll (`keepScroll`); a shorter version can only move as far as the
+    scroll range shrinks. A failed load falls back to the normal error state. Tests: the "Grok UX integration" block
+    in `App.test.tsx` and "regenerate creates a real family" in `browser-tests/grok-chat-ux.spec.ts` (answer top stays
+    within 2 px, PC and mobile).
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
 - **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
@@ -600,6 +610,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Reply version arrows swap in place (2026-11-22, branch `chat-variant-in-place`, not merged)
+
+The owner asked why ‹ › opened another chat and scrolled instead of changing only the answer. See "‹ › swaps the
+answer in place" under "Work log". The storage model (one conversation per version) is unchanged.
+
 
 ## One sidebar row per version group (2026-11-22, branch `chat-one-row-per-branch`, not merged)
 
