@@ -92,3 +92,31 @@ test('câu trả lời ngắn: câu hỏi vẫn ở đỉnh sau khi xong, có ch
   expect(await page.locator('.messages > .turn-room').evaluate(node => node.getBoundingClientRect().height)).toBe(0);
   await noPageOverflow(page);
 });
+
+test('tin rất dài gập lại như Claude: câu hỏi ghim lên đỉnh mà đầu câu trả lời vẫn trong màn hình', async ({ page }, info) => {
+  await setup(page, 30);
+  const composer = page.getByLabel('Nhắn cho Peto', { exact: true });
+  await composer.fill(Array.from({ length: 40 }, (_, i) => `Dòng thứ ${i + 1} của một tin rất dài.`).join('\n'));
+  await composer.press('Enter');
+  await expect.poll(async () => Math.abs(await questionTop(page))).toBeLessThan(2);
+  const question = page.locator('.messages > article[data-role="user"]').last();
+  const fold = question.locator('.user-fold');
+  await expect(fold).toHaveClass(/folded/);
+  expect((await fold.boundingBox())!.height).toBeLessThanOrEqual(200);
+  // Đầu câu trả lời nằm ngay dưới câu hỏi đã gập, trong khung nhìn.
+  const answer = page.locator('.messages > article[data-role="assistant"]').last();
+  await expect(answer).toContainText('Đoạn 1 của câu trả lời');
+  const view = (await page.locator('.messages').boundingBox())!;
+  expect((await answer.boundingBox())!.y).toBeLessThan(view.y + view.height - 40);
+  await expect.poll(async () => (await streamState(page)).done, { timeout: 20_000 }).toBe(true);
+  await page.screenshot({ path: info.outputPath('user-fold.png') });
+  // Xem thêm mở hết tin mà mép trên đứng yên; Thu gọn gập lại.
+  const top = (await question.boundingBox())!.y;
+  await question.getByRole('button', { name: 'Xem thêm' }).click();
+  await expect(fold).not.toHaveClass(/folded/);
+  expect((await fold.boundingBox())!.height).toBeGreaterThan(400);
+  expect(Math.abs((await question.boundingBox())!.y - top)).toBeLessThan(2);
+  await question.getByRole('button', { name: 'Thu gọn' }).click();
+  await expect(fold).toHaveClass(/folded/);
+  await noPageOverflow(page);
+});

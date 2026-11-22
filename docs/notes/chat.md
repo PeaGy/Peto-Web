@@ -474,6 +474,16 @@ summary ticker, and a phase bar sized by time spent.
   2 px, a 300 px scroll-up during streaming is not undone, jump-to-latest follows, short answer keeps the question on
   top, reload clears the spacer); the mobile `chat-offline` snapshot in `recovery.spec.ts` now shows the pinned
   question.
+- **Long user messages fold, like Claude** (since 2026-11-22). Checked on claude.ai with the owner's account: a normal
+  question is pinned the same way as above; a question longer than the screen is folded to 200 px with the last
+  48 px fading out and a "Show more" / "Show less" button, so the start of the answer stays in view. Peto's
+  `UserMessageFold.tsx` does the same for user text (not attachments): taller than `FOLD_LIMIT` (248 px) folds to
+  `FOLD_HEIGHT` (200 px) with a mask fade and "Xem thêm" / "Thu gọn" (`aria-expanded`, `aria-controls`). Before the
+  first measurement the box is capped at 248 px (`data-unmeasured`, as Claude does) so a long message never grows
+  and then shrinks. It re-measures on text change and window resize, keeps an opened message open, and "Thu gọn"
+  brings the bubble's top back into view if it was scrolled past. Print shows the full text. Tests:
+  `tests/userMessageFold.test.tsx` and the long-message case in `browser-tests/chat-turn-pin.spec.ts` (folded to
+  ≤ 200 px, answer start visible, expand keeps the top within 2 px).
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
 - **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
@@ -627,6 +637,12 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Long user messages fold like Claude (2026-11-22, branch `chat-user-fold`, not merged)
+
+The owner let me test claude.ai: Claude folds a long question to 200 px with "Show more", which Peto lacked, so a long
+pinned question pushed the answer off screen. See "Long user messages fold, like Claude" under "Work log".
+
 
 ## Claude-style pinned question while streaming (2026-11-22, branch `chat-turn-pin`, not merged)
 
