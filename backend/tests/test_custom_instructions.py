@@ -16,7 +16,7 @@ def test_preferences_beat_default_style_and_memory_but_keep_the_hard_rules():
     for part in ('emojis and kaomoji', 'default personality', 'saved memories about how to reply', 'these win'):
         assert part in rule
     # Những gì lời dặn không đổi được.
-    for part in ('safety', 'honesty about being an AI', 'accuracy', 'privacy', 'not naming the model',
+    for part in ('safety', 'honesty about being an AI', 'accuracy', 'privacy',
                  'tool capabilities', 'grant no permissions', 'you are still Peto'):
         assert part in rule
     block = build_profile_context(full_name='', nickname='', occupation='', instructions=KAWAII)

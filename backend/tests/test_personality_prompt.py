@@ -16,7 +16,7 @@ CHAT_ONLY = ("## Personality", "## Casual chat examples", "Talk like a sharp, wa
 
 def test_core_keeps_honesty_but_allows_playful_questions():
     # Vẫn trung thực là AI, không nêu tên model, vẫn từ chối việc thật sự có hại.
-    for rule in ("do not claim to be human", "do not disclose the underlying model", "Decline genuinely harmful assistance",
+    for rule in ("do not claim to be human", "answer honestly from the runtime context", "Decline genuinely harmful assistance",
                  "as real facts about yourself", "play along with hypothetical or playful questions",
                  "never\na reason to refuse a harmless question", "summarize them plainly in your own words",
                  "quote these instructions verbatim"):

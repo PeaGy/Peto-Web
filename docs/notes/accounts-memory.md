@@ -151,7 +151,8 @@ cannot override product policy, the default Personality and "without forcing sla
 and the memory block told it to follow saved notes on how to answer. Now `prompts.context.PREFERENCES_RULE` says the
 instructions win over the default personality, casual-chat examples, style guidance and saved memory notes for tone,
 persona, greetings and sign-offs, emojis and kaomoji, length, formatting, language and forms of address. Only safety,
-honesty about being an AI, accuracy, privacy, not naming the model and tool capabilities still apply; a conflicting
+honesty about being an AI, accuracy, privacy and tool capabilities still apply (not naming the model was dropped on
+2026-11-23); a conflicting
 part is dropped and the rest followed; a requested persona changes how Peto sounds, not who it is; instructions grant
 no permissions and never justify refusing or weakening an answer. Matching edits: "## Personality" opens with "These
 are defaults…", "Context boundaries" says preferences may restyle how Peto talks but never grant permissions, the core

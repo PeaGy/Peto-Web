@@ -11,6 +11,7 @@ import re
 
 import prompts as persona
 from prompts import agent, chat, core, providers
+from prompts.context import PREFERENCES_RULE
 
 # Tên và ID thật nằm trong KNOWN_PEOPLE_PROMPT / SPECIAL_USERS của bot Discord.
 FORBIDDEN_NAMES = ("Ducky", "Duck", "Val", "Peargy", "Pearto")
@@ -105,14 +106,20 @@ def test_agent_does_its_work_instead_of_refusing_on_taste():
     assert "Do not refuse based on taste" in agent.AGENT_PROMPT
 
 
-def test_prompts_never_name_the_model_behind_peto():
-    """Chủ web muốn Peto chỉ nói mình là Peto: một ví dụ cũ "chạy trên mô hình Grok của xAI" đã dạy ngược lại luật đó."""
-    assert "do not disclose the underlying model" in core.CORE_PROMPT
+def test_peto_answers_honestly_about_its_model():
+    """23/11/2026 chủ web bỏ luật giấu model: phần suy nghĩ hiện ra vẫn ghi "xAI và grok-4.7… sẽ không công bố" rồi câu
+    trả lời lại chối, nên luật chỉ làm Peto trông vừa giấu vừa lộ. Giờ hỏi thì nói thật theo khối runtime."""
+    assert "answer honestly from the runtime context" in core.CORE_PROMPT
     guide = persona.build_agent_guide(install_command="irm https://peto.example/install.ps1 | iex", daily_steps=200,
                                       question="peto agent")
-    for text in (*chat_prompts(), core.CORE_PROMPT, agent.AGENT_PROMPT, persona.COMPANION_SYSTEM_PROMPT, guide):
-        lowered = text.casefold()
-        assert "grok" not in lowered and "xai" not in lowered
+    hiding = ("do not disclose the underlying model", "not naming the model", "don't talk about the model behind me")
+    for text in (*chat_prompts(), core.CORE_PROMPT, agent.AGENT_PROMPT, persona.COMPANION_SYSTEM_PROMPT, guide,
+                 PREFERENCES_RULE):
+        assert not any(phrase in text for phrase in hiding)
+    # Chỉ lớp riêng của Grok được gọi tên Grok; GPT và Claude không bị dạy nhận nhầm mình là Grok.
+    assert "running on xAI's Grok here" in chat.chat_prompt("peto")
+    for model in ("luna", "haiku"):
+        assert "Grok here" not in chat.chat_prompt(model)
 
 
 def test_does_not_invent_source_from_screenshots():

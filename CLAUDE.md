@@ -14,8 +14,9 @@ bot is a read-only memory gateway (see "Discord memory gateway" in `docs/notes/a
 
 On 2026-09-17 the owner made the default persona an honest, helpful AI assistant (now `prompts/core.CORE_PROMPT`
 plus `prompts/chat.WEB_PROMPT`): it says it is Peto, an AI assistant, addresses users as "bạn", and refuses only
-genuinely harmful requests. By the owner's call it never names the model behind it (no Grok or xAI in any prompt), and
-`tests/test_persona.py` checks that. The bot's roleplay character survived as an opt-in roleplay mode until 2026-10-18,
+genuinely harmful requests. Until 2026-11-23 it never named the model behind it; the owner dropped that rule because the
+shown reasoning named it anyway. Asked which model it runs, it now answers from the runtime block (provider and model),
+and `tests/test_persona.py` checks that no prompt still hides it. The bot's roleplay character survived as an opt-in roleplay mode until 2026-10-18,
 when the owner removed it (see "English model instructions, provider overlays, no roleplay mode" and "Roleplay mode
 (removed)" in `docs/notes/chat.md`). Peto Agent uses the same core. Companion has its own persona,
 `COMPANION_SYSTEM_PROMPT` (see "Companion persona" under "Companion tab and voice relay" in `docs/notes/companion.md`).
