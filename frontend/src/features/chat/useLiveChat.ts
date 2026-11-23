@@ -147,6 +147,14 @@ export function useLiveChat(options: {
     render(turn);
   }, [finish, loadBase, render, visible]);
 
+  // Luồng đang mở: resync() đóng nó để kết nối lại ngay, máy chủ phát lại lượt đang chạy từ đầu.
+  const connection = useRef<AbortController | null>(null);
+  const resynced = useRef(false);
+  const resync = useCallback(() => {
+    resynced.current = true;
+    connection.current?.abort();
+  }, []);
+
   // Một luồng cho cả tài khoản, tự kết nối lại; ngừng khi đăng xuất hay tắt.
   useEffect(() => {
     if (!options.enabled) return;
@@ -156,6 +164,10 @@ export function useLiveChat(options: {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const run = async () => {
       while (!controller.signal.aborted) {
+        const current = new AbortController();
+        const stop = () => current.abort();
+        controller.signal.addEventListener('abort', stop, { once: true });
+        connection.current = current;
         try {
           await watchChatLive({
             onReady: () => {
@@ -169,15 +181,22 @@ export function useLiveChat(options: {
               }, 800);
             },
             onLive: receive,
-          }, controller.signal);
+          }, current.signal);
         } catch (err) {
           if (controller.signal.aborted) return;
           if (err instanceof UnauthorizedError) {
             latest.current.onUnauthorized();
             return;
           }
+        } finally {
+          controller.signal.removeEventListener('abort', stop);
+          if (connection.current === current) connection.current = null;
         }
         if (controller.signal.aborted) return;
+        if (resynced.current) {
+          resynced.current = false;
+          continue;
+        }
         const wait = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
         attempt += 1;
         await new Promise((resolve) => setTimeout(resolve, wait));
@@ -218,5 +237,5 @@ export function useLiveChat(options: {
     }
   }, []);
 
-  return { remote, stopRemote };
+  return { remote, stopRemote, resync };
 }

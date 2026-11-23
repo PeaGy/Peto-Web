@@ -72,6 +72,14 @@ def sent_emails(monkeypatch) -> list[dict]:
     return sent
 
 
+@pytest.fixture(autouse=True)
+async def detached_chat_turns():
+    """Lượt chat chạy nền (tách khỏi request) không được sống sang test sau: dừng chúng khi test xong."""
+    yield
+    from features.chat import service as chat_service
+    await chat_service.stop_detached_turns()
+
+
 def _make_client() -> AsyncClient:
     return AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

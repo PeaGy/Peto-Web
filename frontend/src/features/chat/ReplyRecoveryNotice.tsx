@@ -5,6 +5,7 @@ import './replyRecovery.css';
 export function ReplyRecoveryNotice({ recovery }: { recovery: ReturnType<typeof useReplyRecovery> }) {
   const text = !recovery.online ? 'Bạn đang ngoại tuyến. Bản nháp và phần trả lời đang có được giữ lại.'
     : recovery.status === 'waiting' || recovery.status === 'syncing' ? 'Đang kiểm tra phần trả lời đã lưu…'
+    : recovery.status === 'continuing' ? 'Kết nối vừa bị ngắt nhưng Peto vẫn đang trả lời. Câu trả lời sẽ hiện đủ khi xong.'
     : recovery.status === 'recovered' ? 'Đã đồng bộ câu trả lời từ máy chủ.'
     : recovery.status === 'partial' ? 'Đã đồng bộ phần trả lời được lưu. Lượt này chưa hoàn tất.'
     : recovery.status === 'failed' ? 'Chưa lấy được câu trả lời đã lưu. Phần chữ đang có vẫn được giữ lại.' : null;

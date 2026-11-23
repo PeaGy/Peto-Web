@@ -67,8 +67,10 @@ async def test_cancelled_stream_saves_partial_text(client, monkeypatch):
     import json
     meta = json.loads((await anext(stream)).split('data: ')[1])
     await anext(stream)
+    # Trình duyệt đứt không còn hủy lượt (23/11/2026); lượt chỉ dừng khi máy chủ tắt, và phần đã viết vẫn được lưu.
     with pytest.raises(asyncio.CancelledError):
         await stream.athrow(asyncio.CancelledError())
+    await chat_service.stop_detached_turns()
     stored = await db.get_messages(TEST_OWNER, meta['conversation_id'])
     assert stored[-1]['content'] == 'Đã nhận một phần'
     assert stored[-1]['status'] == 'incomplete'

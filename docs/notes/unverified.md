@@ -44,6 +44,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] A real disconnect on the live site (phone switching networks or airplane mode mid-answer): the turn finishes on
+  the server, the tab shows "Peto vẫn đang trả lời", the text resumes through live sync after reconnecting, and the
+  stored answer is complete — `chat.md`, "The turn outlives the HTTP request".
 - [ ] Asking real Grok, Luna and Haiku "bạn chạy model gì?" after the 2026-11-23 change: each names its own provider
   and model from the runtime block, and the reasoning no longer argues about hiding it — `chat.md`, "Peto names its
   model when asked".

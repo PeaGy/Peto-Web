@@ -250,8 +250,21 @@ Web Chat sends a fresh `request_id` for each attempt. `POST /api/chat/stop` auth
 `stopped` in the additive `chat_turns` table and cancels the registered turn, including queue/file-reading waits.
 It waits for persistence before acknowledging; an early Stop leaves a tombstone so a late POST cannot start AI.
 The client aborts its stream only after confirmation. A failed confirmation remains retryable, never a false Stop.
-Disconnects become `interrupted`, timeouts `timeout`, provider failures `error`; startup marks leftover `running`
-attempts interrupted. The registry matches the deployment's single backend worker; multiple workers would require
+Timeouts become `timeout`, provider failures `error`; startup marks leftover `running` attempts interrupted.
+
+**The turn outlives the HTTP request (since 2026-11-23).** On 23/11 06:52:58 cloudflared logged "stream canceled by
+remote" for a `POST /api/chat` 7 seconds in, and the Grok call was cancelled with it: only "Không thích" was saved and
+the tab showed "Câu trả lời chưa hoàn tất". Now `service.chat` starts the turn (`live.relay(controlled_stream())`
+plus the after-reply work: title, summary, memory) as an `asyncio` task kept in `_detached_turns`; the response body
+(`deliver`) only reads its chunks from a queue, and when the browser goes away it stops queueing for it. The response
+still ends when the answer ends and then joins the task through `BackgroundTask(_join_detached)` with
+`asyncio.shield`, so the request never cancels the turn. Only Stop (`POST /api/chat/stop`, the turn's CancelScope),
+the turn timeout and a server shutdown (`stop_detached_turns()` in the lifespan, which lets each turn persist what it
+has as `interrupted`) end a turn early. Tests stop leftover turns after each test (`conftest.detached_chat_turns`).
+On the client, an interrupted stream whose question the server accepted removes its `request_id` from `ownRequests`
+and calls `useLiveChat.resync()`, which reconnects `/api/chat/live` so the hub replays the running turn from `meta`
+and the text keeps streaming; `useReplyRecovery` treats a `running` turn as "continuing" ("Kết nối vừa bị ngắt nhưng
+Peto vẫn đang trả lời…") and keeps reading every 3 seconds for up to 16 minutes instead of failing after three reads. The registry matches the deployment's single backend worker; multiple workers would require
 cross-worker cancellation/acknowledgment before changing the worker count.
 
 `history.context_rows` removes explicitly stopped unanswered requests from model context and from `agent_question`.
@@ -640,6 +653,14 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Chat turns survive a browser disconnect (2026-11-23, branch `chat-detached-turn`, not merged)
+
+From an agent report with the VPS log: a Cloudflare stream cancel at 06:52:58 cancelled a Grok turn after 7 seconds.
+See "The turn outlives the HTTP request" under "Chat request lifecycle". Tests: `test_transport_disconnect_keeps_the_turn_
+running_to_the_end` and `test_server_shutdown_mid_turn_is_not_user_stop` (`test_chat_turns.py`), the partial-text
+regression now ends the turn by shutdown, `replyRecovery.test.tsx` (continuing), `liveChat.test.tsx` (resync).
+
 
 ## Peto names its model when asked (2026-11-23, branch `model-honesty`, not merged)
 

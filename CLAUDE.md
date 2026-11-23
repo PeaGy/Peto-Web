@@ -127,7 +127,9 @@ Short map; the full sections are in the note files named in each line.
 - **`POST /api/chat` lifecycle.** Returns SSE (`meta`, `delta`… then `done`, `error` or `stopped`). The whole turn runs
   inside `admission.slot(owner)`, so throttling happens before any message is written; ownership is re-checked inside
   the slot; SQLite writes are shielded from cancellation; failures still persist partial text as `incomplete`; there
-  is no automatic retry of a paid turn; Stop is acknowledged through `POST /api/chat/stop`. Background tasks, the
+  is no automatic retry of a paid turn; Stop is acknowledged through `POST /api/chat/stop`. Since 2026-11-23 the turn
+  runs as a detached task: a browser or Cloudflare disconnect only stops delivery, and only Stop, the turn timeout or a
+  server shutdown cancel it. Background tasks, the
   voice relay queue, the Agent device codes and the live Chat sync hub (`features/chat/live.py`) are process-local, so
   the backend runs as a single process. Details:
   `docs/notes/chat.md` ("Chat request lifecycle").

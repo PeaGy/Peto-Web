@@ -37,6 +37,8 @@ export type ChatTurnContext = Pick<Drafts, 'draft' | 'draftFiles' | 'editDrafts'
   stopTicketRef: RefObject<StopTicket | null>;
   /** Mã các lượt tab này tự gửi; đồng bộ trực tiếp (useLiveChat) không vẽ lại chúng lần nữa. */
   ownRequests: RefObject<Set<string>>;
+  /** Nối lại đồng bộ trực tiếp để nhận lại lượt đang chạy từ đầu (useLiveChat.resync). */
+  liveResync?: () => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   viewRef: RefObject<string>;
   activeProjectId: string | null;
@@ -321,6 +323,10 @@ export async function sendChatTurn(ctx: ChatTurnContext, revision?: ChatRevision
         } catch { if (revision) writeReply(current => current.map(row => ({ ...row, id: undefined }))); }
       }
       if (!stoppedByUser && (interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
+        // Từ 23/11/2026 lượt chạy tiếp trên máy chủ khi luồng của tab đứt: thôi bỏ qua lượt của chính tab trong đồng bộ
+        // trực tiếp và nối lại, để chữ tiếp tục chạy; recovery đọc bản đã lưu khi lượt xong.
+        ctx.ownRequests.current.delete(requestId);
+        ctx.liveResync?.();
         recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
       }
     }

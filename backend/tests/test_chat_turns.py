@@ -133,7 +133,35 @@ async def test_stop_is_scoped_to_owner_and_duplicate_completed_request_is_reject
     assert error.value.status_code == 409
 
 
-async def test_transport_disconnect_is_not_user_stop(client, monkeypatch):
+async def test_transport_disconnect_keeps_the_turn_running_to_the_end(client, monkeypatch):
+    """23/11/2026: Cloudflare cắt luồng của trình duyệt sau 7 giây và lượt Grok bị hủy theo, chỉ còn "Không thích".
+    Giờ lượt chạy tách khỏi request: trình duyệt đứt thì Peto vẫn trả lời hết và lưu đầy đủ."""
+    gate = asyncio.Event()
+
+    class Provider:
+        async def stream(self, **kwargs):
+            yield 'Phần đã nhận. '
+            await gate.wait()
+            yield 'Phần viết sau khi trình duyệt đã đứt.'
+    monkeypatch.setattr(service, 'get_provider', lambda *args: Provider())
+    request_id = uuid.uuid4().hex
+    response = await service.chat(schemas.ChatRequest(message='Câu bị mất mạng', request_id=request_id), owner=TEST_OWNER)
+    stream = response.body_iterator
+    await anext(stream)
+    await anext(stream)
+    with pytest.raises(asyncio.CancelledError):
+        await stream.athrow(asyncio.CancelledError())
+    assert (await chat_turns.get(TEST_OWNER, request_id))['state'] == 'running'
+    gate.set()
+    await service.wait_detached_turns()
+    turn = await chat_turns.get(TEST_OWNER, request_id)
+    assert turn['state'] == 'complete'
+    rows = await db.get_messages(TEST_OWNER, turn['conversation_id'])
+    assert rows[-1]['content'] == 'Phần đã nhận. Phần viết sau khi trình duyệt đã đứt.'
+    assert rows[-1]['status'] == 'complete' and not history._public_message(rows[-1]).get('stopped')
+
+
+async def test_server_shutdown_mid_turn_is_not_user_stop(client, monkeypatch):
     class Provider:
         async def stream(self, **kwargs):
             yield 'Phần đã nhận'
@@ -144,8 +172,7 @@ async def test_transport_disconnect_is_not_user_stop(client, monkeypatch):
     stream = response.body_iterator
     await anext(stream)
     await anext(stream)
-    with pytest.raises(asyncio.CancelledError):
-        await stream.athrow(asyncio.CancelledError())
+    await service.stop_detached_turns()
     turn = await chat_turns.get(TEST_OWNER, request_id)
     assert turn['state'] == 'interrupted'
     rows = await db.get_messages(TEST_OWNER, turn['conversation_id'])
