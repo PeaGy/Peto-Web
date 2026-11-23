@@ -31,7 +31,8 @@ from ai.imagine import (
 )
 from shared.attachments import IMAGE_MIMES, sniff_image_mime
 from features.accounts.auth import current_owner
-from core.config import IMAGINE_TIMEOUT_SECONDS, MAX_IMAGINE_N, MAX_IMAGINE_PROMPT_CHARS, MAX_IMAGINE_SOURCE_BYTES, UPLOAD_DIR
+from core import usage_events
+from core.config import IMAGINE_MODEL, IMAGINE_TIMEOUT_SECONDS, MAX_IMAGINE_N, MAX_IMAGINE_PROMPT_CHARS, MAX_IMAGINE_SOURCE_BYTES, UPLOAD_DIR
 from core.rate_limit import AdmissionDenied, admission
 
 MAX_SOURCE_TOTAL_BYTES = 16 * 1024 * 1024
@@ -231,7 +232,9 @@ async def _generate(request: ImagineRequest, owner: str, sources: list[Generated
     kwargs = {"source_images": sources} if len(sources) > 1 else {"source_image": sources[0] if sources else None}
     async with admission.slot(f"imagine:{owner}"):
         async with asyncio.timeout(IMAGINE_TIMEOUT_SECONDS):
-            return await generate_images(prompt=prompt, quality=quality, resolution=resolution, aspect_ratio=aspect, n=n, **kwargs)
+            images = await generate_images(prompt=prompt, quality=quality, resolution=resolution, aspect_ratio=aspect, n=n, **kwargs)
+    usage_events.charge_images(owner, service='xai', model=IMAGINE_MODEL, slug=IMAGINE_MODEL, images=len(images))
+    return images
 
 
 async def _run_job(request: ImagineRequest, owner: str, job_id: str, sources: list[GeneratedImage]) -> None:
@@ -243,6 +246,7 @@ async def _run_job(request: ImagineRequest, owner: str, job_id: str, sources: li
             await db.update_imagine_job(owner, job_id, "running")
             async with asyncio.timeout(IMAGINE_TIMEOUT_SECONDS):
                 images = await generate_images(prompt=prompt, quality=quality, resolution=resolution, aspect_ratio=aspect, n=n, **kwargs)
+        usage_events.charge_images(owner, service='xai', model=IMAGINE_MODEL, slug=IMAGINE_MODEL, images=len(images))
         await _save_images(owner, job_id, images, "output")
         await db.update_imagine_job(owner, job_id, "complete")
     except AdmissionDenied as err:

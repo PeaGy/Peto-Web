@@ -11,6 +11,7 @@ const companionSettings = preloadable(() => import('../features/companion/settin
 const profileSettings = preloadable(() => import('../features/settings/ProfileSettings'));
 const memorySettings = preloadable(() => import('../features/settings/MemorySettings'));
 const agentSettings = preloadable(() => import('../features/settings/AgentSettings'));
+const usageSettings = preloadable(() => import('../features/settings/UsageSettings'));
 const archiveSettings = preloadable(() => import('../features/settings/ArchivedConversations'));
 const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
 // Trang Quản trị chỉ chủ web mở; tải riêng nên người dùng thường không phải tải mã biểu đồ.
@@ -20,7 +21,7 @@ export const AdminDashboard = adminDashboard.View;
 export const loadImagine = imagine.preload;
 export const loadCompanion = companion.preload;
 export const loadSettings = () => Promise.all([
-  profileSettings.preload(), memorySettings.preload(), agentSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
+  profileSettings.preload(), memorySettings.preload(), agentSettings.preload(), usageSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 export const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
@@ -30,6 +31,7 @@ export const CompanionSettings = companionSettings.View;
 export const ProfileSettings = profileSettings.View;
 export const MemorySettings = memorySettings.View;
 export const AgentSettings = agentSettings.View;
+export const UsageSettings = usageSettings.View;
 export const ArchivedConversations = archiveSettings.View;
 export const ConnectorSettings = connectorSettings.View;
 

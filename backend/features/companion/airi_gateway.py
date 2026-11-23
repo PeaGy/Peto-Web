@@ -18,7 +18,8 @@ máy chủ chỉ là điểm gọi model. Cổng này nhận đúng hình dạng
 - Lỗi trước byte đầu tiên là mã HTTP thật với thân ``{"error": {...}}``; lỗi giữa chừng là một dòng ``data:
   {"error": ...}`` mà xsai báo thành lỗi. Model im lâu thì gửi dòng chú thích ``: ping`` để Cloudflare không cắt.
 - Trình duyệt ngắt kết nối (nút dừng của AIRI) thì lần gọi model bị hủy và suất chạy được trả ngay.
-- Không lưu gì vào database, không ghi nội dung tin vào log. Mỗi lượt ghi số đo vào ``usage_events`` với
+- Không lưu nội dung vào database, không ghi nội dung tin vào log. Mỗi lần gọi model vào sổ mức dùng của tài khoản
+  (``usage_ledger``, chỉ số đo). Mỗi lượt ghi số đo vào ``usage_events`` với
   ``surface="airi"`` để trang Quản trị tách riêng.
 """
 
@@ -236,7 +237,7 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
                         if event.kind == "done":
                             usage = dict(event.usage)
                             usage_events.record(
-                                "call", service="xai", model=MODEL_ID, slug=AGENT_MODEL, surface=SURFACE,
+                                "call", owner=owner, service="xai", model=MODEL_ID, slug=AGENT_MODEL, surface=SURFACE,
                                 purpose=SURFACE, effort=EFFORT, complete=True,
                                 elapsed_ms=round((time.monotonic() - started) * 1000),
                                 input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
