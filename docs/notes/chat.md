@@ -111,7 +111,10 @@ and the access rules; the server checks them on every chat turn and agent step, 
   `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models), and
   phones show the send button as an arrow only to keep the bar on
   one row.
-- The persona rule still holds: whatever model runs, Peto does not name the model behind it.
+- Asked which model it runs, Peto answers honestly from the runtime block (`provider`, `api_model`), e.g. "I'm Peto,
+  running on xAI's grok-4.7 right now" (since 2026-11-23; before that it refused to name the model). The shared core's
+  example is neutral ("[provider]'s [model]") because GPT and Claude read it too; only the Grok overlay's example names
+  Grok.
 - Tests patch `features.chat.service.get_provider` with a callable that accepts the model (`lambda model="peto": ...`).
   `tests/test_models.py` covers the access rules, step costs and the OpenAI call shape with fake clients.
 
@@ -637,6 +640,17 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Peto names its model when asked (2026-11-23, branch `model-honesty`, not merged)
+
+The owner showed a turn where the visible reasoning said "Snapshot runtime cho thấy xAI và grok-4.7. Tôi sẽ không công
+bố model" while the answer refused to say it, and chose to drop the rule. `prompts/core.py` now says to answer honestly
+from the runtime context (or that the model depends on the user's choice when there is none); "not naming the model"
+left the rules summary, the Personality example and `PREFERENCES_RULE`; the Grok overlay example now answers "Neither:
+I'm Peto, running on xAI's Grok here." `tests/test_persona.py` checks that no prompt (Chat, Agent, Companion, the
+Agent guide, the preferences rule) still hides the model and that only Grok's prompt names Grok. Agent CLI bundle
+regenerated, CLI 0.33.6. Companion's persona never had the rule, so it is unchanged.
+
 
 ## Long user messages fold like Claude (2026-11-22, branch `chat-user-fold`, not merged)
 

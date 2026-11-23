@@ -1010,6 +1010,11 @@ results in the next step. The server stores no conversation (`store=False`), and
 
 # Dated log (newest first)
 
+## CLI 0.33.6: Peto may name its model (2026-11-23, branch `model-honesty`, not merged)
+
+The shared core no longer forbids naming the model: asked which model it runs, Peto answers from the runtime context.
+Bundle regenerated (`make_bundle.py --check` passes). Details in `chat.md`, "Peto names its model when asked".
+
 ## CLI 0.33.5: bundle follows the core emoji line (2026-11-21, branch `custom-instructions-priority`, not merged)
 
 The shared core prompt now says "without forcing slang or emojis they have not asked for" (custom instructions change,

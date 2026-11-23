@@ -41,6 +41,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] Asking real Grok, Luna and Haiku "bạn chạy model gì?" after the 2026-11-23 change: each names its own provider
+  and model from the runtime block, and the reasoning no longer argues about hiding it — `chat.md`, "Peto names its
+  model when asked".
 - [ ] The pinned question while streaming on a real phone (iOS Safari and Android Chrome, keyboard open and closing
   after send) and with real Grok streams, where work-log steps and sources appear above the text — `chat.md`,
   "Sending pins the question to the top".
