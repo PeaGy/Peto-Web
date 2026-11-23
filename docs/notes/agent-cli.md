@@ -1010,6 +1010,11 @@ results in the next step. The server stores no conversation (`store=False`), and
 
 # Dated log (newest first)
 
+## CLI 0.33.7: core knows Peto Web (2026-11-23, branch `peto-about-web`, not merged)
+
+The shared core now names Peto Web's address, its guides and PeaGy as the builder. Bundle regenerated. Details in
+`chat.md`, "Peto knows Peto Web".
+
 ## CLI 0.33.6: Peto may name its model (2026-11-23, branch `model-honesty`, not merged)
 
 The shared core no longer forbids naming the model: asked which model it runs, Peto answers from the runtime context.

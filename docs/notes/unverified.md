@@ -44,6 +44,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] Asking real Grok "địa chỉ web là gì", "ai làm ra bạn" and a feature question after the About block: it gives
+  peto.peagy.com, names PeaGy and the model's company, and opens /docs/ instead of searching — `chat.md`, "Peto knows
+  Peto Web".
 - [ ] A real disconnect on the live site (phone switching networks or airplane mode mid-answer): the turn finishes on
   the server, the tab shows "Peto vẫn đang trả lời", the text resumes through live sync after reconnecting, and the
   stored answer is complete — `chat.md`, "The turn outlives the HTTP request".
