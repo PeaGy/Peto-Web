@@ -97,8 +97,9 @@ def test_only_grok_is_told_to_stay_silent_without_narrating():
 
 
 async def test_closing_the_turn_stream_closes_the_provider_stream_at_once(client, monkeypatch):
-    """G3.2: lượt chat tách thành nhiều bước; đóng luồng ngoài (trình duyệt ngắt) vẫn phải đóng ngay luồng của provider,
-    như khi mọi thứ còn nằm trong một hàm."""
+    """G3.2: lượt chat tách thành nhiều bước; đóng lượt vẫn phải đóng ngay luồng của provider, như khi mọi thứ còn nằm
+    trong một hàm. Từ 23/11/2026 trình duyệt ngắt không còn đóng lượt (lượt chạy nền tới hết), nên lượt được đóng như lúc
+    tắt máy chủ."""
     import asyncio
     from features.chat import schemas
     from test_chat_turns import consume
@@ -127,4 +128,6 @@ async def test_closing_the_turn_stream_closes_the_provider_stream_at_once(client
         if 'Đang viết' in chunk:
             break
     await body.aclose()
+    assert not closed.is_set()          # trình duyệt ngắt: lượt vẫn chạy
+    await service.stop_detached_turns()
     assert closed.is_set() and seen == [True]

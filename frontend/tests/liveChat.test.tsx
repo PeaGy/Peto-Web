@@ -45,7 +45,7 @@ function setup(overrides: Partial<Parameters<typeof useLiveChat>[0]> = {}) {
     initialProps: { enabled: true, conversationId: 'c1', loadingConversation: false, localBusy: false, ownRequests: own,
       setMessages, refreshConversations, onUnauthorized: vi.fn(), onDocument, ...overrides },
   });
-  return { hook, setMessages, refreshConversations, onDocument, messages: () => messages };
+  return { hook, setMessages, refreshConversations, onDocument, own, messages: () => messages };
 }
 
 it('applies events like the sending tab', () => {
@@ -124,4 +124,22 @@ it('a turn that ended while disconnected is read again after reconnecting', asyn
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('after this tab\'s own stream breaks, resync reconnects and shows its still-running turn from the start', async () => {
+  // 23/11/2026: lượt chạy tiếp trên máy chủ khi luồng của tab đứt; tab thôi bỏ qua lượt của mình và nối lại.
+  const { hook, own, messages } = setup();
+  await waitFor(() => expect(feed).not.toBeNull());
+  act(() => feed!(envelope({ type: 'delta', text: 'bị bỏ qua' }, 'r-mine')));
+  expect(hook.result.current.remote).toBeNull();
+  const calls = vi.mocked(api.watchChatLive).mock.calls.length;
+  own.current.delete('r-mine');
+  act(() => hook.result.current.resync());
+  await waitFor(() => expect(vi.mocked(api.watchChatLive).mock.calls.length).toBe(calls + 1));
+  // Máy chủ phát lại lượt từ meta: tab vẽ câu hỏi và chữ đang chạy.
+  act(() => feed!(envelope({ type: 'meta', conversation_id: 'c1', effort: 'low', message: asked } as never, 'r-mine')));
+  await waitFor(() => expect(api.getMessages).toHaveBeenCalled());
+  act(() => feed!(envelope({ type: 'delta', text: 'Chạy tiếp' }, 'r-mine')));
+  await waitFor(() => expect(messages().at(-1)?.content).toBe('Chạy tiếp'));
+  expect(messages().at(-2)).toEqual(asked);
 });

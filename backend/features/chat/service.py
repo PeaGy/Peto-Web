@@ -911,6 +911,27 @@ class _ChatTurn:
             yield sse({"type": "done", "message_id": saved_turn['assistant_message_id'] if saved_turn else None})
 
 
+# Lượt chat đang chạy nền (tách khỏi request HTTP). Giữ tham chiếu để task không bị dọn giữa chừng.
+_detached_turns: set[asyncio.Task] = set()
+
+
+async def wait_detached_turns() -> None:
+    """Đợi mọi lượt chạy nền xong (test)."""
+    while _detached_turns:
+        await asyncio.gather(*list(_detached_turns), return_exceptions=True)
+
+
+async def _join_detached(task: asyncio.Task) -> None:
+    await asyncio.shield(task)
+
+
+async def stop_detached_turns() -> None:
+    """Tắt máy chủ: hủy các lượt còn chạy; mỗi lượt tự lưu phần đã viết trong lúc đóng (_persist được che chắn)."""
+    for task in list(_detached_turns):
+        task.cancel()
+    await wait_detached_turns()
+
+
 async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_request: Request = None):
     setup = await _resolve_turn(request, owner, http_request)
     request_id = setup.request_id
@@ -945,9 +966,40 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         if row and row['state'] == 'stopped':
             yield sse({'type': 'stopped'})
 
-    async def name_after_response():
-        with usage_events.account(owner, usage_surface):
-            await after_response()
+    # Lượt chạy tách khỏi request HTTP (23/11/2026): trình duyệt hay Cloudflare đứt giữa chừng (06:52:58 cloudflared
+    # "stream canceled by remote", lượt Grok bị hủy sau 7 giây) thì chỉ ngừng gửi xuống trình duyệt đó, Peto vẫn trả lời
+    # hết và lưu; tab tự đọc lại qua đồng bộ trực tiếp (live.py) hoặc recovery_for. Chỉ nút Dừng (POST /api/chat/stop)
+    # và giới hạn thời gian của lượt mới hủy lượt.
+    chunks: asyncio.Queue[str | None] = asyncio.Queue()
+    listener = {'open': True}
+
+    async def run_turn():
+        try:
+            async with aclosing(live.relay(owner, request_id if setup.mode == "chat" else None, controlled_stream())) as events:
+                async for chunk in events:
+                    if listener['open']:
+                        chunks.put_nowait(chunk)
+        except Exception:
+            logger.exception('Lượt chat chạy nền gặp lỗi ngoài dự kiến')
+        finally:
+            chunks.put_nowait(None)
+        try:
+            with usage_events.account(owner, usage_surface):
+                await after_response()
+        except Exception:
+            logger.exception('Việc chạy sau câu trả lời gặp lỗi')
+
+    task = asyncio.create_task(run_turn())
+    _detached_turns.add(task)
+    task.add_done_callback(_detached_turns.discard)
+
+    async def deliver():
+        try:
+            while (chunk := await chunks.get()) is not None:
+                yield chunk
+        finally:
+            # Trình duyệt ngắt: chỉ thôi giữ chữ cho nó, không hủy lượt.
+            listener['open'] = False
 
     async def after_response():
         conversation_id, mode = turn.conversation_id, setup.mode
@@ -961,9 +1013,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             await companion_memory.remember(owner, MAX_HISTORY_MESSAGES)
 
     return StreamingResponse(
-        # Tab Trò chuyện: phát lượt này cho các tab khác của cùng tài khoản (features/chat/live.py).
-        live.relay(owner, request_id if setup.mode == "chat" else None, controlled_stream()),
-        background=BackgroundTask(name_after_response),
+        # Tab Trò chuyện: run_turn phát lượt này cho các tab khác của cùng tài khoản (features/chat/live.py).
+        deliver(),
+        # Như BackgroundTask trước đây: trình duyệt nhận hết chữ trước, rồi request mới kết thúc sau việc chạy nền
+        # (đặt tiêu đề, tóm tắt). shield: request bị hủy không được kéo lượt theo.
+        background=BackgroundTask(_join_detached, task),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

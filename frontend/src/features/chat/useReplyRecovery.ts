@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getMessages, UnauthorizedError, type Message } from '../../shared/api/api';
 
 export interface InterruptedReply { conversationId: string; userMessageId: number }
-type Status = 'idle' | 'waiting' | 'syncing' | 'recovered' | 'partial' | 'failed';
+type Status = 'idle' | 'waiting' | 'syncing' | 'continuing' | 'recovered' | 'partial' | 'failed';
+// Lượt còn chạy trên máy chủ (PETO_TURN_TIMEOUT_SECONDS mặc định 15 phút): đọc lại mỗi 3 giây tới chừng này.
+const RUNNING_POLL_MS = 3000;
+const RUNNING_LIMIT_MS = 16 * 60_000;
 interface Options {
   scope: string | null;
   conversationId: string | null;
@@ -89,10 +92,15 @@ export function useReplyRecovery(options: Options) {
     const valid = () => !controller.signal.aborted && version === generation.current
       && latest.current.scope === ticket.scope && latest.current.conversationId === ticket.conversationId
       && latest.current.enabled && !latest.current.busy;
+    let running = false;
     const recover = async () => {
       setStatus('syncing');
-      // Chờ thao tác lưu của luồng vừa bị ngắt; đọc có giới hạn để không tạo vòng lặp nền.
-      for (const delay of [250, 1000, 2500]) {
+      // Chờ thao tác lưu của luồng vừa bị ngắt; đọc có giới hạn để không tạo vòng lặp nền. Lượt còn chạy trên máy chủ
+      // thì đọc tiếp mỗi RUNNING_POLL_MS tới RUNNING_LIMIT_MS.
+      const delays = [250, 1000, 2500];
+      const started = Date.now();
+      for (let attempt = 0; attempt < delays.length || (running && Date.now() - started < RUNNING_LIMIT_MS); attempt += 1) {
+        const delay = attempt < delays.length ? delays[attempt] : RUNNING_POLL_MS;
         await new Promise<void>(resolve => { timer = setTimeout(resolve, delay); });
         if (!valid()) return;
         const read = new AbortController();
@@ -107,6 +115,8 @@ export function useReplyRecovery(options: Options) {
           const reply = userIndex < 0 ? undefined : stored.find(row => row.role === 'assistant' && row.reply_to === ticket.userMessageId)
             ?? (stored[userIndex]?.turn_state === undefined && next?.role === 'assistant' && next.reply_to === undefined ? next : undefined);
           // Chưa có câu trả lời được lưu thì giữ phần chữ trên máy, không thay bằng lịch sử thiếu tin.
+          running = stored[userIndex]?.turn_state === 'running' || reply?.turn_state === 'running';
+          if (running) setStatus('continuing');
           if (reply?.role === 'assistant' && reply.turn_state !== 'running') {
             const complete = reply.status !== 'incomplete';
             setTicket(null);
@@ -135,7 +145,7 @@ export function useReplyRecovery(options: Options) {
   // Đổi hội thoại/tài khoản thì bỏ cả thông báo thành công của hội thoại trước.
   useEffect(() => { if (!ticket) setStatus('idle'); }, [options.scope, options.conversationId]);
   return {
-    status, online, pending: status === 'waiting' || status === 'syncing', interrupt, cancel,
+    status, online, pending: status === 'waiting' || status === 'syncing' || status === 'continuing', interrupt, cancel,
     retry: () => setRevision(value => value + 1),
   };
 }

@@ -797,6 +797,7 @@ function AppContent() {
     readOnly, recovery, refreshConversations, replyRef, resolveEdit, retryRevision, saveEdit, setConversationId,
     setDocumentRefresh, setEditTarget, setError, setMessages, setNotice, setRetryAvailable, setShowJump,
     setSourcesIndex, setStopping, setStreaming, snapshotDraft, stopTicketRef, textareaRef, viewRef, webSearch, ownRequests,
+    liveResync: live.resync,
   };
   const submit = (revision?: ChatRevision) => sendChatTurn(turn, revision);
   const stop = () => remoteReply ? void live.stopRemote() : stopChatTurn(turn);

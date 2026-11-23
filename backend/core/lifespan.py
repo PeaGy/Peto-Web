@@ -51,6 +51,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         from features.imagine.api import shutdown_jobs
+        from features.chat.service import stop_detached_turns
         await shutdown_jobs()
+        # Lượt chat chạy nền: dừng để chúng lưu phần đã viết (lượt bị ngắt) trước khi đóng database.
+        await stop_detached_turns()
         await usage_events.stop()
 

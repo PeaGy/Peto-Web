@@ -157,3 +157,21 @@ it('giới hạn thời gian đọc khi mạng không trả về và không lặ
   expect(hook.result.current.status).toBe('failed');
   expect(hook.onRecovered).not.toHaveBeenCalled();
 });
+
+it('lượt còn chạy trên máy chủ sau khi luồng đứt: báo Peto vẫn đang trả lời và đọc tiếp tới khi xong', async () => {
+  // 23/11/2026: máy chủ không còn hủy lượt khi trình duyệt đứt, nên recovery phải đợi qua ba lần đọc đầu.
+  const running: Message[] = [{ ...saved[0], turn_state: 'running' }];
+  vi.mocked(getMessages).mockResolvedValue(running);
+  const hook = setup();
+  interrupt(hook);
+  await advance(250 + 1000 + 2500);
+  expect(hook.result.current.status).toBe('continuing');
+  expect(hook.result.current.pending).toBe(true);
+  await advance(3000 * 5);
+  expect(hook.onRecovered).not.toHaveBeenCalled();
+  const done: Message[] = [saved[0], { ...saved[1], reply_to: 10 }];
+  vi.mocked(getMessages).mockResolvedValue(done);
+  await advance(3000);
+  expect(hook.onRecovered).toHaveBeenCalledExactlyOnceWith(done, true);
+  expect(hook.result.current.status).toBe('recovered');
+});
