@@ -33,6 +33,7 @@ from features.companion import api as companion_api
 from features.projects import api as project_api
 from features.connectors import api as connector_api
 from features.admin import api as admin_api
+from features.usage import api as usage_api
 
 # Tắt trang tài liệu API tự sinh của FastAPI (/docs, /redoc, /openapi.json): /docs là trang hướng dẫn cho người dùng
 # (docs_api, static_files), mà trang Swagger mặc định lại giành mất /docs không có dấu "/" cuối. Sơ đồ API cũng không
@@ -77,6 +78,7 @@ app.include_router(project_api.router)
 app.include_router(connector_api.router)
 app.include_router(companion_api.router)
 app.include_router(admin_api.router)
+app.include_router(usage_api.router)
 # Companion bản AIRI (15/11/2026): cổng Chat Completions cho bộ não AIRI trong trình duyệt, và bản build AIRI làm
 # Companion ở /companion/ khi PETO_AIRI_DIR được đặt (không đặt thì /companion vẫn là Companion React). /companion/ của
 # AIRI phải gắn trước static_files.mount ở cuối tệp.

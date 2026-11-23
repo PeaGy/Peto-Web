@@ -37,6 +37,29 @@ COLUMNS = (
 KINDS = {"call", "turn", 'chat_event'}
 _scope: ContextVar[dict | None] = ContextVar('usage_measurement_scope', default=None)
 
+# Sổ mức dùng theo tài khoản (bảng usage_ledger, 23/11/2026, bước "chỉ đo" của pool hằng tuần như Grok): mỗi lần gọi
+# model của một tài khoản thành một dòng số đo, không nội dung. Khác usage_events (cố ý không có owner), owner ở đây chỉ
+# do máy chủ gắn: tham số ``owner`` ở chỗ gọi đã biết tài khoản, hoặc phạm vi ``account()`` quanh lượt chat.
+LEDGER_COLUMNS = (
+    'owner', 'at', 'surface', 'service', 'model', 'slug', 'input_tokens', 'cached_tokens', 'output_tokens',
+    'cache_write_tokens', 'search_calls', 'cost_ticks', 'images',
+)
+# Cửa sổ đo 7 ngày bắt đầu từ lần dùng đầu tiên sau khi cửa sổ trước hết hạn (như "Resets …" của Grok).
+WINDOW_SECONDS = 7 * 86_400
+_account: ContextVar[dict | None] = ContextVar('usage_account_scope', default=None)
+OWNER = re.compile(r"[a-z]+:[A-Za-z0-9_.@+-]{1,200}\Z")
+
+
+@contextmanager
+def account(owner: str, surface: str | None = None):
+    """Gắn tài khoản cho mọi lần gọi model bên trong (lượt chat, đặt tiêu đề, tóm tắt). ``surface`` dùng cho lần gọi
+    không tự ghi mục (ví dụ đặt tiêu đề)."""
+    token = _account.set({'owner': owner, 'surface': surface})
+    try:
+        yield
+    finally:
+        _account.reset(token)
+
 
 @contextmanager
 def measurement(*, surface=None, effort=None, purpose=None):
@@ -50,6 +73,7 @@ def measurement(*, surface=None, effort=None, purpose=None):
 LABEL = re.compile(r"[a-zA-Z0-9_.:-]{1,100}\Z")
 
 _pending: deque[tuple] = deque(maxlen=MAX_PENDING)
+_ledger: deque[tuple] = deque(maxlen=MAX_PENDING)
 _active = False
 _dropped = 0
 _task: asyncio.Task | None = None
@@ -74,6 +98,7 @@ def record(
     output_tokens: int | None = None, cached_tokens: int | None = None, reasoning_tokens: int | None = None,
     search_calls: int | None = None, cache_write_tokens: int | None = None,
     effort: str | None = None, cost_ticks: int | None = None, prefix_hash: str | None = None,
+    owner: str | None = None,
 ) -> None:
     """Thêm một sự kiện vào hàng đợi. Số liệu hỏng chỉ thành ô trống; không bao giờ làm hỏng lượt chat."""
     global _dropped
@@ -98,8 +123,33 @@ def record(
         if len(_pending) == MAX_PENDING:
             _dropped += 1
         _pending.append(row)
+        if kind == 'call':
+            bound = _account.get() or {}
+            _charge(owner or bound.get('owner'), at=row[0], surface=row[2] or _label(bound.get('surface')),
+                    service=row[4], model=row[5], slug=row[6], input_tokens=row[11], cached_tokens=row[13],
+                    output_tokens=row[12], cache_write_tokens=row[16], search_calls=row[15], cost_ticks=row[18])
     except Exception:  # Không để một dòng số liệu làm hỏng lượt của người dùng.
         logger.warning("Bỏ qua một sự kiện số liệu không hợp lệ")
+
+
+def _charge(owner, *, at, surface, service, model, slug, input_tokens=None, cached_tokens=None, output_tokens=None,
+            cache_write_tokens=None, search_calls=None, cost_ticks=None, images=None) -> None:
+    if not isinstance(owner, str) or not OWNER.fullmatch(owner):
+        return
+    _ledger.append((owner, at, surface, service, model, slug, input_tokens, cached_tokens, output_tokens,
+                    cache_write_tokens, search_calls, cost_ticks, images))
+
+
+def charge_images(owner: str, *, service: str, model: str | None, slug: str | None, images: int,
+                  cost_ticks: int | None = None) -> None:
+    """Ảnh của Tạo ảnh vào sổ mức dùng (không vào usage_events: trang Quản trị đếm lần gọi chat/agent)."""
+    if not _active:
+        return
+    try:
+        _charge(owner, at=time.time(), surface='imagine', service=_label(service) or 'unknown', model=_label(model),
+                slug=_label(slug), cost_ticks=_count(cost_ticks), images=_count(images))
+    except Exception:
+        logger.warning("Bỏ qua một dòng mức dùng không hợp lệ")
 
 
 def dropped() -> int:
@@ -108,14 +158,27 @@ def dropped() -> int:
 
 async def flush() -> int:
     """Ghi những gì đang chờ; lỗi database chỉ làm mất lô đó (có log), không thử lại vô hạn."""
-    if not _pending:
+    if not _pending and not _ledger:
         return 0
     rows = [_pending.popleft() for _ in range(len(_pending))]
+    ledger = [_ledger.popleft() for _ in range(len(_ledger))]
     try:
         with anyio.CancelScope(shield=True):
             async with connect() as db:
                 await db.executemany(
                     f"INSERT INTO usage_events ({', '.join(COLUMNS)}) VALUES ({', '.join('?' * len(COLUMNS))})", rows)
+                await db.executemany(
+                    f"INSERT INTO usage_ledger ({', '.join(LEDGER_COLUMNS)}) "
+                    f"VALUES ({', '.join('?' * len(LEDGER_COLUMNS))})", ledger)
+                # Mở cửa sổ 7 ngày mới khi chưa có hoặc cửa sổ cũ đã hết hạn, tính từ lần dùng đầu tiên của lô.
+                first: dict[str, float] = {}
+                for item in ledger:
+                    first[item[0]] = min(first.get(item[0], item[1]), item[1])
+                await db.executemany(
+                    """INSERT INTO usage_windows (owner, started_at) VALUES (?, ?)
+                       ON CONFLICT(owner) DO UPDATE SET started_at = excluded.started_at
+                       WHERE usage_windows.started_at + ? <= excluded.started_at""",
+                    [(owner, at, WINDOW_SECONDS) for owner, at in first.items()])
                 await db.commit()
     except Exception as err:
         logger.warning("Chưa ghi được %d sự kiện số liệu: %s", len(rows), type(err).__name__)
@@ -129,6 +192,7 @@ async def prune(now: float | None = None) -> None:
     try:
         async with connect() as db:
             await db.execute("DELETE FROM usage_events WHERE at < ?", (cutoff,))
+            await db.execute("DELETE FROM usage_ledger WHERE at < ?", (cutoff,))
             await db.commit()
     except Exception as err:
         logger.warning("Chưa dọn được số liệu cũ: %s", type(err).__name__)
@@ -143,6 +207,7 @@ def disable() -> None:
     global _active
     _active = False
     _pending.clear()
+    _ledger.clear()
 
 
 async def _loop() -> None:

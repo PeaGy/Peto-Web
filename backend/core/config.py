@@ -91,6 +91,11 @@ OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 # mục {"input", "cached_input", "output"}, USD trên một triệu token, cùng định dạng với `ops.report --rates`. Bỏ trống
 # hoặc thiếu model nào thì model đó hiện "Chưa có đơn giá" (không tính là 0). Đọc lại khi tệp đổi, không cần khởi động lại.
 COST_RATES_FILE = os.getenv("PETO_COST_RATES_FILE", "").strip()
+# Pool mức dùng hằng tuần của mỗi tài khoản (features/usage, 23/11/2026, bước chỉ đo): USD ước tính trong 7 ngày ứng với
+# 100%. Tạm 5 USD (tuần đầu đo, chủ web dùng khoảng 10 USD theo số xAI tự báo); chỉnh sau khi đo, chưa chặn ai.
+USAGE_WEEKLY_USD = _env_float("PETO_USAGE_WEEKLY_USD", 5.0, 0.0, 10_000.0)
+# Giá ước tính một ảnh của Tạo ảnh; 0 là chưa khai, ảnh được đếm nhưng chưa tính vào phần trăm.
+USAGE_IMAGE_USD = _env_float("PETO_USAGE_IMAGE_USD", 0.0, 0.0, 100.0)
 
 # --- Đăng nhập Discord ---------------------------------------------------
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()

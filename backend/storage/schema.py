@@ -276,6 +276,31 @@ async def init_db() -> None:
             )
             """
         )
+        # Sổ mức dùng theo tài khoản cho pool hằng tuần (core/usage_events.py, features/usage). Chỉ số đo, không nội dung;
+        # xóa tài khoản xóa luôn (bảng có cột owner).
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS usage_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                at REAL NOT NULL,
+                surface TEXT,
+                service TEXT NOT NULL,
+                model TEXT,
+                slug TEXT,
+                input_tokens INTEGER,
+                cached_tokens INTEGER,
+                output_tokens INTEGER,
+                cache_write_tokens INTEGER,
+                search_calls INTEGER,
+                cost_ticks INTEGER,
+                images INTEGER
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_usage_ledger_owner ON usage_ledger(owner, at)")
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS usage_windows (owner TEXT PRIMARY KEY, started_at REAL NOT NULL)")
         # Số liệu vận hành cho trang Quản trị (core/usage_events.py). Cố ý không có owner, mã hội thoại hay nội dung:
         # mỗi dòng là một lần gọi model ("call") hoặc một lượt chat/bước Agent ("turn").
         await db.execute(

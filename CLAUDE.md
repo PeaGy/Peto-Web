@@ -154,12 +154,12 @@ Short map; the full sections are in the note files named in each line.
 - No AI credential of the server ever reaches the browser or the CLI, including `OPENAI_API_KEY` and the TTS keys,
   and neither does `PETO_VOICE_WORKER_TOKEN`. Keys users type under "Khóa của bạn" are their own: they stay in their
   browser, and the voice relay forwards them for one call without storing or logging them.
-- Registration is open by the owner's explicit decision. Do not add an allowlist, invite
-  code, or per-account quota back unless asked for it. The owner asked for two per-account quotas: the Peto Agent
-  daily step cap, kept scoped to the agent, and the monthly Giọng Peto allowance (`PETO_TTS_FREE_CHARS_MONTHLY`),
-  kept scoped to that voice source. The OpenAI model gates in `ai/models.py` (Luna for signed-in accounts, Terra and Sol
-  for `PETO_OWNER_ACCOUNTS`) are also the owner's call. These quotas and gates exist because those features spend the
-  owner's API billing; Peto itself stays open to everyone.
+- Registration is open by the owner's explicit decision. Do not add an allowlist or invite code unless asked for it.
+  Per-account usage is planned as a weekly pool like Grok's (owner's call, 2026-11-23): `features/usage` and
+  `usage_ledger` measure every model call and image per account, Peto included, with a 7-day window; step 1 only
+  measures, and blocking at 100% comes later. Until then the Peto Agent daily step cap and the monthly Giọng Peto
+  allowance (`PETO_TTS_FREE_CHARS_MONTHLY`) stay as they are. The OpenAI model gates in `ai/models.py` (Luna for
+  signed-in accounts, Terra and Sol for `PETO_OWNER_ACCOUNTS`) are also the owner's call.
 - Google, GitHub and email accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.
 - Do not rename model slugs (`grok-4.7`, `grok-imagine-image-2.0`, `gpt-6-luna`, `gpt-5.6-terra`, `gpt-6-sol`), the `/api/imagine` path,

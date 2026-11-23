@@ -19,6 +19,9 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Admin and operations (`admin-ops.md`)
 
+- [ ] The usage ledger on the VPS after deploy: rows appear for Chat, Agent, Companion (AIRI) and Imagine of the signed-in
+  account, the 7-day window opens on first use, and Settings → Mức dùng matches the /admin cost for the same week —
+  `admin-ops.md`, "Weekly usage pool, step 1".
 - [x] G3.1: run `PRAGMA foreign_key_check` on a copy of the VPS database to list orphan rows left from when foreign keys were off, and decide whether to delete them (2026-11-13: the owner ran it on a backup copy; 0 orphan rows, nothing to delete) — `admin-ops.md`, "One SQLite connection helper (G3.1)".
 
 - [x] One main domain (checked 2026-11-17 on `b37be81`: old-domain pages 302 to peagy.com and stay signed in; `/api/health`, `/api/agent/v1/models` and `install.ps1` answer on the old domain): after setting `PETO_CANONICAL_ORIGIN=https://peto.peagy.com` on the VPS and deploying, open `https://peto.pearto.shop/chat/…` in a browser (lands on peagy.com) and check that Peto Agent/Harness and `irm https://peto.pearto.shop/install.ps1` still work — `admin-ops.md`, "One main domain".

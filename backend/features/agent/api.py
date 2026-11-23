@@ -539,7 +539,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                             # Chi phí là số liệu của chủ web, không gửi xuống CLI.
                             cost_ticks = event.usage.pop("cost_ticks", None)
                             usage_events.record(
-                                "call", service=model.service, model=model.key, slug=model.slug or AGENT_MODEL,
+                                "call", owner=owner, service=model.service, model=model.key, slug=model.slug or AGENT_MODEL,
                                 surface="agent", purpose=usage_purpose, complete=True,
                                 elapsed_ms=round((time.monotonic() - started) * 1000),
                                 input_tokens=event.usage.get("input_tokens"), output_tokens=event.usage.get("output_tokens"),

@@ -917,13 +917,16 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     await chat_turns.reserve(owner, request_id)
     turn = _ChatTurn(setup)
 
+    usage_surface = 'chat' if setup.mode == 'chat' else 'companion'
+
     async def controlled_stream():
         key = (owner, request_id)
         row = await chat_turns.get(owner, request_id)
         if not row or row['state'] == 'stopped':
             yield sse({'type': 'stopped'})
             return
-        with anyio.CancelScope() as scope:
+        # Mọi lần gọi model của lượt này vào sổ mức dùng của tài khoản (core/usage_events.account).
+        with anyio.CancelScope() as scope, usage_events.account(owner, usage_surface):
             ticket = turn_control.RunningTurn(scope, asyncio.Event())
             turn_control.running[key] = ticket
             try:
@@ -943,6 +946,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             yield sse({'type': 'stopped'})
 
     async def name_after_response():
+        with usage_events.account(owner, usage_surface):
+            await after_response()
+
+    async def after_response():
         conversation_id, mode = turn.conversation_id, setup.mode
         if conversation_id and mode == "chat":
             await titles.maybe_generate(owner, conversation_id, setup.model)

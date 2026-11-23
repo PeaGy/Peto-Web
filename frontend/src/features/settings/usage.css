@@ -1,0 +1,20 @@
+/* Cài đặt → Mức dùng (UsageSettings.tsx, mẫu A giống Grok). Màu theo mục: tím Trò chuyện, xanh lục Agent, cam Companion,
+   hồng Tạo ảnh. */
+.usage-card { display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; }
+.usage-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; font-size: 15px; }
+.usage-head strong { font-weight: 600; }
+.usage-reset { color: var(--muted); font-size: 13px; }
+.usage-reset b { color: var(--text); font-weight: 500; }
+.usage-bar { display: flex; height: 8px; overflow: hidden; border-radius: 999px; background: var(--panel-2); }
+.usage-fill { height: 100%; }
+.usage-fill + .usage-fill { margin-left: 2px; }
+.usage-chat { background: #7f77dd; }
+.usage-agent { background: #1d9e75; }
+.usage-companion { background: #d85a30; }
+.usage-imagine { background: #d4537e; }
+.usage-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
+.usage-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.usage-legend b { color: var(--text); font-weight: 500; }
+.usage-dot { width: 8px; height: 8px; border-radius: 50%; }
+.usage-note { margin: 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.usage-retry { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }

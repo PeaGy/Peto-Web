@@ -8,7 +8,7 @@ import type { MotionChoice } from '../shared/motion';
 import LazyBoundary from '../shared/ui/LazyBoundary';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { AccountAvatar, accountLine } from './accountUi';
-import { AgentSettings, ArchivedConversations, ConnectorSettings, MemorySettings, ProfileSettings } from './lazyViews';
+import { AgentSettings, ArchivedConversations, ConnectorSettings, MemorySettings, ProfileSettings, UsageSettings } from './lazyViews';
 import { MOTIONS, THEMES, type ThemeChoice } from './preferences';
 
 // Nội dung từng mục của hộp Cài đặt chung. Tách khỏi App.tsx (G3.3, 13/11/2026): vẫn là hàm vẽ, không phải component,
@@ -129,6 +129,12 @@ export function renderAppSettings(section: SettingsSection, active: boolean, ctx
             </button>
           </SettingsRow>
         </AccountSettings>
+      );
+    case "muc-dung":
+      return (
+        <LazyBoundary><Suspense fallback={settingsLoading}>
+          <UsageSettings open={active} onUnauthorized={handleUnauthorized} />
+        </Suspense></LazyBoundary>
       );
     case "agent":
       return (

@@ -523,7 +523,7 @@ async def search(request: Request):
             outcome = "timeout"
             failure = GatewayError(504, "Tra web chạy quá lâu nên Peto dừng lại.", code="timeout", kind="server_error",
                                    retry=False)
-        usage_events.record("call", service=model.service, model=model.key, slug=AGENT_MODEL, surface="agent",
+        usage_events.record("call", owner=owner, service=model.service, model=model.key, slug=AGENT_MODEL, surface="agent",
                             purpose="search", complete=False, outcome=outcome,
                             elapsed_ms=round((time.monotonic() - started) * 1000))
         return _error_response(failure)
@@ -533,7 +533,7 @@ async def search(request: Request):
         raise
     with anyio.CancelScope(shield=True):
         await db.add_agent_tokens(owner, day, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
-    usage_events.record("call", service=model.service, model=model.key, slug=AGENT_MODEL, surface="agent",
+    usage_events.record("call", owner=owner, service=model.service, model=model.key, slug=AGENT_MODEL, surface="agent",
                         purpose="search", complete=True, outcome=outcome,
                         elapsed_ms=round((time.monotonic() - started) * 1000),
                         input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
@@ -682,7 +682,7 @@ async def _pump(queue: asyncio.Queue, *, owner: str, day: str, cost: int, model,
                             await db.add_agent_tokens(owner, day, usage.get("input_tokens", 0),
                                                       usage.get("output_tokens", 0))
                         usage_events.record(
-                            "call", service=model.service, model=model.key, slug=slug, surface="agent",
+                            "call", owner=owner, service=model.service, model=model.key, slug=slug, surface="agent",
                             purpose="agent", complete=True, elapsed_ms=round((time.monotonic() - started) * 1000),
                             input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
                             cached_tokens=usage.get("cached_tokens"), cache_write_tokens=usage.get("cache_write_tokens"),

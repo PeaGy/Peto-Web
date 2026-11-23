@@ -833,6 +833,21 @@ export async function answerAgentDevice(userCode: string, allow: boolean): Promi
   }));
 }
 
+/** Mức dùng trong tuần (Cài đặt → Mức dùng). Chỉ phần trăm, không số tiền; thời điểm tính bằng giây. */
+export interface WeeklyUsage {
+  measuring: boolean;
+  unlimited: boolean;
+  started_at: number | null;
+  resets_at: number | null;
+  used_percent: number;
+  groups: { key: 'chat' | 'agent' | 'companion' | 'imagine'; label: string; percent: number }[];
+  unpriced_calls: number;
+}
+
+export async function getUsage(): Promise<WeeklyUsage> {
+  return json<WeeklyUsage>(await fetch("/api/usage"));
+}
+
 export async function listAgentDevices(): Promise<AgentDevices> {
   return json<AgentDevices>(await fetch("/api/agent/devices"));
 }

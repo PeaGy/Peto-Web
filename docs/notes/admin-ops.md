@@ -63,6 +63,32 @@ dense ledger and a narrative report. No per-account view, by the owner's call; A
   checked menu entry, F5/Back, tooltip, 90-day coverage, a new chat turn appearing after the flush, phone layout and
   the regular-account redirect.
 
+### Weekly usage pool, step 1: measure only (since 2026-11-23)
+
+The owner chose a weekly pool like Grok's Usage page over Flux-style fixed credits per call: a Peto call's cost varies
+too much (last week an Agent step read about 157k input tokens, a chat call about 27k). Decisions: reset every 7 days,
+Peto (Grok) counts because it spends the owner's xAI weekly limit shared with the Discord bot, and at 100% access is
+blocked (step 2). Step 1 only measures.
+
+- **Ledger.** `usage_ledger` (owner, time, surface, service, model, slug, tokens, cached and cache-write tokens, search
+  calls, xAI `cost_ticks`, images) gets one row per model call and per Imagine job; no content. `core/usage_events.record`
+  writes it for `kind="call"` when an owner is bound: an `owner=` argument where the caller already knows the account
+  (Agent step and gateway, AIRI gateway) or the `usage_events.account(owner, surface)` scope around a Chat/Companion
+  turn and its after-reply work (title, summary, memory). `charge_images` counts Imagine images. `usage_events` itself
+  still has no owner. Rows flush with the same 5-second batch; retention 90 days; account deletion removes them (owner
+  column).
+- **Window.** `usage_windows(owner, started_at)`: the first use after a window has expired starts a new 7-day window.
+- **Cost.** Computed when read, like `/admin`: xAI's reported cost, else the `PETO_COST_RATES_FILE` rates by slug;
+  images use `PETO_USAGE_IMAGE_USD` (0 = counted but unpriced). `PETO_USAGE_WEEKLY_USD` (default 5) is 100%.
+- **Page.** `GET /api/usage` returns only percentages (total and per group: Trò chuyện, Peto Agent, Companion, Tạo
+  ảnh), the window start and reset time, `unlimited` for `PETO_OWNER_ACCOUNTS`, and the count of unpriced rows; never
+  dollar amounts. Settings → "Mức dùng" (`UsageSettings.tsx`, mockup A picked by the owner) draws one stacked bar,
+  "47% đã dùng", "Đặt lại 20:00, thứ Ba 25/11" and "Đang đo thử, chưa giới hạn." Colour classes are prefixed
+  (`usage-chat`…): bare `.chat`/`.imagine` are app layout classes with `flex: 1` and stretched the bar to 100%.
+- **Not yet.** No blocking, the Agent daily step cap and Giọng Peto monthly allowance are unchanged, Giọng Peto
+  characters are not in the pool, and the pool size is a placeholder until a week or two of real data.
+- Tests: `tests/test_usage_ledger.py`, `frontend/tests/usageSettings.test.tsx`, `browser-tests/usage-settings.spec.ts`.
+
 ### Security headers (`core/security_headers.py`)
 
 Every response, including static pages and SSE, gets `X-Content-Type-Options: nosniff`, `Referrer-Policy:
@@ -154,6 +180,12 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 created (old databases keep it, unused).
 
 # Dated log (newest first)
+
+## Weekly usage pool, step 1 (2026-11-23, branch `usage-measure`, not merged)
+
+See "Weekly usage pool, step 1: measure only". Last week's xAI reported cost was about 9.9 USD (Agent 5.33, Chat
+3.15, Companion/AIRI 1.02, side calls 0.38), almost all the owner's; 2 of 19 accounts were active.
+
 
 ## CSP enforced on the main site (2026-11-20, branch `csp-enforce`, not merged)
 
