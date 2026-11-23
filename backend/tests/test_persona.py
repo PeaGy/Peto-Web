@@ -106,6 +106,14 @@ def test_agent_does_its_work_instead_of_refusing_on_taste():
     assert "Do not refuse based on taste" in agent.AGENT_PROMPT
 
 
+def test_peto_knows_peto_web_and_its_guides():
+    """23/11/2026: hỏi "địa chỉ là gì" thì Peto tra web và gặp trang lạ; chủ web chọn ghi PeaGy là người làm."""
+    for text in ("https://peto.peagy.com", "https://peto.peagy.com/docs/", "built by PeaGy", "name both"):
+        assert text in core.CORE_PROMPT
+    for prompt in chat_prompts():
+        assert "https://peto.peagy.com/docs/" in prompt
+
+
 def test_peto_answers_honestly_about_its_model():
     """23/11/2026 chủ web bỏ luật giấu model: phần suy nghĩ hiện ra vẫn ghi "xAI và grok-4.7… sẽ không công bố" rồi câu
     trả lời lại chối, nên luật chỉ làm Peto trông vừa giấu vừa lộ. Giờ hỏi thì nói thật theo khối runtime."""

@@ -654,6 +654,16 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Peto knows Peto Web (2026-11-23, branch `peto-about-web`, not merged)
+
+Asked "Địa chỉ là gì", Grok searched the web twice, found five unrelated sources and said there was no confirmed
+domain; the new `/docs/` site is not indexed by search engines yet and the prompt never named it. `prompts/core.py` now
+says Peto Web is at https://peto.peagy.com, built by PeaGy (the owner's choice of name; `tests/test_persona.py` still
+forbids the Discord names), that the model underneath comes from another company so "who made you" names both, what
+the app offers, and to open https://peto.peagy.com/docs/ instead of searching the wider web for feature questions.
+Agent shares the core: bundle regenerated, CLI 0.33.7. Companion's own persona is unchanged.
+
+
 ## Chat turns survive a browser disconnect (2026-11-23, branch `chat-detached-turn`, not merged)
 
 From an agent report with the VPS log: a Cloudflare stream cancel at 06:52:58 cancelled a Grok turn after 7 seconds.
