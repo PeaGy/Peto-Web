@@ -16,7 +16,10 @@ from time import perf_counter
 from shared.events import sse
 from shared.source_activity import SourceActivity
 
-MAX_STEPS = 80
+MAX_STEPS = 80
+# Bước tìm cuộc trò chuyện cũ: tối đa chừng này cuộc mở lại được và chừng này từ khóa ở dòng phụ.
+MAX_CHATS = 6
+MAX_CHAT_QUERIES = 4
 MAX_SUMMARY_CHARS = 4_000       # mỗi bước suy nghĩ
 MAX_TOTAL_SUMMARY = 16_000      # cả lượt
 MAX_PROBLEMS = 8
@@ -89,7 +92,7 @@ def read_detail(document: dict | None) -> str:
 @dataclass
 class Step:
     id: str
-    kind: str                  # read | think | note | compose | tool | lookup | github | search | page | code
+    kind: str                  # read | think | note | compose | tool | lookup | github | search | page | code | chats
     label: str
     start: int
     state: str = 'live'        # live | done | failed | stopped
@@ -100,6 +103,9 @@ class Step:
     # Bước chạy mã: mã đã chạy và chữ in ra (stdout, stderr) đã cắt.
     code: str = ''
     output: str = ''
+    # Bước tìm cuộc trò chuyện cũ: các cuộc tìm thấy ({id, title, at}) để mở lại, và từ khóa đã tìm.
+    chats: list[dict] = field(default_factory=list)
+    queries: list[str] = field(default_factory=list)
 
     def public(self) -> dict:
         data = {'id': self.id, 'kind': self.kind, 'label': self.label, 'state': self.state, 'start': self.start}
@@ -115,6 +121,8 @@ class Step:
             data['code'] = self.code
         if self.output:
             data['output'] = self.output
+        if self.chats:
+            data['chats'] = self.chats
         return data
 
 
@@ -258,6 +266,38 @@ class WorkLog:
         if step is None:
             return self._begin('lookup', text, state='done')[1]
         return self._finish(step, text)
+
+    def past_chats(self, text: str, live: bool, info: dict | None = None) -> str:
+        """Tìm/đọc cuộc Trò chuyện cũ (shared/past_chat_tools.py). Các lần liền nhau gom vào một bước: từ khóa ở dòng phụ,
+        các cuộc tìm thấy thành danh sách mở lại được (cách 1 chủ web chọn ngày 24/11/2026)."""
+        step = self.steps[-1] if self.steps and self.steps[-1].kind == 'chats' else None
+        if live:
+            if step is None:
+                return self._begin('chats', 'Đang tìm trong cuộc trò chuyện cũ…')[1]
+            step.state, step.end, step.label = 'live', None, 'Đang tìm trong cuộc trò chuyện cũ…'
+            return self._event(step)
+        events = ''
+        if step is None or step.state != 'live':
+            step, events = self._begin('chats', text)
+            if step is None:
+                return events
+        info = info or {}
+        query = info.get('query')
+        if isinstance(query, str) and query.strip() and query.strip() not in step.queries and len(step.queries) < MAX_CHAT_QUERIES:
+            step.queries.append(_clip(query.strip(), 60))
+        chats = list(step.chats)
+        for item in info.get('chats') or []:
+            if not isinstance(item, dict) or not isinstance(item.get('id'), str) or len(chats) >= MAX_CHATS:
+                continue
+            if any(chat['id'] == item['id'] for chat in chats):
+                continue
+            at = item.get('at')
+            chats.append({'id': item['id'][:64], 'title': _clip(str(item.get('title') or 'Chưa có tiêu đề'), 120),
+                          'at': at if isinstance(at, (int, float)) and not isinstance(at, bool) else None})
+        failed = not info.get('ok') and not chats
+        label = text if failed else 'Đã tìm trong cuộc trò chuyện cũ' if chats else 'Không có cuộc trò chuyện cũ nào khớp'
+        detail = ', '.join(f'“{item}”' for item in step.queries)
+        return events + self._finish(step, label, state='failed' if failed else 'done', detail=detail, chats=chats)
 
     def github(self, text: str, live: bool) -> str:
         """Gom các lần đọc GitHub liền nhau thành một bước, như danh sách cũ ("GitHub · 11 mục đã đọc")."""

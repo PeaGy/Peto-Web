@@ -6,6 +6,7 @@ import {
   deleteCompanionMemory,
   getCompanionMemory,
   setCompanionMemoryEnabled,
+  setPastChatsEnabled,
   tellCompanionMemory,
   updateCompanionMemory,
   type CompanionMemory,
@@ -388,6 +389,13 @@ export default function MemorySettings({ open, onUnauthorized, companionUsesMemo
     setView(null);
   }
 
+  function togglePastChats(past_chats: boolean) {
+    if (!state) return;
+    const before = state;
+    setState({ ...state, past_chats });
+    void run(() => setPastChatsEnabled(past_chats), before, "Chưa đổi được. Thử lại sau nha.");
+  }
+
   function toggle(enabled: boolean) {
     if (!state) return;
     const before = state;
@@ -522,6 +530,11 @@ export default function MemorySettings({ open, onUnauthorized, companionUsesMemo
             <SettingsSwitch id={switchId} label="Cho Peto ghi nhớ" checked={state.enabled} disabled={busy} onChange={toggle} />
           )}
         </SettingsRow>
+        {state && state.past_chats !== undefined && <SettingsRow label="Tìm trong cuộc trò chuyện cũ" htmlFor={`${switchId}-past`}
+          desc="Khi bạn nhắc chuyện cũ, Peto mở lại đúng cuộc đó. Trong dự án chỉ tìm trong dự án.">
+          <SettingsSwitch id={`${switchId}-past`} label="Tìm trong cuộc trò chuyện cũ" checked={state.past_chats} disabled={busy}
+            onChange={togglePastChats} />
+        </SettingsRow>}
       </SettingsGroup>
 
       {loadFailed ? (

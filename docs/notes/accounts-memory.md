@@ -331,7 +331,38 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - Frontend: `MemorySettings.test.tsx`, and in `Companion.test.tsx` the absence of a notice and the reset dialog.
   - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
+### Searching past chats (since 2026-11-24)
+
+Memory keeps distilled facts but could not reopen what was said in another chat ("hôm trước bạn chỉ mình sửa lỗi Excel
+thế nào?"). The owner compared ChatGPT (past chats pulled in silently every turn) and Claude (a search tool used on
+demand, shown in the UI) and chose Claude's way, with found chats listed inside the "Đang làm" timeline (mockup
+"cách 1").
+- **Tools** (`shared/past_chat_tools.py`, only on Chat turns): `search_past_chats(query, days)` matches every keyword
+  in one message, accent-insensitive (`fold`, like the sidebar search), up to 5 chats with 2 snippets each; an empty
+  query with `days` lists recent chats. `read_past_chat(conversation_id, start_id)` pages through one chat (12,000
+  characters per call, 3,000 per message, `next_id`). Results go to the model as data that may be outdated; the
+  UI-only `_chats` list is removed first.
+- **Scope**: the owner's own `chat` conversations with persona `assistant`, not archived, never the open chat or a
+  version of it (same `branch_group`); inside a project only that project, outside only chats without a project; one
+  row per version group (the newest).
+- **Switch**: Settings → Trí nhớ → "Tìm trong cuộc trò chuyện cũ", on by default, stored in `chat_settings.past_chats`
+  (separate from the memory switch); `GET /api/companion/memory` returns `past_chats`, `PUT …/settings` accepts
+  `{past_chats}` and/or `{enabled}`. Off means the tools are not offered (`capabilities` entry `past_chats`).
+- **Prompt**: one rule in `prompts/chat.py` ("## Web chat"): search with short keywords when the user refers to an
+  earlier chat, read when snippets are not enough, say which chat and date, treat it as data.
+- **Timeline**: `WorkLog.past_chats` merges consecutive calls into one `chats` step: label "Đã tìm trong cuộc trò
+  chuyện cũ" (or "Không có cuộc trò chuyện cũ nào khớp"), the keywords as its detail, and up to 6 `chats`
+  `{id, title, at}` that `WorkTimeline` renders as links to `/chat/<id>` with the date.
+- Tests: `tests/test_past_chats.py`, `frontend/tests/WorkTimeline.test.tsx`, `MemorySettings.test.tsx`,
+  `browser-tests/past-chats.spec.ts`.
+
 # Dated log (newest first)
+
+## Searching past chats, Claude style (2026-11-24, branch `past-chat-search`, not merged)
+
+See "Searching past chats". The owner first thought Peto had no memory across chats; it does (entries since
+2026-10-15, the owner's last updated 23/11), and what was missing was reopening old chats.
+
 
 ## Custom instructions win over the default personality (2026-11-21, branch `custom-instructions-priority`, not merged)
 

@@ -14,13 +14,16 @@ from pydantic import BaseModel
 
 from features.companion import memory as companion_memory
 import storage as db
+from shared import past_chat_tools
 from features.accounts.auth import current_owner
 
 router = APIRouter(prefix="/api/companion/memory", tags=["companion-memory"])
 
 
 class MemorySettings(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    # "Tìm trong cuộc trò chuyện cũ" (shared/past_chat_tools.py), riêng với việc ghi nhớ.
+    past_chats: bool | None = None
 
 
 class MemoryEdit(BaseModel):
@@ -62,6 +65,7 @@ async def _state(owner: str, tasks: BackgroundTasks | None = None) -> dict:
     return {
         "available": companion_memory.available(),
         "enabled": enabled,
+        "past_chats": await past_chat_tools.enabled_for(owner),
         "pending": companion_memory.is_pending(owner),
         "sorting": sorting,
         "limit": companion_memory.MAX_ENTRIES,
@@ -77,10 +81,18 @@ async def read_memory(tasks: BackgroundTasks, owner: str = Depends(current_owner
 
 @router.put("/settings")
 async def update_settings(body: MemorySettings, owner: str = Depends(current_owner)) -> dict:
-    if not companion_memory.available():
-        raise HTTPException(status_code=503, detail="Chủ web đã tắt trí nhớ trên máy chủ này.")
-    await db.set_memory_enabled(owner, body.enabled)
-    return {"enabled": body.enabled}
+    if body.enabled is None and body.past_chats is None:
+        raise HTTPException(status_code=400, detail="Chưa có thay đổi.")
+    result = {}
+    if body.past_chats is not None:
+        await past_chat_tools.set_enabled(owner, body.past_chats)
+        result["past_chats"] = body.past_chats
+    if body.enabled is not None:
+        if not companion_memory.available():
+            raise HTTPException(status_code=503, detail="Chủ web đã tắt trí nhớ trên máy chủ này.")
+        await db.set_memory_enabled(owner, body.enabled)
+        result["enabled"] = body.enabled
+    return result
 
 
 @router.post("/tell")

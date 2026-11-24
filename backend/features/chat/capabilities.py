@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from shared.time_tools import TOOL_SCHEMAS
 from shared.attachment_tools import SEARCH_SCHEMA, READ_SCHEMA
 from shared.chat_history_tools import SCHEMA as HISTORY_SCHEMA
+from shared.past_chat_tools import SCHEMAS as PAST_CHAT_SCHEMAS
 from features.documents.tools import (SCHEMA as DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA,
                                       EDIT_SCHEMA, WORD_EDIT_SCHEMA)
 from features.connectors.tools import SCHEMAS as GITHUB_SCHEMAS
@@ -43,7 +44,8 @@ class ToolPlan:
 
 
 def select(*, documents, files, history, github_state, github_reason, search_enabled, web_search,
-           tools_enabled, finalizing, required_search, search_fallback=False, code_reason='provider_unsupported'):
+           tools_enabled, finalizing, required_search, search_fallback=False, code_reason='provider_unsupported',
+           past_chats=None):
     """``code_reason`` None nghĩa là dịch vụ của vòng này chạy mã được; không thì là lý do không có (Luna, Haiku:
     provider_unsupported; công tắc máy chủ tắt: server_disabled)."""
     def entry(name, schemas, enabled, state='unavailable', reason='no_scoped_source'):
@@ -60,6 +62,7 @@ def select(*, documents, files, history, github_state, github_reason, search_ena
                    'source_access_only' if files and files.schemas() else 'no_scoped_source',
                    files.reader_states() if files else {}),
         entry('read_chat_history', [HISTORY_SCHEMA], history is not None, reason='no_hidden_history'),
+        entry('past_chats', list(PAST_CHAT_SCHEMAS), past_chats is not None, reason='past_chats_off'),
         Capability('github', tuple(GITHUB_SCHEMAS), github_state, github_reason),
         entry('web', [{'type': 'web_search'}], search_enabled,
               'disabled', 'user_disabled' if web_search == 'off' else 'side_call' if not tools_enabled else

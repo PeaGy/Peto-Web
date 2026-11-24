@@ -34,7 +34,7 @@ from features.documents.tools import current_session
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
 from shared.web_search import normalize_sources, search_context, citation_ids
 from shared.source_activity import display_sources
-from shared import chat_history_tools
+from shared import chat_history_tools, past_chat_tools
 from features.companion import player_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
 from features.chat import capabilities, request_context
@@ -383,6 +383,7 @@ class _ResponsesRun:
         self.files = current_files.get()
         self.file_schemas = self.files.schemas() if self.files else []
         self.chat_history = chat_history_tools.current.get()
+        self.past_chats = past_chat_tools.current.get()
         self.github_session = github_session_context.get()
         self.snapshot = snapshot = request_context.current.get()
         self.github_state, self.github_reason = (await self.github_session.availability() if self.github_session else
@@ -472,7 +473,7 @@ class _ResponsesRun:
                 github_state=self.github_state, github_reason=self.github_reason, search_enabled=self.search_enabled,
                 web_search=self.web_search, tools_enabled=self.tools_enabled, finalizing=self.finalizing,
                 required_search=self.required_search(),
-                search_fallback=self.search_fallback, code_reason=self.code_reason)
+                search_fallback=self.search_fallback, code_reason=self.code_reason, past_chats=self.past_chats)
             self.round_started = perf_counter()
             if self.tools_enabled and not self.follow_up and not self.search_nudge:
                 # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
@@ -857,6 +858,14 @@ class _ResponsesRun:
                     yield StreamChunk('source_activity', info={'sources': display})
                 self.sources = normalize_sources([*self.sources, *tool_sources])
                 yield StreamChunk('sources', sources=tuple(self.sources))
+            self.result = result
+        elif call.get('name') in past_chat_tools.NAMES and self.past_chats:
+            yield StreamChunk('past_chats', 'Đang tìm trong cuộc trò chuyện cũ…')
+            result = await self.past_chats.run(call['name'], call.get('arguments', ''))
+            # "_chats" chỉ cho nhật ký "Đang làm", không gửi cho model.
+            chats = result.pop('_chats', None) or []
+            yield StreamChunk('past_chats_done', 'Đã tìm trong cuộc trò chuyện cũ' if result.get('ok') else result.get('error', ''),
+                              info={'ok': bool(result.get('ok')), 'query': result.get('query'), 'chats': chats})
             self.result = result
         elif call.get('name') == chat_history_tools.NAME and self.chat_history:
             yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')

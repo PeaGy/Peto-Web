@@ -97,7 +97,7 @@ export interface Message {
 /** Một bước trong nhật ký "Đang làm". ``start``/``end`` là mili giây tính từ đầu lượt, theo đồng hồ máy chủ. */
 export interface WorkStep {
   id: string;
-  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search' | 'page' | 'code';
+  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search' | 'page' | 'code' | 'chats';
   label: string;
   state: 'live' | 'done' | 'failed' | 'stopped';
   start: number;
@@ -110,6 +110,8 @@ export interface WorkStep {
   /** Bước chạy mã (Peto/xAI): mã đã chạy và chữ in ra, máy chủ đã cắt. */
   code?: string;
   output?: string;
+  /** Bước tìm cuộc trò chuyện cũ: các cuộc tìm thấy, mở lại được; ``at`` tính bằng giây. */
+  chats?: { id: string; title: string; at: number | null }[];
 }
 
 export interface WorkLog {
@@ -475,6 +477,8 @@ export interface CompanionMemoryState {
   /** false khi chủ web tắt trí nhớ trên cả máy chủ. */
   available: boolean;
   enabled: boolean;
+  /** "Tìm trong cuộc trò chuyện cũ": Peto được tìm và đọc các cuộc Trò chuyện khác khi bạn nhắc chuyện cũ. */
+  past_chats?: boolean;
   /** Còn đang ghi nhớ lượt vừa xong: hỏi lại sau vài giây. */
   pending: boolean;
   /** Peto đang xếp các ghi nhớ cũ vào từng mục: hỏi lại sau vài giây. */
@@ -514,6 +518,14 @@ export async function setCompanionMemoryEnabled(enabled: boolean): Promise<void>
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
+  }));
+}
+
+export async function setPastChatsEnabled(past_chats: boolean): Promise<void> {
+  await json(await fetch("/api/companion/memory/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ past_chats }),
   }));
 }
 
