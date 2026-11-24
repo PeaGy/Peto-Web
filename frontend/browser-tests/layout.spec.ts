@@ -112,3 +112,33 @@ test('Companion giữ khoảng cách bóng chat khi khung điện thoại thấp
     await expect(page).toHaveScreenshot('companion-keyboard.png');
   }
 });
+
+test('máy tính: nút "Peto · Tự động" trong ô nhắn bên trái micro, menu nằm trên nút Tin mới nhất', async ({ page }, info) => {
+  // Mẫu B (24/11/2026): không còn dòng chọn model dưới ô nhắn để chữ tin nhắn lộ ra phía sau khi cuộn lên.
+  test.skip(info.project.name !== 'pc', 'Điện thoại giữ dòng chọn model dưới ô nhắn.');
+  await mockPeto(page, { long: true });
+  await page.goto('/');
+  await expect(page.getByLabel('Nhắn cho Peto', { exact: true })).toBeVisible();
+  await openSidebar(page);
+  await page.getByRole('button', { name: title, exact: true }).click();
+  await expect(page.locator('.bubble')).toHaveCount(40);
+  const trigger = page.getByRole('button', { name: /Mức suy nghĩ: Tự động/ });
+  await expect(trigger).toHaveText('Peto · Tự động');
+  const [box, button, mic] = await Promise.all([page.locator('.chat-dock .composer').boundingBox(), trigger.boundingBox(),
+    page.getByRole('button', { name: 'Nói để nhập', exact: true }).boundingBox()]);
+  expect(button!.x + button!.width).toBeLessThanOrEqual(mic!.x);
+  expect(Math.abs(button!.y + button!.height / 2 - (mic!.y + mic!.height / 2))).toBeLessThan(2);
+  expect(button!.y + button!.height).toBeLessThan(box!.y + box!.height);
+  await expect(page.locator('.mobile-composer-settings')).toHaveCount(0);
+  await page.locator('.messages').evaluate(node => { node.scrollTop = node.scrollHeight - node.clientHeight - 400; });
+  const jump = page.getByRole('button', { name: 'Tin mới nhất', exact: true });
+  await expect(jump).toBeVisible();
+  const at = await jump.boundingBox();
+  await trigger.click();
+  await expect(page.getByRole('menu', { name: 'Model và mức suy nghĩ' })).toBeVisible();
+  expect(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('.chat-settings-options')),
+    [at!.x + at!.width / 2, at!.y + at!.height / 2])).toBe(true);
+  await page.keyboard.press('Escape');
+  await jump.click();
+  await expect(jump).toBeHidden();
+});

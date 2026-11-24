@@ -1,6 +1,9 @@
 @media (min-width: 721px) {
   .chat-layout > .chat { background: var(--panel); }
   .chat > .chat-dock > .composer-wrap { width: min(696px, 100%); padding: 8px 20px 12px; }
+  /* Menu bật lên từ ô nhắn phải nằm trên nút "Tin mới nhất" (z-index 5) đứng ngay phía trên ô. Khung dưới không nhận
+     chuột (pointer-events: none), nên nút đó vẫn bấm được. */
+  .chat-layout > .chat > .chat-dock { z-index: 6; }
   .chat-layout > .chat.empty-state > .messages { padding-bottom: 14px; }
   .chat > .chat-dock .composer {
     gap: 0; padding: 8px; border-radius: 14px;
@@ -17,49 +20,51 @@
     width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--text);
   }
   .chat-dock .dictation-more { width: 22px; color: var(--muted); }
-  .chat-dock .composer-send { gap: 6px; }
   .chat-dock .composer .send { width: 30px; height: 30px; padding: 0; justify-content: center; border-radius: 8px; }
   .chat-dock .send-text { display: none; }
 
-  .desktop-composer-settings, .desktop-model-settings { display: flex; align-items: center; min-width: 0; }
-  .desktop-composer-settings { gap: 8px; min-height: 36px; padding: 2px 6px 0; }
-  .desktop-model-settings { margin-inline-start: auto; font-size: 14px; }
-  .desktop-model-settings > span { padding-inline: 7px; }
-  .desktop-composer-settings :is(.effort-trigger, .composer-project-trigger) {
-    display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 32px; padding: 0 8px;
-    background: transparent; border: 0; border-radius: 7px; color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
+  /* Mẫu B (24/11/2026): chọn dự án cạnh nút +, một nút "Peto · Tự động" bên trái micro; không còn dòng dưới ô nhắn. */
+  .chat-dock :is(.chat-settings-trigger, .composer-project-trigger) {
+    display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 30px; padding: 0 8px;
+    background: transparent; border: 0; border-radius: 7px; color: var(--text); font: inherit; font-size: 14px;
+    font-weight: 400; cursor: pointer;
   }
-  .desktop-composer-settings .composer-project-trigger { max-width: 40%; anchor-name: --chat-project; }
-  .desktop-composer-settings .composer-project-trigger svg { flex: none; color: var(--muted); }
-  .desktop-composer-settings :is(.composer-project-trigger, .effort-trigger) span {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .chat-dock .composer-tools { flex-wrap: nowrap; gap: 2px; flex: 0 1 auto; }
+  .chat-dock .composer-project-trigger { max-width: 220px; anchor-name: --chat-project; }
+  .chat-dock .composer-project-trigger svg { flex: none; color: var(--muted); }
+  .chat-dock .composer-send { gap: 2px; min-width: 0; flex-shrink: 1; }
+  .chat-dock .chat-settings-menu { min-width: 0; flex-shrink: 1; }
+  .chat-dock .chat-settings-trigger { max-width: 240px; }
+  .chat-dock .chat-settings-trigger .effort-chevron { flex: none; color: var(--muted); }
+  .chat-dock :is(.chat-settings-label, .composer-project-trigger span) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-dock .chat-settings-effort { color: var(--muted); }
+  .chat-dock .chat-settings-options {
+    left: auto; right: 0; width: min(260px, calc(100vw - 32px)); transform-origin: bottom right;
+    max-height: min(520px, calc(100dvh - 180px));
   }
-  .desktop-model-settings .effort-menu { min-width: 0; flex-shrink: 1; }
-  .desktop-model-settings .effort-trigger { max-width: 100%; }
-  .desktop-model-settings .effort-menu:not(.model-menu) .effort-trigger { color: var(--muted); }
-  .desktop-model-settings .effort-options { left: auto; right: 0; transform-origin: bottom right; }
-  .empty-state .desktop-model-settings .effort-options { max-height: min(420px, 40dvh); }
-  .desktop-composer-settings button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .chat-dock .chat-settings-options [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .empty-state .chat-dock .chat-settings-options { max-height: min(520px, 46dvh); }
+  .chat-dock :is(.chat-settings-trigger, .composer-project-trigger):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   @media (hover: hover) {
-    .desktop-composer-settings :is(.effort-trigger, .composer-project-trigger):hover:not(:disabled),
+    .chat-dock :is(.chat-settings-trigger, .composer-project-trigger):hover:not(:disabled),
     .chat-dock :is(.composer-plus, .dictation-mic, .dictation-more):hover:not(:disabled) { background: var(--menu-hover); }
   }
 
-  .desktop-composer-settings .composer-sheet {
+  .chat-dock .composer-tools .composer-sheet {
     width: min(320px, 90vw); max-height: min(420px, 80dvh); padding: 10px;
     color: var(--text); background: var(--menu-bg); border: 1px solid var(--menu-line);
     border-radius: 14px; box-shadow: var(--menu-shadow); overflow: auto;
   }
-  .desktop-composer-settings .sheet-handle { display: none; }
-  .desktop-composer-settings .sheet-projects { height: min(285px, 35dvh); }
-  .desktop-composer-settings .sheet-option:hover { border-radius: 8px; background: var(--menu-hover); }
-  .desktop-composer-settings .composer-sheet::backdrop { background: rgb(0 0 0 / 16%); }
+  .chat-dock .composer-tools .sheet-handle { display: none; }
+  .chat-dock .composer-tools .sheet-projects { height: min(285px, 35dvh); }
+  .chat-dock .composer-tools .sheet-option:hover { border-radius: 8px; background: var(--menu-hover); }
+  .chat-dock .composer-tools .composer-sheet::backdrop { background: rgb(0 0 0 / 16%); }
   @supports (position-area: top) {
-    .desktop-composer-settings .composer-sheet {
+    .chat-dock .composer-tools .composer-sheet {
       position-anchor: --chat-project; position-area: top span-right;
       position-try-fallbacks: flip-block, flip-inline;
       inset: auto; margin: 4px 0; justify-self: start; max-height: min(420px, 100% - 8px);
     }
-    .desktop-composer-settings .composer-sheet::backdrop { background: transparent; }
+    .chat-dock .composer-tools .composer-sheet::backdrop { background: transparent; }
   }
 }

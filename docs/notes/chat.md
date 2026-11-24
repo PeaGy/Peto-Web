@@ -108,9 +108,10 @@ and the access rules; the server checks them on every chat turn and agent step, 
 - `POST /api/chat` takes `model` per message, so switching mid-conversation works (history is plain text). Companion must
   stay on `peto` (400). Old roleplay conversations cannot be continued at all (409, see "Roleplay mode (removed)"). Since 2026-10-13 Companion can instead use the user's own API key (`provider` field; see "Companion
   providers"), which never touches the owner's accounts. The title call uses the same model as the first message. `/api/auth/me` returns the account's web
-  `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models), and
-  phones show the send button as an arrow only to keep the bar on
-  one row.
+  `models`. On a computer one "Peto · Tự động ▾" button (`ChatSettingsMenu.tsx`) sits inside the composer bar left of
+  the microphone and opens one menu with a Model group (only with two or more models) and a Mức suy nghĩ group; phones
+  keep the row under the composer (`MobileChatSettings.tsx`). Since 2026-11-24, see "Composer pickers inside the box"
+  in `frontend.md`. Phones show the send button as an arrow only to keep the bar on one row.
 - Asked which model it runs, Peto answers honestly from the runtime block (`provider`, `api_model`), e.g. "I'm Peto,
   running on xAI's grok-4.7 right now" (since 2026-11-23; before that it refused to name the model). The shared core's
   example is neutral ("[provider]'s [model]") because GPT and Claude read it too; only the Grok overlay's example names

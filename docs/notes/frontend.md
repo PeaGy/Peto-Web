@@ -303,6 +303,25 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Composer pickers inside the box (2026-11-24, branch `composer-pickers-inline`)
+
+The owner's desktop composer (0385895) put the project, model and effort pickers in a row under the box. The chat dock
+has no background, so when the chat was scrolled up, message text showed through behind that row. From two mockups the
+owner picked B, like Claude:
+
+- Computer (≥721px): one button "Peto · Tự động ▾" (`ChatSettingsMenu.tsx`) inside the composer bar, left of the
+  microphone. Its menu has a "Model" group (only with two or more models) and a "Mức suy nghĩ" group, separated by a
+  line; choosing closes it. Accessible name "Model: X, Mức suy nghĩ: Y", or "Mức suy nghĩ: Y" with a single model.
+  Long labels end in "…" (max 240px).
+- The project picker ("📁 Dự án ▾", new chats only) moved next to "+". Nothing sits under the box any more.
+- `ModelMenu.tsx` and `EffortMenu.tsx` were removed (the effort icons moved into `ChatSettingsMenu.tsx`).
+- The dock now stacks above the "Tin mới nhất" button (z-index 6 over 5); before, that button drew on top of menus
+  opening upward from the composer. The dock ignores the pointer, so the button still works.
+- Phones are unchanged: `MobileChatSettings` row and sheets under the composer. The same text can show behind that row
+  when scrolled up on a phone; not changed.
+- Test: `layout.spec.ts` "máy tính: nút "Peto · Tự động" trong ô nhắn…" checks the position left of the mic, the menu
+  above the jump button, and the jump button still clickable.
+
 ## Stale tests fixed (2026-11-24, branch `fix-stale-tests`)
 
 Tests that had been red for days, none of them a product bug:

@@ -52,6 +52,7 @@
   }
   .composer-project-trigger { max-width: 43%; }
   .composer-project-trigger svg { flex: none; color: var(--muted); }
+  .composer-project-trigger .composer-project-icon { display: none; }
   .mobile-model-trigger { margin-inline-start: auto; }
   .mobile-model-trigger strong { font-weight: 500; }
   .mobile-model-trigger span { color: var(--muted); }

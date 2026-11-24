@@ -5,7 +5,7 @@ export type StudioOption<T extends string | number> = { value: T; label: string;
 /**
  * Chip chọn một giá trị trong ô nhập Tạo ảnh (Số ảnh, Tỉ lệ), bật menu lên phía trên như Grok.
  *
- * Cách dùng phím theo EffortMenu: mở ra thì con trỏ nằm ở mục đang chọn, Escape trả về chip.
+ * Cách dùng phím theo menu Mức suy nghĩ của Chat (ChatSettingsMenu): mở ra thì con trỏ nằm ở mục đang chọn, Escape trả về chip.
  * Menu hai cột thì lên/xuống nhảy cả hàng, trái/phải đi từng mục.
  */
 export default function StudioMenu<T extends string | number>({
