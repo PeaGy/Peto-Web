@@ -1874,7 +1874,7 @@ describe('Chọn mức suy nghĩ', () => {
 
   it('mở menu, đánh dấu mức đang chọn và đổi được mức', async () => {
     await openApp();
-    const trigger = screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' });
+    const trigger = screen.getByRole('button', { name: /Mức suy nghĩ: Tự động/ });
     fireEvent.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getAllByRole('menuitemradio').map((item) => item.textContent))
@@ -1883,7 +1883,7 @@ describe('Chọn mức suy nghĩ', () => {
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cao' }));
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Cao' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Mức suy nghĩ: Cao/ })).toBeTruthy();
     expect(localStorage.getItem('peto-effort')).toBe('high');
   });
 
@@ -2373,15 +2373,13 @@ describe('Chọn model', () => {
     const select = async (id: string, model: string, effort: string) => {
       fireEvent.click(screen.getByRole('button', { name: id, exact: true }));
       await screen.findByText(`Tin ${id}`);
-      expect(screen.getByRole('button', { name: `Model: ${model}` })).toBeTruthy();
-      expect(screen.getByRole('button', { name: `Mức suy nghĩ: ${effort}` })).toBeTruthy();
+      expect(screen.getByRole('button', { name: `Model: ${model}, Mức suy nghĩ: ${effort}` })).toBeTruthy();
     };
     await openApp(); await select('A', '6 Luna', 'Rất cao'); await select('B', 'Peto', 'Thấp');
     act(() => history.back()); await screen.findByText('Tin A');
-    expect(screen.getByRole('button', { name: 'Model: 6 Luna' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Rất cao' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Model: 6 Luna, Mức suy nghĩ: Rất cao' })).toBeTruthy();
     cleanup(); localStorage.clear(); await openApp(); await screen.findByText('Tin A');
-    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Rất cao' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Mức suy nghĩ: Rất cao/ })).toBeTruthy();
     expect(api.updateConversation).not.toHaveBeenCalled();
   });
 
@@ -2392,7 +2390,7 @@ describe('Chọn model', () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onMeta?.('A', 'high'); handlers.onDone?.(); });
     await openApp(); fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
     await screen.findByText('Lịch sử A');
-    fireEvent.click(screen.getByRole('button', { name: 'Mức suy nghĩ: Thấp' }));
+    fireEvent.click(screen.getByRole('button', { name: /Mức suy nghĩ: Thấp/ }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cao', exact: true }));
     await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A', { model: 'peto', effort: 'high' }));
     fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tiếp nhé' } });
@@ -2413,10 +2411,10 @@ describe('Chọn model', () => {
     ]);
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
-    fireEvent.click(screen.getByRole('button', { name: 'Model: 6 Luna' }));
-    fireEvent.click(within(screen.getByRole('menu', { name: 'Model' })).getByRole('menuitemradio', { name: /Haiku 5.5/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' }));
-    const menu = screen.getByRole('menu', { name: 'Mức suy nghĩ' });
+    fireEvent.click(screen.getByRole('button', { name: /Model: 6 Luna/ }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Model' })).getByRole('menuitemradio', { name: /Haiku 5.5/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Model: Haiku 5.5, Mức suy nghĩ: Tự động' }));
+    const menu = screen.getByRole('group', { name: 'Mức suy nghĩ' });
     expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(6);
     expect(within(menu).queryByRole('menuitemradio', { name: 'Không suy luận' })).toBeNull();
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Tối đa' }));
@@ -2431,14 +2429,14 @@ describe('Chọn model', () => {
     ]);
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
-    fireEvent.click(screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' }));
-    const menu = screen.getByRole('menu', { name: 'Mức suy nghĩ' });
+    fireEvent.click(screen.getByRole('button', { name: /Mức suy nghĩ: Tự động/ }));
+    const menu = screen.getByRole('group', { name: 'Mức suy nghĩ' });
     expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(7);
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Tối đa' }));
     expect((await send('chào')).effort).toBe('max');
-    fireEvent.click(screen.getByRole('button', { name: 'Model: 6 Luna' }));
-    fireEvent.click(within(screen.getByRole('menu', { name: 'Model' })).getByRole('menuitemradio', { name: /Peto.*Mặc định/ }));
-    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Model: 6 Luna/ }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Model' })).getByRole('menuitemradio', { name: /Peto.*Mặc định/ }));
+    expect(screen.getByRole('button', { name: 'Model: Peto, Mức suy nghĩ: Tự động' })).toBeTruthy();
     vi.mocked(api.sendMessage).mockClear();
     expect((await send('tiếp')).effort).toBe('auto');
   });
@@ -2457,18 +2455,24 @@ describe('Chọn model', () => {
     return vi.mocked(api.sendMessage).mock.calls[0][0];
   };
 
-  it('nút model dưới ô nhập đổi sang 6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
+  it('nút "Peto · Tự động" trong ô nhập, bên trái micro, đổi sang 6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
     signIn(MODELS);
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
-    const trigger = screen.getByRole('button', { name: 'Model: Peto' });
-    expect(trigger.closest('.desktop-composer-settings')).not.toBeNull();
+    // Mẫu B (24/11/2026): một nút gộp model và mức suy nghĩ nằm trong thanh của ô nhắn, không còn dòng dưới ô.
+    const trigger = screen.getByRole('button', { name: 'Model: Peto, Mức suy nghĩ: Tự động' });
+    expect(trigger.closest('.composer-send')).not.toBeNull();
+    expect(trigger.textContent).toBe('Peto · Tự động');
+    expect(document.querySelector('.desktop-composer-settings, .desktop-model-settings')).toBeNull();
     fireEvent.click(trigger);
-    const menu = await screen.findByRole('menu', { name: 'Model' });
+    await screen.findByRole('menu', { name: 'Model và mức suy nghĩ' });
+    const menu = screen.getByRole('group', { name: 'Model' });
     expect(within(menu).getByRole('menuitemradio', { name: /Peto/ }).getAttribute('aria-checked')).toBe('true');
+    expect(within(screen.getByRole('group', { name: 'Mức suy nghĩ' })).getByRole('menuitemradio', { name: 'Tự động' })
+      .getAttribute('aria-checked')).toBe('true');
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: /6 Luna.*Nhanh, của OpenAI/ }));
-    expect(screen.queryByRole('menu', { name: 'Model' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Model: 6 Luna' })).toBeTruthy();
+    expect(screen.queryByRole('menu', { name: 'Model và mức suy nghĩ' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Model: 6 Luna/ })).toBeTruthy();
     expect(localStorage.getItem('peto-model')).toBe('luna');
     expect((await send('chào')).model).toBe('luna');
   });

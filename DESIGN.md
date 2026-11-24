@@ -393,7 +393,7 @@ There are exactly two menu families. **A new menu joins one of them; do not crea
   `.popup-menu`. Never set `display` on `.popup-menu` itself: the conversation menu is a `<dialog>`.
 - The character import menu in the character panel uses the action-menu tokens with its own two-line items.
 
-Keyboard (see `EffortMenu.tsx`, `AccountMenu.tsx`):
+Keyboard (see `ChatSettingsMenu.tsx`, `AccountMenu.tsx`):
 
 - The trigger has `aria-haspopup`, `aria-expanded`, `aria-controls`. Arrow up/down on the trigger also opens the menu.
 - Opening focuses the selected item, or the first item.

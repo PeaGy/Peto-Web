@@ -3,10 +3,9 @@ import { useCompact } from '../../shared/useCompact';
 import { ComposerSheet } from './ComposerSheet';
 import MobileChatSettings from './MobileChatSettings';
 import ComposerMenu from "./ComposerMenu";
-import EffortMenu from "./EffortMenu";
 import { isSpreadsheetFile } from "./attachments";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
-import ModelMenu from "./ModelMenu";
+import ChatSettingsMenu from "./ChatSettingsMenu";
 import { joinDraft, MAX_DRAFT_LINKS, pastedLink, splitDraft } from "./draftLinks";
 import { ComposerLinkChip } from "./LinkChip";
 import type { Effort, ModelOption, WebSearchMode, QuotedSource } from "../../shared/api/api";
@@ -242,6 +241,8 @@ export default function Composer({
             />
             <ComposerMenu compact={compact} disabled={menuDisabled} webDisabled={webSearch === "off"}
               onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
+            {/* Máy tính (mẫu B, 24/11/2026): chọn dự án nằm cạnh nút +, không còn dòng nào dưới ô nhắn. */}
+            {!compact && projectPicker}
           </div>
 
           <div className="composer-send">
@@ -259,6 +260,8 @@ export default function Composer({
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
               </button>
             </> : <>
+              {!compact && <ChatSettingsMenu key={contextKey} model={model} models={models} onModelChange={onModelChange}
+                effort={effort} efforts={efforts} onEffortChange={onEffortChange} disabled={streaming || menuDisabled} />}
               {dictation.supported && <div className="dictation-group">
                 <button type="button" className="dictation-mic" aria-label="Nói để nhập" data-tip="Nói để nhập"
                   onClick={dictation.start}>
@@ -279,17 +282,11 @@ export default function Composer({
           </div>
         </div>
       </div>
-      <div className={compact ? 'mobile-composer-settings' : 'desktop-composer-settings'}>
+      {compact && <div className="mobile-composer-settings">
         {projectPicker}
-        {compact ? <MobileChatSettings key={contextKey} model={model} models={models} onModelChange={onModelChange}
+        <MobileChatSettings key={contextKey} model={model} models={models} onModelChange={onModelChange}
           effort={effort} efforts={efforts} onEffortChange={onEffortChange} disabled={streaming || menuDisabled} />
-        : <div className="desktop-model-settings">
-          {models.length > 1
-            ? <ModelMenu value={model} options={models} disabled={streaming || menuDisabled} onChange={onModelChange} />
-            : <span>{models[0]?.label ?? 'Peto'}</span>}
-          <EffortMenu value={effort} options={efforts} disabled={streaming || menuDisabled} onChange={onEffortChange} />
-        </div>}
-      </div>
+      </div>}
       {compact && dictation.error ? (
         <ComposerSheet label="Nhập giọng nói" onClose={dictation.clearError}>
           <div className="sheet-mic-error">
