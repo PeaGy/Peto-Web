@@ -865,7 +865,8 @@ class _ResponsesRun:
             # "_chats" chỉ cho nhật ký "Đang làm", không gửi cho model.
             chats = result.pop('_chats', None) or []
             yield StreamChunk('past_chats_done', 'Đã tìm trong cuộc trò chuyện cũ' if result.get('ok') else result.get('error', ''),
-                              info={'ok': bool(result.get('ok')), 'query': result.get('query'), 'chats': chats})
+                              info={'ok': bool(result.get('ok')), 'query': result.get('query'), 'chats': chats,
+                                    'read': call['name'] == past_chat_tools.READ})
             self.result = result
         elif call.get('name') == chat_history_tools.NAME and self.chat_history:
             yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')

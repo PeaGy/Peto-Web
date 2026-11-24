@@ -44,9 +44,8 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
-- [ ] Past-chat search with real Grok, Luna and Haiku: they call `search_past_chats` when the user refers to an
-  earlier chat (and not otherwise), try other keywords when nothing matches, read with `read_past_chat`, and name the
-  chat and date — `accounts-memory.md`, "Searching past chats".
+- [ ] Past-chat search with real Luna and Haiku, and Grok not calling it when nobody refers to an earlier chat (Grok
+  found and used the right chat on 2026-11-24) — `accounts-memory.md`, "Searching past chats".
 - [ ] Asking real Grok "địa chỉ web là gì", "ai làm ra bạn" and a feature question after the About block: it gives
   peto.peagy.com, names PeaGy and the model's company, and opens /docs/ instead of searching — `chat.md`, "Peto knows
   Peto Web".

@@ -106,6 +106,7 @@ class Step:
     # Bước tìm cuộc trò chuyện cũ: các cuộc tìm thấy ({id, title, at}) để mở lại, và từ khóa đã tìm.
     chats: list[dict] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
+    reads: int = 0
 
     def public(self) -> dict:
         data = {'id': self.id, 'kind': self.kind, 'label': self.label, 'state': self.state, 'start': self.start}
@@ -268,9 +269,10 @@ class WorkLog:
         return self._finish(step, text)
 
     def past_chats(self, text: str, live: bool, info: dict | None = None) -> str:
-        """Tìm/đọc cuộc Trò chuyện cũ (shared/past_chat_tools.py). Các lần liền nhau gom vào một bước: từ khóa ở dòng phụ,
-        các cuộc tìm thấy thành danh sách mở lại được (cách 1 chủ web chọn ngày 24/11/2026)."""
-        step = self.steps[-1] if self.steps and self.steps[-1].kind == 'chats' else None
+        """Tìm/đọc cuộc Trò chuyện cũ (shared/past_chat_tools.py). Mọi lần trong một lượt gom vào một bước (chủ web thấy
+        ba bước lặp lại cùng danh sách là quá dài, 24/11/2026): từ khóa và số cuộc đã đọc lại ở dòng phụ, các cuộc tìm
+        thấy thành danh sách mở lại được (cách 1)."""
+        step = next((item for item in reversed(self.steps) if item.kind == 'chats'), None)
         if live:
             if step is None:
                 return self._begin('chats', 'Đang tìm trong cuộc trò chuyện cũ…')[1]
@@ -282,6 +284,8 @@ class WorkLog:
             if step is None:
                 return events
         info = info or {}
+        if info.get('read') and info.get('ok'):
+            step.reads += 1
         query = info.get('query')
         if isinstance(query, str) and query.strip() and query.strip() not in step.queries and len(step.queries) < MAX_CHAT_QUERIES:
             step.queries.append(_clip(query.strip(), 60))
@@ -296,7 +300,8 @@ class WorkLog:
                           'at': at if isinstance(at, (int, float)) and not isinstance(at, bool) else None})
         failed = not info.get('ok') and not chats
         label = text if failed else 'Đã tìm trong cuộc trò chuyện cũ' if chats else 'Không có cuộc trò chuyện cũ nào khớp'
-        detail = ', '.join(f'“{item}”' for item in step.queries)
+        detail = ' · '.join(part for part in (', '.join(f'“{item}”' for item in step.queries),
+                                                 f'đọc lại {step.reads} cuộc' if step.reads else '') if part)
         return events + self._finish(step, label, state='failed' if failed else 'done', detail=detail, chats=chats)
 
     def github(self, text: str, live: bool) -> str:

@@ -145,15 +145,19 @@
 .work-item.live .work-icon, .work-item.stopped .work-label { color: var(--text); }
 .work-item.failed .work-icon, .work-item.failed .work-label { color: var(--danger); }
 .work-sub { margin: 2px 0 0; font-size: 12.5px; }
-/* Bước tìm cuộc trò chuyện cũ (cách 1): mỗi cuộc tìm thấy là một dòng mở lại được, tên bên trái, ngày bên phải. */
-.work-chats { display: grid; gap: 6px; margin: 6px 0 2px; padding: 0; list-style: none; }
+/* Bước tìm cuộc trò chuyện cũ (cách 1): mỗi cuộc tìm thấy là một dòng gọn mở lại được, tên rồi ngày (24/11/2026 chủ web
+   thấy các ô viền to làm nhật ký quá dài). */
+/* .bubble ul/li (chat.css) đặt lề cho danh sách trong câu trả lời; danh sách này nằm trong nhật ký nên bỏ lề đó. */
+.bubble .work-chats { display: grid; gap: 0; margin: 2px 0 0; padding: 0; list-style: none; }
+.bubble .work-chats > li { margin: 0; }
 .work-chats a {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 10px;
-  border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 12.5px; text-decoration: none;
+  display: inline-flex; align-items: baseline; gap: 8px; max-width: 100%; padding: 2px 0;
+  color: var(--muted); font-size: 12.5px; text-decoration: none;
 }
 .work-chat-title { min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.work-chats .work-chat-title::before { content: '↳ ' / ''; color: var(--muted); }
 .work-chat-date { flex: none; }
-@media (hover: hover) and (pointer: fine) { .work-chats a:hover { background: var(--panel-2); } }
+@media (hover: hover) and (pointer: fine) { .work-chats a:hover .work-chat-title { text-decoration: underline; } }
 .work-chats a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .work-problems { margin: 6px 0 0; padding: 0 0 0 16px; color: var(--danger); font-size: 12.5px; line-height: 1.55; }
 .work-problems li + li { margin-top: 3px; }
