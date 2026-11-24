@@ -140,7 +140,7 @@ Only these places may write hex directly. Any other new colour becomes a token.
 
 Off the scale on purpose: text that is part of a graphic rather than reading text — the file-extension tag inside file
 icons (10px), Imagine's numbered badge on source images (10px), avatar initials (24px on the big avatar), glyph-only
-buttons such as "×" or "+" sized like icons (20–25px), simulated paper in document previews, and the scoped areas of §2
+buttons such as "×" or "+" sized like icons (20–25px), the "✓" that marks the chosen option in a picker sheet (18px), simulated paper in document previews, and the scoped areas of §2
 (Companion, Peto Media Player, Docs, Admin, Imagine's welcome title). Anything else uses a size from the table.
 
 Weights: 400 body, 500 labels and navigation, 600 titles and primary buttons, 650 headings and bold text **inside
