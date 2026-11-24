@@ -350,15 +350,23 @@ demand, shown in the UI) and chose Claude's way, with found chats listed inside 
   `{past_chats}` and/or `{enabled}`. Off means the tools are not offered (`capabilities` entry `past_chats`).
 - **Prompt**: one rule in `prompts/chat.py` ("## Web chat"): search with short keywords when the user refers to an
   earlier chat, read when snippets are not enough, say which chat and date, treat it as data.
-- **Timeline**: `WorkLog.past_chats` merges consecutive calls into one `chats` step: label "Đã tìm trong cuộc trò
-  chuyện cũ" (or "Không có cuộc trò chuyện cũ nào khớp"), the keywords as its detail, and up to 6 `chats`
-  `{id, title, at}` that `WorkTimeline` renders as links to `/chat/<id>` with the date.
+- **Timeline**: `WorkLog.past_chats` merges every search and read of a turn into one `chats` step, even with thinking
+  steps in between (the first real try on 2026-11-24 made three steps repeating the same list, which the owner found
+  too long): label "Đã tìm trong cuộc trò chuyện cũ" (or "Không có cuộc trò chuyện cũ nào khớp"), detail = the
+  keywords plus "đọc lại N cuộc", and up to 6 `chats` `{id, title, at}` that `WorkTimeline` renders as compact
+  one-line links ("↳ title  date") to `/chat/<id>`; `.bubble .work-chats` resets the answer's list margins.
 - Tests: `tests/test_past_chats.py`, `frontend/tests/WorkTimeline.test.tsx`, `MemorySettings.test.tsx`,
   `browser-tests/past-chats.spec.ts`.
 
 # Dated log (newest first)
 
-## Searching past chats, Claude style (2026-11-24, branch `past-chat-search`, not merged)
+## Past-chat search tried live, timeline made compact (2026-11-24, branch `past-chats-compact`, not merged)
+
+First real turn on the deployed `631ce1d`: "hôm trước mình hỏi bạn về Regera với Agera RS…" made Grok search
+("Regera Agera RS"), read one chat, search again ("Regera đắt") and answer from "Giá Regera so với Agera RS" (23/11)
+in 4 rounds, 11 s, with prompt cache hits. The timeline showed three bordered lists; now one step and one-line rows.
+
+## Searching past chats, Claude style (2026-11-24, branch `past-chat-search`, merged `631ce1d`)
 
 See "Searching past chats". The owner first thought Peto had no memory across chats; it does (entries since
 2026-10-15, the owner's last updated 23/11), and what was missing was reopening old chats.

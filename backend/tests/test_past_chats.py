@@ -131,3 +131,24 @@ async def test_switch_off_hides_the_tools(client, monkeypatch):
     monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': provider)
     await read_events(await client.post('/api/chat', json={'message': 'Chào', 'web_search': 'off'}))
     assert not any(tool.get('name') in past_chat_tools.NAMES for tool in requests[0]['tools'])
+
+
+def test_all_past_chat_calls_of_a_turn_share_one_step():
+    """24/11/2026: ba lần gọi (tìm, đọc, tìm) xen giữa các bước suy nghĩ thành ba bước lặp lại danh sách; giờ là một bước."""
+    from features.chat.work_log import WorkLog
+    log = WorkLog()
+    regera = {'id': 'r', 'title': 'Giá Regera so với Agera RS', 'at': 1795400000}
+    ssc = {'id': 's', 'title': 'So sánh SSC Tuatara và SVJ', 'at': 1795300000}
+    log.thinking('Đang nghĩ')
+    log.past_chats('Đang tìm…', True)
+    log.past_chats('Đã tìm', False, {'ok': True, 'query': 'Regera Agera RS', 'chats': [regera, ssc]})
+    log.thinking('Nghĩ tiếp')
+    log.past_chats('Đang tìm…', True)
+    log.past_chats('Đã tìm', False, {'ok': True, 'query': None, 'chats': [ssc], 'read': True})
+    log.thinking('Nghĩ nữa')
+    log.past_chats('Đang tìm…', True)
+    log.past_chats('Đã tìm', False, {'ok': True, 'query': 'Regera đắt', 'chats': [regera, ssc]})
+    steps = [step for step in log.close(True)['steps'] if step['kind'] == 'chats']
+    assert len(steps) == 1
+    assert steps[0]['detail'] == '“Regera Agera RS”, “Regera đắt” · đọc lại 1 cuộc'
+    assert [chat['id'] for chat in steps[0]['chats']] == ['r', 's'] and steps[0]['state'] == 'done'
