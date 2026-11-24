@@ -303,6 +303,19 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Composer menu like Claude's (2026-11-25, branch `chat-settings-submenu`)
+
+Live, the merged menu on the new-chat page (composer in the middle of the screen) needed 492px for 3 models and 6
+effort levels and was capped at 414px, so "Rất cao" and "Tối đa" had to be scrolled to. The owner sent Claude's model
+menu as the model to follow:
+
+- The main menu lists the models, a line, then one row "Mức suy nghĩ · Tự động ›". That row opens a submenu beside the
+  menu (click, mouse hover, → or Enter): a short note ("Mức cao hơn nghĩ kỹ hơn nhưng trả lời lâu hơn.") and the levels,
+  without icons, 34px rows. It opens to the right like Claude's when there is room, else to the left. ← or Escape
+  goes back to the row; hovering a model closes it. With a single model the menu is just the levels.
+- The main menu no longer scrolls (`overflow: visible`), so the submenu is not clipped.
+- Measured in a mock browser at 1440×900: the new-chat page shows all 7 Luna levels with room to spare.
+
 ## Composer pickers inside the box (2026-11-24, branch `composer-pickers-inline`)
 
 The owner's desktop composer (0385895) put the project, model and effort pickers in a row under the box. The chat dock
