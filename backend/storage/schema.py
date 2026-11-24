@@ -299,6 +299,9 @@ async def init_db() -> None:
             """
         )
         await db.execute("CREATE INDEX IF NOT EXISTS idx_usage_ledger_owner ON usage_ledger(owner, at)")
+        # Cài đặt Trò chuyện theo tài khoản; past_chats: công tắc "Tìm trong cuộc trò chuyện cũ" (shared/past_chat_tools).
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS chat_settings (owner TEXT PRIMARY KEY, past_chats INTEGER NOT NULL DEFAULT 1)")
         await db.execute(
             "CREATE TABLE IF NOT EXISTS usage_windows (owner TEXT PRIMARY KEY, started_at REAL NOT NULL)")
         # Số liệu vận hành cho trang Quản trị (core/usage_events.py). Cố ý không có owner, mã hội thoại hay nội dung:

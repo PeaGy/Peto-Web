@@ -23,7 +23,7 @@ import storage as db
 from storage import chat_turns, chat_quotes, connection as db_connection
 from features.chat import live, turn_control
 from features.chat import context as chat_context, context_budget, request_context, client_environment
-from shared import chat_history_tools
+from shared import chat_history_tools, past_chat_tools
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
 from features.documents.tools import DocumentSession, asks_edit, current_session as document_session_context
@@ -128,7 +128,7 @@ async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
     files: attachment_tools.AttachmentFiles | None = None, github_session=None, provider: ChatProvider | None = None,
-    budget=None, history_session=None, snapshot=None, player_session=None,
+    budget=None, history_session=None, snapshot=None, player_session=None, past_chats=None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
@@ -148,6 +148,7 @@ async def _stream_reply(
     github_token = github_session_context.set(github_session)
     budget_token = context_budget.current.set(budget)
     history_token = chat_history_tools.current.set(history_session)
+    past_token = past_chat_tools.current.set(past_chats)
     snapshot_token = request_context.current.set(snapshot)
     player_token = player_tools.current.set(player_session)
     limit = None
@@ -178,6 +179,7 @@ async def _stream_reply(
         player_tools.current.reset(player_token)
         request_context.current.reset(snapshot_token)
         chat_history_tools.current.reset(history_token)
+        past_chat_tools.current.reset(past_token)
         context_budget.current.reset(budget_token)
         github_session_context.reset(github_token)
         spoken_reply.reset(spoken_token)
@@ -404,6 +406,7 @@ class _ChatTurn:
         self.prepared = None
         self.files_session = None
         self.github_session = None
+        self.past_chats = None
 
     async def checkpoint(self, force=False):
         s = self.s
@@ -466,6 +469,9 @@ class _ChatTurn:
             if log:
                 steps = log.tool_start(chunk.text) if chunk.text else log.tool_end()
             return steps + sse({'type': 'document_status', 'text': chunk.text})
+        if chunk.kind in ("past_chats", "past_chats_done"):
+            # Nhật ký "Đang làm" (cách 1): một bước gom các lần tìm liền nhau, kèm danh sách cuộc cũ mở lại được.
+            return (log.past_chats(chunk.text, chunk.kind == "past_chats", chunk.info) if log else '') or None
         if chunk.kind in ("file_lookup", "file_lookup_done"):
             if log:
                 steps = log.lookup(chunk.text, chunk.kind == "file_lookup")
@@ -715,6 +721,8 @@ class _ChatTurn:
         self.prepared_at = perf_counter()
         github_state, github_reason = await github_access(s.owner) if s.mode == 'chat' else ('unavailable', 'chat_only')
         self.github_session = GitHubSession(s.owner) if s.mode == 'chat' and github_state == 'available' else None
+        # Tìm trong cuộc Trò chuyện cũ (kiểu Claude, 24/11/2026): chỉ tab Trò chuyện, khi công tắc trong Trí nhớ bật.
+        self.past_chats = past_chat_tools.PastChats(s.owner, self.conversation_id, s.project_id)             if s.mode == 'chat' and self.conversation_id and await past_chat_tools.enabled_for(s.owner) else None
         self.snapshot = request_context.RequestContext(
             s.request_id, request.request_id is not None, self.conversation_id, s.project_id, s.model,
             (request.effort or 'auto').strip().lower(), s.timezone, s.timezone_source,
@@ -741,7 +749,8 @@ class _ChatTurn:
                                          provider=byok.build(s.own_key) if s.own_key else None,
                                          budget=prepared.budget if prepared else None,
                                          history_session=prepared.history_tools if prepared else None,
-                                         snapshot=self.snapshot, player_session=self.player_session)) as stream:
+                                         snapshot=self.snapshot, player_session=self.player_session,
+                                         past_chats=self.past_chats)) as stream:
             async for chunk in stream:
                 event = self.chunk_event(chunk)
                 # Lưu trước khi công bố tệp/kết quả công cụ; chữ lưu tối đa mỗi giây hoặc mỗi 2 KiB.

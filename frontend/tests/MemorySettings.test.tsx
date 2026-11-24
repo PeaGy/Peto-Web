@@ -7,7 +7,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
   getCompanionMemory: vi.fn(), setCompanionMemoryEnabled: vi.fn(), deleteCompanionMemory: vi.fn(),
   clearCompanionMemory: vi.fn(), updateCompanionMemory: vi.fn(), createCompanionMemory: vi.fn(),
-  tellCompanionMemory: vi.fn(),
+  tellCompanionMemory: vi.fn(), setPastChatsEnabled: vi.fn(),
 }));
 
 const now = Date.now() / 1000;
@@ -273,4 +273,16 @@ it('đóng Cài đặt thì không tải; mở lại thì tải trí nhớ mới
   rerender(<MemorySettings open onUnauthorized={onUnauthorized} />);
   await waitFor(() => expect(screen.queryByText('Sinh viên năm hai ngành điện')).toBeNull());
   expect(screen.getByText('1/20 mục · 1 ý')).toBeTruthy();
+});
+
+it('công tắc Tìm trong cuộc trò chuyện cũ đổi riêng, không đụng công tắc ghi nhớ', async () => {
+  vi.mocked(api.getCompanionMemory).mockResolvedValue(state({ past_chats: true }));
+  vi.mocked(api.setPastChatsEnabled).mockResolvedValue();
+  render(<MemorySettings open onUnauthorized={vi.fn()} />);
+  const past = await screen.findByRole('switch', { name: 'Tìm trong cuộc trò chuyện cũ' });
+  expect((past as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(past);
+  expect(api.setPastChatsEnabled).toHaveBeenCalledWith(false);
+  expect(api.setCompanionMemoryEnabled).not.toHaveBeenCalled();
+  await waitFor(() => expect((screen.getByRole('switch', { name: 'Tìm trong cuộc trò chuyện cũ' }) as HTMLInputElement).checked).toBe(false));
 });

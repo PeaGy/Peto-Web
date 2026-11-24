@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
 import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { GlobeIcon } from './WebSources';
 import type { WorkLog, WorkStep } from '../../shared/api/api';
@@ -19,6 +20,13 @@ export function duration(ms: number) {
   const whole = Math.max(1, Math.round(ms / 1000));
   const minutes = Math.floor(whole / 60), rest = whole % 60;
   return minutes ? (rest ? `${minutes} phút ${rest} giây` : `${minutes} phút`) : `${rest} giây`;
+}
+
+/** Ngày của cuộc trò chuyện cũ trong bước tìm: "12/10", thêm năm nếu khác năm nay. */
+export function chatDate(seconds: number, now = new Date()) {
+  const date = new Date(seconds * 1000);
+  const day = `${date.getDate()}/${date.getMonth() + 1}`;
+  return date.getFullYear() === now.getFullYear() ? day : `${day}/${date.getFullYear()}`;
 }
 
 /** "Đang tìm trên web…" → "Đã tìm trên web", như máy chủ làm khi một bước xong. */
@@ -61,6 +69,8 @@ const ICONS = {
   page: svg(<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
   // Peto chạy mã trong sandbox của dịch vụ AI (xAI): dấu nhắc dòng lệnh.
   code: svg(<><path d="m5 7 5 5-5 5" /><path d="M12 18h7" /></>),
+  // Tìm trong cuộc trò chuyện cũ: đồng hồ có mũi tên quay lại.
+  chats: svg(<><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" /><path d="M4 4v4.5h4.5M12 8v4l2.5 2" /></>),
   done: svg(<path d="m5 12 4.5 4.5L19 7" />),
   failed: svg(<path d="M6 6l12 12M18 6 6 18" />),
   wait: svg(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></>),
@@ -130,6 +140,12 @@ function Step({ step, elapsed }: { step: WorkStep; elapsed: number }) {
   return <li className={`work-item ${step.state}`}>
     <div className="work-row">{head}</div>
     {step.detail && <p className="work-sub">{step.detail}</p>}
+    {step.kind === 'chats' && step.chats?.length ? <ul className="work-chats" aria-label="Cuộc trò chuyện cũ đã tìm thấy">
+      {step.chats.map(chat => <li key={chat.id}>
+        <Link to={`/chat/${encodeURIComponent(chat.id)}`}><span className="work-chat-title">{chat.title}</span>
+          {chat.at ? <span className="work-chat-date">{chatDate(chat.at)}</span> : null}</Link>
+      </li>)}
+    </ul> : null}
     {step.problems?.length ? (step.kind === 'github'
       ? <details className="work-more"><summary>Xem mục chưa đọc được</summary><ul>{step.problems.map(item => <li key={item}>{item}</li>)}</ul></details>
       : <ul className="work-problems">{step.problems.map(item => <li key={item}>{item}</li>)}</ul>) : null}

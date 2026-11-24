@@ -129,3 +129,21 @@ it('chạy mã (Peto/xAI): bước có biểu tượng riêng, mở "Xem mã và
   expect(shown.querySelector('pre[aria-label="Kết quả in ra"]')!.textContent).toBe('161.0');
   expect(container.querySelectorAll('pre[aria-label="Kết quả in ra"]')[2].textContent).toBe('(không in gì)');
 });
+
+it('bước tìm cuộc trò chuyện cũ hiện từ khóa và từng cuộc mở lại được (cách 1)', async () => {
+  const { MemoryRouter } = await import('react-router');
+  const { chatDate } = await import('../src/features/chat/WorkTimeline');
+  const at = Date.UTC(2026, 9, 12, 5) / 1000;
+  const work: WorkLog = { ms: 6000, complete: true, steps: [{ id: 'chats-1', kind: 'chats', label: 'Đã tìm trong cuộc trò chuyện cũ',
+    state: 'done', start: 0, end: 900, detail: '“excel”, “công thức”',
+    chats: [{ id: 'abc123', title: 'Sửa bảng lương bị lỗi #VALUE!', at }, { id: 'def456', title: 'Gộp ô', at: null }] }] };
+  render(<MemoryRouter><WorkTimeline work={work} live={false} answering /></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+  expect(screen.getByText('Đã tìm trong cuộc trò chuyện cũ')).toBeTruthy();
+  expect(screen.getByText('“excel”, “công thức”')).toBeTruthy();
+  const links = screen.getByRole('list', { name: 'Cuộc trò chuyện cũ đã tìm thấy' }).querySelectorAll('a');
+  expect([...links].map(link => link.getAttribute('href'))).toEqual(['/chat/abc123', '/chat/def456']);
+  expect(links[0].textContent).toContain(chatDate(at));
+  expect(chatDate(at, new Date(2026, 11, 1))).toBe('12/10');
+  expect(chatDate(at, new Date(2027, 0, 1))).toBe('12/10/2026');
+});
