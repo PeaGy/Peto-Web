@@ -38,12 +38,23 @@
   .chat-dock .chat-settings-trigger .effort-chevron { flex: none; color: var(--muted); }
   .chat-dock :is(.chat-settings-label, .composer-project-trigger span) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-dock .chat-settings-effort { color: var(--muted); }
+  /* Gọn như menu model của Claude (25/11/2026): model, đường kẻ, dòng "Mức suy nghĩ · Tự động ›" mở menu phụ bên cạnh.
+     Menu chính không cuộn để menu phụ không bị cắt. */
   .chat-dock .chat-settings-options {
     left: auto; right: 0; width: min(260px, calc(100vw - 32px)); transform-origin: bottom right;
-    max-height: min(520px, calc(100dvh - 180px));
+    max-height: none; overflow: visible;
   }
-  .chat-dock .chat-settings-options [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
-  .empty-state .chat-dock .chat-settings-options { max-height: min(520px, 46dvh); }
+  .chat-dock .chat-settings-options .effort-option { height: 34px; }
+  .chat-dock .chat-settings-options .model-option { height: auto; min-height: 44px; padding-block: 6px; }
+  .chat-settings-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+  .chat-dock .chat-settings-effort-row { gap: 8px; }
+  .chat-dock .chat-settings-effort-row[aria-expanded="true"] { background: var(--panel-2); }
+  .chat-settings-value { color: var(--muted); font-size: 13px; }
+  .chat-settings-effort-row svg { color: var(--muted); }
+  .chat-dock .chat-settings-sub { bottom: -1px; width: min(240px, calc(100vw - 32px)); max-height: none; }
+  .chat-dock .chat-settings-sub.right { left: calc(100% + 6px); right: auto; transform-origin: bottom left; }
+  .chat-dock .chat-settings-sub.left { right: calc(100% + 6px); left: auto; transform-origin: bottom right; }
+  .chat-settings-note { margin: 4px 10px 6px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
   .chat-dock :is(.chat-settings-trigger, .composer-project-trigger):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   @media (hover: hover) {
     .chat-dock :is(.chat-settings-trigger, .composer-project-trigger):hover:not(:disabled),

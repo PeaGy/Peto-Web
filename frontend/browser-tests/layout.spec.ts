@@ -135,7 +135,7 @@ test('máy tính: nút "Peto · Tự động" trong ô nhắn bên trái micro, 
   await expect(jump).toBeVisible();
   const at = await jump.boundingBox();
   await trigger.click();
-  await expect(page.getByRole('menu', { name: 'Model và mức suy nghĩ' })).toBeVisible();
+  await expect(page.locator('.chat-settings-options')).toBeVisible();
   expect(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('.chat-settings-options')),
     [at!.x + at!.width / 2, at!.y + at!.height / 2])).toBe(true);
   await page.keyboard.press('Escape');

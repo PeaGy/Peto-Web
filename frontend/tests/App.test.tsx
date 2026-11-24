@@ -2391,6 +2391,7 @@ describe('Chọn model', () => {
     await openApp(); fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
     await screen.findByText('Lịch sử A');
     fireEvent.click(screen.getByRole('button', { name: /Mức suy nghĩ: Thấp/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Mức suy nghĩ/ }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cao', exact: true }));
     await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A', { model: 'peto', effort: 'high' }));
     fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tiếp nhé' } });
@@ -2414,7 +2415,8 @@ describe('Chọn model', () => {
     fireEvent.click(screen.getByRole('button', { name: /Model: 6 Luna/ }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Model' })).getByRole('menuitemradio', { name: /Haiku 5.5/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Model: Haiku 5.5, Mức suy nghĩ: Tự động' }));
-    const menu = screen.getByRole('group', { name: 'Mức suy nghĩ' });
+    fireEvent.click(screen.getByRole('menuitem', { name: /Mức suy nghĩ/ }));
+    const menu = screen.getByRole('menu', { name: 'Mức suy nghĩ' });
     expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(6);
     expect(within(menu).queryByRole('menuitemradio', { name: 'Không suy luận' })).toBeNull();
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Tối đa' }));
@@ -2430,7 +2432,8 @@ describe('Chọn model', () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
     fireEvent.click(screen.getByRole('button', { name: /Mức suy nghĩ: Tự động/ }));
-    const menu = screen.getByRole('group', { name: 'Mức suy nghĩ' });
+    fireEvent.click(screen.getByRole('menuitem', { name: /Mức suy nghĩ/ }));
+    const menu = screen.getByRole('menu', { name: 'Mức suy nghĩ' });
     expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(7);
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Tối đa' }));
     expect((await send('chào')).effort).toBe('max');
@@ -2468,8 +2471,21 @@ describe('Chọn model', () => {
     await screen.findByRole('menu', { name: 'Model và mức suy nghĩ' });
     const menu = screen.getByRole('group', { name: 'Model' });
     expect(within(menu).getByRole('menuitemradio', { name: /Peto/ }).getAttribute('aria-checked')).toBe('true');
-    expect(within(screen.getByRole('group', { name: 'Mức suy nghĩ' })).getByRole('menuitemradio', { name: 'Tự động' })
-      .getAttribute('aria-checked')).toBe('true');
+    // Gọn như Claude (25/11/2026): dòng "Mức suy nghĩ · Tự động ›" mở menu phụ; → mở và đặt con trỏ ở mức đang chọn, ← quay về.
+    const row = screen.getByRole('menuitem', { name: /Mức suy nghĩ/ });
+    expect(row.textContent).toBe('Mức suy nghĩTự động');
+    expect(screen.queryByRole('menu', { name: 'Mức suy nghĩ' })).toBeNull();
+    row.focus();
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+    const auto = within(screen.getByRole('menu', { name: 'Mức suy nghĩ' })).getByRole('menuitemradio', { name: 'Tự động' });
+    expect(auto.getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(document.activeElement).toBe(auto));
+    fireEvent.keyDown(auto, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toBe('Thấp');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(screen.queryByRole('menu', { name: 'Mức suy nghĩ' })).toBeNull();
+    expect(document.activeElement).toBe(row);
+    expect(screen.getByRole('menu', { name: 'Model và mức suy nghĩ' })).toBeTruthy();
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: /6 Luna.*Nhanh, của OpenAI/ }));
     expect(screen.queryByRole('menu', { name: 'Model và mức suy nghĩ' })).toBeNull();
     expect(screen.getByRole('button', { name: /Model: 6 Luna/ })).toBeTruthy();

@@ -6,6 +6,14 @@ function settingOption(page: Page, name: string | RegExp) {
     .or(page.getByRole('dialog').getByRole('button', { name, exact: true }));
 }
 
+/** Mở chọn mức suy nghĩ: máy tính mở menu rồi menu phụ "Mức suy nghĩ ›" (25/11/2026), điện thoại mở bảng. */
+async function openEffort(page: Page, current: string) {
+  await page.getByRole('button', { name: `Mức suy nghĩ: ${current}` }).click();
+  const row = page.getByRole('menuitem', { name: /Mức suy nghĩ/ });
+  await row.or(page.getByRole('dialog', { name: 'Model và mức suy nghĩ' })).first().waitFor();
+  if (await row.isVisible()) await row.click();
+}
+
 test('model/effort riêng theo chat đồng bộ giữa hai trình duyệt, F5 và Back/Forward', async ({ page, browser }) => {
   const stored: Record<string, { model: string; effort: string }> = {
     A: { model: 'peto', effort: 'auto' }, B: { model: 'luna', effort: 'none' },
@@ -38,7 +46,7 @@ test('model/effort riêng theo chat đồng bộ giữa hai trình duyệt, F5 v
     await page.getByLabel('Nhắn cho Peto', { exact: true }).fill('Nháp A không đổi');
     await page.getByRole('button', { name: 'Model: Peto' }).click();
     await settingOption(page, /Haiku 5.5/).click();
-    await page.getByRole('button', { name: 'Mức suy nghĩ: Tự động' }).click();
+    await openEffort(page, 'Tự động');
     await settingOption(page, 'Tối đa').click();
     await expect.poll(() => stored.A).toEqual({ model: 'haiku', effort: 'max' });
     await setup(second); await second.goto('/chat/A');
@@ -56,7 +64,7 @@ test('model/effort riêng theo chat đồng bộ giữa hai trình duyệt, F5 v
     // Cập nhật trên thiết bị kia, rồi trở lại trang đang mở: chỉ khôi phục lựa chọn.
     await second.getByLabel('Nhắn cho Peto', { exact: true }).fill('Nháp ở điện thoại');
     await page.goto('/chat/A'); await expect(page.getByRole('button', { name: 'Model: Haiku 5.5' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Mức suy nghĩ: Tối đa' }).click();
+    await openEffort(page, 'Tối đa');
     await settingOption(page, 'Thấp').click();
     await expect.poll(() => stored.A.effort).toBe('low');
     await second.evaluate(() => window.dispatchEvent(new Event('focus')));
