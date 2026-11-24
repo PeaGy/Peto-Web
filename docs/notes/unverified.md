@@ -44,8 +44,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
-- [ ] Past-chat search with real Luna and Haiku, and Grok not calling it when nobody refers to an earlier chat (Grok
-  found and used the right chat on 2026-11-24) — `accounts-memory.md`, "Searching past chats".
+- [ ] Grok, Luna and Haiku not calling past-chat search when nobody refers to an earlier chat. Calling it when asked is
+  confirmed on 2026-11-24 for all three: Grok (Regera), Luna ("Dio Brando giết", 9 s) and Haiku ("Steam tổng tiền",
+  8 s) each found the right chat, re-read it, named its date and showed one compact "Đã tìm trong cuộc trò chuyện cũ"
+  step — `accounts-memory.md`, "Searching past chats".
 - [ ] Asking real Grok "địa chỉ web là gì", "ai làm ra bạn" and a feature question after the About block: it gives
   peto.peagy.com, names PeaGy and the model's company, and opens /docs/ instead of searching — `chat.md`, "Peto knows
   Peto Web".

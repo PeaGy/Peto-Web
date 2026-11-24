@@ -91,21 +91,23 @@ test('ô nhắn điện thoại giữ một hàng thao tác và mở đúng dự
 
 test('thu gọn mục Dự án trống kéo Gần đây lên và vẫn cho tạo dự án',async({page})=>{
   const state=await projectsFixture(page);state.projects=[];
+  // Bộ chọn dự án ở ô nhắn cũng có dòng "Chưa có dự án." (21/11/2026): chỉ xét dòng ở thanh bên.
+  const empty=page.locator('.sidebar').getByText('Chưa có dự án.',{exact:true});
   await page.goto('/');await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();await openSidebar(page);
-  await expect(page.getByText('Chưa có dự án.',{exact:true})).toBeVisible();
+  await expect(empty).toBeVisible();
   const recent=page.getByRole('heading',{name:'Gần đây',exact:true});
   const before=await recent.boundingBox();
   const section=page.getByRole('button',{name:'Dự án',exact:true});
   await section.click();
   await expect(section).toHaveAttribute('aria-expanded','false');
-  await expect(page.getByText('Chưa có dự án.',{exact:true})).toBeHidden();
+  await expect(empty).toBeHidden();
   const after=await recent.boundingBox();
   expect(after!.y).toBeLessThan(before!.y-20);
   await expect(page.getByRole('button',{name:title,exact:true})).toBeVisible();
   await noPageOverflow(page);
   await expect(page.locator('.sidebar')).toHaveScreenshot('projects-collapsed.png');
   await section.click();
-  await expect(page.getByText('Chưa có dự án.',{exact:true})).toBeVisible();
+  await expect(empty).toBeVisible();
   await section.click();
   await page.getByRole('button',{name:'Tạo dự án',exact:true}).click();
   await expect(page.getByRole('dialog',{name:'Tạo dự án'})).toBeVisible();

@@ -13,7 +13,7 @@ const SCALE = new Set([11, 12, 12.5, 13, 13.5, 14, 14.5, 15, 16, 19, 20, 22, 26,
 const SHELL = ['app', 'shared', 'features/chat', 'features/settings', 'features/projects', 'features/connectors',
   'features/diagrams', 'features/documents/documentPanel.css'];
 // Chữ là một phần của hình, không phải chữ để đọc (DESIGN.md §3, "Off the scale on purpose").
-const GRAPHIC = new Set(['.file-ext', '.avatar.big', '.history-dialog-head button']);
+const GRAPHIC = new Set(['.file-ext', '.avatar.big', '.history-dialog-head button', '.sheet-option[aria-pressed="true"]::after']);
 
 function cssFiles(path: string): string[] {
   if (statSync(path).isFile()) return path.endsWith('.css') ? [path] : [];

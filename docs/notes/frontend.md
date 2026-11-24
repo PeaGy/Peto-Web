@@ -303,6 +303,23 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Stale tests fixed (2026-11-24, branch `fix-stale-tests`)
+
+Tests that had been red for days, none of them a product bug:
+
+- `typeScale.test.ts`: the "✓" that marks the chosen option in a composer picker sheet is 18px since the desktop
+  composer (0385895). It is a glyph sized like an icon, so it joins the "off the scale on purpose" list in DESIGN.md §3
+  and the test's `GRAPHIC` set instead of changing the owner's look.
+- `projects.spec.ts` "thu gọn mục Dự án trống…": the composer's project picker also says "Chưa có dự án.", so the text
+  matched twice; the test now looks only inside `.sidebar`.
+- PC screenshots re-recorded after checking each diff: `archived-settings`, `github-connected` (the new "Mức dùng"
+  item in the Settings nav), `sidebar-menu`, `chat-editor`, `long-chat`, `chat-offline`, `dictation-menu`,
+  `dictation-listening` (the desktop composer: narrower box, model and effort pickers below it).
+
+Noticed, not changed: the chat dock has no background, so when the chat is scrolled up, message text shows between and
+behind the model/effort pickers under the composer (visible in `long-chat-pc-win32.png`). It was already transparent
+before; the owner's composer layout decides whether that row should get a backdrop.
+
 ## Type scale (G4.3) (2026-11-20, branch `g4.3-type-scale`, not merged)
 
 Audit item #18: a chat page measured 20 font sizes, and controls without a font rule fell back to the browser's
