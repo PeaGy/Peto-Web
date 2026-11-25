@@ -226,12 +226,10 @@ function AppContent() {
   const turnRoom = useRef<{ index: number; room: number } | null>(null);
   const turnRoomRef = useRef<HTMLDivElement>(null);
   const wasStreaming = useRef(false);
-  const [turnRoomActive, setTurnRoomActive] = useState(false);
   const clearTurnRoom = useCallback(() => {
     turnPin.current = null;
     turnRoom.current = null;
     if (turnRoomRef.current) turnRoomRef.current.style.height = '0px';
-    setTurnRoomActive(false);
   }, []);
   const messageFocusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const jumpToMessage = useCallback((id: number) => {
@@ -461,7 +459,6 @@ function AppContent() {
     if (!container || !spacer || !row) return;
     if (pin && turnRoom.current?.index !== pin.index) {
       turnRoom.current = { index: pin.index, room: 0 };
-      setTurnRoomActive(true);
     }
     if (!turnRoom.current) return;
     // Khối trống vừa đủ để cuộn tối đa đúng tới câu hỏi: bớt dần khi câu trả lời dài ra.
@@ -500,29 +497,6 @@ function AppContent() {
     }
     fitTurn();
   }, [streaming, messages, fitTurn]);
-  useEffect(() => {
-    const dock = chatDockRef.current;
-    if (!turnRoomActive) return;
-    // Bàn phím điện thoại, ô soạn tin cao lên (thông báo ngoại tuyến; trên điện thoại padding dưới của khung đi theo
-    // nó) hay đổi cỡ cửa sổ: tính lại khối trống ở khung hình sau. Theo dõi ô soạn tin chứ không theo dõi khung tin nhắn:
-    // padding của khung đổi ngay trong lượt báo của useComposerDock, theo dõi khung thì trình duyệt báo "ResizeObserver
-    // loop".
-    let frame = 0;
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(fitTurn);
-    };
-    const observer = dock && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null;
-    if (dock) observer?.observe(dock);
-    window.addEventListener('resize', schedule);
-    window.visualViewport?.addEventListener('resize', schedule);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', schedule);
-      window.visualViewport?.removeEventListener('resize', schedule);
-      cancelAnimationFrame(frame);
-    };
-  }, [turnRoomActive, fitTurn]);
   useEffect(() => {
     if (keepScroll.current) {
       keepScroll.current = false;
@@ -565,6 +539,53 @@ function AppContent() {
   const effectiveEffort = effortOptions.some(item => item.value === effort) ? effort : 'auto';
 
   const { composerRef, chatDockRef, composerBoxRef, composerFrom } = useComposerDock(emptyChat, auth?.authenticated, view);
+  // Bàn phím điện thoại (25/11/2026): khung tin nhắn thấp lại và ô nhắn nhảy lên trên bàn phím, nhưng vị trí cuộn đứng
+  // yên, nên cuối tin nhắn cuối đang thấy bị ô nhắn che. ``endVisible`` nhớ cuối tin nhắn cuối có đang thấy (ngay trên ô
+  // nhắn) không, đo lúc cuộn và sau mỗi lần vẽ; khung hay ô nhắn đổi cỡ mà nó đang thấy thì cuộn vừa đủ để nó lại nằm
+  // ngay trên ô nhắn, như Claude và ChatGPT. Đang cuộn lên đọc chỗ khác thì để yên.
+  const endVisible = useRef(false);
+  const endGap = useCallback(() => {
+    const container = messagesRef.current;
+    const last = container ? [...container.querySelectorAll<HTMLElement>(':scope > article')].at(-1) : undefined;
+    if (!container || !last) return null;
+    const box = composerBoxRef.current?.getBoundingClientRect();
+    const bottom = Math.min(container.getBoundingClientRect().bottom, box && box.height ? box.top : Infinity) - 8;
+    return bottom - last.getBoundingClientRect().bottom;
+  }, [composerBoxRef]);
+  const noteEnd = useCallback(() => { endVisible.current = (endGap() ?? -1) >= -2; }, [endGap]);
+  useLayoutEffect(noteEnd, [messages, streaming, conversationId, noteEnd]);
+  useEffect(() => {
+    const dock = chatDockRef.current;
+    // Bàn phím điện thoại, ô soạn tin cao lên (nhiều dòng, thông báo ngoại tuyến; trên điện thoại padding dưới của khung
+    // đi theo nó) hay đổi cỡ cửa sổ: tính lại khối trống của lượt đang ghim, rồi giữ cuối tin nhắn cuối trong tầm nhìn ở
+    // khung hình sau. Theo dõi ô soạn tin chứ không theo dõi khung tin nhắn: padding của khung đổi ngay trong lượt báo
+    // của useComposerDock, theo dõi khung thì trình duyệt báo "ResizeObserver loop".
+    let frame = 0;
+    const settle = () => {
+      fitTurn();
+      const container = messagesRef.current, gap = endGap();
+      if (container && endVisible.current && gap !== null && gap < 0) {
+        container.scrollTop += Math.ceil(-gap);
+        nearBottom.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+        setShowJump(!nearBottom.current);
+      }
+      noteEnd();
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(settle);
+    };
+    const observer = dock && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null;
+    if (dock) observer?.observe(dock);
+    window.addEventListener('resize', schedule);
+    window.visualViewport?.addEventListener('resize', schedule);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', schedule);
+      window.visualViewport?.removeEventListener('resize', schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [chatDockRef, fitTurn, endGap, noteEnd, view, auth?.authenticated]);
 
   // /admin chỉ dành cho chủ web; tài khoản khác gõ thẳng địa chỉ thì về trang chủ (API cũng trả 404 cho họ).
   useEffect(() => {
@@ -978,6 +999,7 @@ function AppContent() {
           if (!element) return;
           nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
           setShowJump(!nearBottom.current);
+          noteEnd();
         }}>
           {loadingConversation && <div className="loading-chat"><LoadingIndicator label="Đang mở hội thoại" /></div>}
           {loadFailed && <div className="loading-chat" role="alert">

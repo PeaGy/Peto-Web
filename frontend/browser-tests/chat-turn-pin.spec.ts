@@ -120,3 +120,40 @@ test('tin rất dài gập lại như Claude: câu hỏi ghim lên đỉnh mà �
   await expect(fold).toHaveClass(/folded/);
   await noPageOverflow(page);
 });
+
+// Bàn phím điện thoại (25/11/2026): khung thấp lại, ô nhắn nhảy lên. Cuối tin nhắn cuối đang thấy thì vẫn thấy, ngay
+// trên ô nhắn; đang đọc giữa một câu trả lời dài thì khung đứng yên. Bàn phím giả bằng cách thu thấp cửa sổ
+// (interactive-widget=resizes-content cũng làm khung thấp lại như vậy).
+const lastEnd = (page: Page) => page.evaluate(() => {
+  const last = [...document.querySelectorAll<HTMLElement>('.messages > article')].at(-1)!;
+  return { end: last.getBoundingClientRect().bottom, composer: document.querySelector('.chat-dock .composer')!.getBoundingClientRect().top };
+});
+async function openKeyboard(page: Page) {
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: size.width, height: size.height - 320 });
+}
+
+test('mở bàn phím sau lượt vừa xong: cuối câu trả lời vẫn nằm ngay trên ô nhắn', async ({ page }) => {
+  await setup(page, 12);
+  await send(page);
+  await expect.poll(async () => (await streamState(page)).done).toBe(true);
+  await expect(page.getByRole('button', { name: 'Gửi', exact: true })).toBeVisible();
+  const before = await lastEnd(page);
+  expect(before.end).toBeLessThan(before.composer);
+  await openKeyboard(page);
+  await expect.poll(async () => { const now = await lastEnd(page); return now.end <= now.composer; }).toBe(true);
+});
+
+test('mở bàn phím khi đang ở cuối cuộc cũ: tin cuối vẫn thấy; đang đọc chỗ khác thì khung đứng yên', async ({ page }) => {
+  await setup(page, 1);
+  await expect.poll(async () => { const now = await lastEnd(page); return now.end <= now.composer; }).toBe(true);
+  await openKeyboard(page);
+  await expect.poll(async () => { const now = await lastEnd(page); return now.end <= now.composer; }).toBe(true);
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: size.width, height: size.height + 320 });
+  await page.locator('.messages').evaluate(node => { node.scrollTop = 0; });
+  await page.waitForTimeout(200);
+  await openKeyboard(page);
+  await page.waitForTimeout(300);
+  expect(await page.locator('.messages').evaluate(node => node.scrollTop)).toBe(0);
+});
