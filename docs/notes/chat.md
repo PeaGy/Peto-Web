@@ -666,6 +666,24 @@ the app offers, and to open https://peto.peagy.com/docs/ instead of searching th
 Agent shares the core: bundle regenerated, CLI 0.33.7. Companion's own persona is unchanged.
 
 
+## Phone keyboard keeps the end of the chat in view (2026-11-25, branch `chat-keyboard-keep-end`)
+
+The owner's phone (Android Chrome): right after a reply, tapping the composer opened the keyboard, the composer jumped
+above it, and the end of the reply slid behind the composer while its copy/retry row showed under it. With
+`interactive-widget=resizes-content` the message list gets shorter but keeps its scroll position, and nothing moved
+the content. Measured in a mobile browser test (keyboard faked by shrinking the window 320px): the reply's end went
+from 278px above the composer to 42px under it; an old chat opened at the bottom lost its last 278px the same way.
+
+- `App.tsx` remembers whether the end of the last message is visible just above the composer (`endVisible`, measured
+  on scroll and after each render). When the window, the visual viewport or the composer changes size, it first
+  refits the pinned turn's spacer (as before), then, if that end was visible, scrolls just enough to put it back 8px
+  above the composer, as Claude and ChatGPT do. Reading higher up leaves the scroll alone.
+- The resize watcher now always runs (it used to start only once a turn was pinned), so `turnRoomActive` is gone.
+- Tests: `chat-turn-pin.spec.ts`, keyboard after a finished turn, and an old chat at the bottom vs. scrolled to the top.
+- Seen while testing, not caused by this: `chat-turn-pin.spec.ts` "câu hỏi vừa gửi lên đỉnh…" and "câu trả lời
+  ngắn…" sometimes fail on PC at setup ("Câu trả lời cũ số 6" never shows) when run in parallel with other files, also
+  on main; they pass alone.
+
 ## Chat turns survive a browser disconnect (2026-11-23, branch `chat-detached-turn`, not merged)
 
 From an agent report with the VPS log: a Cloudflare stream cancel at 06:52:58 cancelled a Grok turn after 7 seconds.

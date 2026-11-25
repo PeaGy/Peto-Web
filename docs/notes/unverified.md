@@ -44,6 +44,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] On a real phone after deploying: right after a reply, and in an old chat opened at the bottom, tapping the
+  composer keeps the end of the last message just above it (Android Chrome; iPhone Safari does not resize the page for
+  the keyboard, so it may differ). Only checked with a shrunk browser window — `chat.md`, "Phone keyboard keeps the end
+  of the chat in view".
 - [ ] Grok, Luna and Haiku not calling past-chat search when nobody refers to an earlier chat. Calling it when asked is
   confirmed on 2026-11-24 for all three: Grok (Regera), Luna ("Dio Brando giết", 9 s) and Haiku ("Steam tổng tiền",
   8 s) each found the right chat, re-read it, named its date and showed one compact "Đã tìm trong cuộc trò chuyện cũ"
