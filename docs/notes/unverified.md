@@ -129,6 +129,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Long-session recovery with a physical Android/iOS lock and live recognition/providers — `companion.md`, "Companion tab and voice relay".
 - [ ] Spoken barge-in with physical microphones and real providers — `companion.md`, "Companion tab and voice relay".
 - [ ] Push to Talk on a physical phone with a real recognition service (first-syllable loss) — `companion.md`, "Companion tab and voice relay".
+- [ ] Companion image sync between two real devices on the live site, behind Cloudflare: an image sent on the PC shows on the phone, the signed upload and download links are `https`, and a deleted chat removes its files on the VPS — `companion.md`, "AIRI Companion: chat sync between devices", "Images".
 - [ ] Companion web search with real Grok — `companion.md`, "Companion web search".
 - [ ] MAGIC motion on a physical phone — `companion.md`, "Companion MAGIC motion (`characters/magic/`)".
 - [ ] The eight brain providers and Tavily with real keys — `companion.md`, "Companion providers (own API keys, `/companion/settings/providers`)".

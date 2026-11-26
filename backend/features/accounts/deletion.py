@@ -98,6 +98,12 @@ async def delete_account(owner: str) -> dict[str, int]:
             if "conversations" in tables:
                 folders += [UPLOAD_DIR / row[0] for row in await (await db.execute(
                     "SELECT id FROM conversations WHERE owner=?", (owner,))).fetchall()]
+            if "companion_attachments" in tables:
+                files += [row[0] for row in await (await db.execute(
+                    "SELECT path FROM companion_attachments WHERE owner=?", (owner,))).fetchall() if row[0]]
+            if "companion_sync_users" in tables:
+                folders += [UPLOAD_DIR / "companion" / row[0] for row in await (await db.execute(
+                    "SELECT user_id FROM companion_sync_users WHERE owner=?", (owner,))).fetchall() if row[0]]
             if "imagine_jobs" in tables:
                 folders += [UPLOAD_DIR / "imagine" / row[0] for row in await (await db.execute(
                     "SELECT id FROM imagine_jobs WHERE owner=?", (owner,))).fetchall()]

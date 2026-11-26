@@ -13,26 +13,34 @@ máy chủ Peto đóng vai máy chủ đó, nói đúng giao thức của nó, d
   ``chat:new-messages`` cho các kết nối khác của cùng tài khoản) và ``chat:pull-messages`` (kéo tin sau một ``seq``).
   Chỉ dựa vào mã: trang khác không đọc được mã (``/sync/session`` cùng nguồn, không có CORS), nên không mượn được
   cookie để mở kết nối thay người dùng.
+- REST ``/api/v1/attachments`` (từ 26/11/2026), bearer như trên: đăng ký ảnh, ``/{id}/finalize`` báo đã tải lên,
+  ``/{id}/download`` xin địa chỉ tải về. Byte ảnh đi qua ``/{id}/content?sig=…``: địa chỉ có chữ ký, hạn
+  ``LINK_MAX_AGE``, vì trang AIRI đẩy và tải byte bằng ``XMLHttpRequest``/``fetch`` trần, không kèm mã đồng bộ. Chữ ký
+  chỉ mang mã người dùng mờ, không mang owner, vì địa chỉ có thể vào log của proxy.
 
 Chỉ bật khi đặt ``PETO_AIRI_DIR``, như cổng model. Nội dung tin không bao giờ vào log; log chỉ có số đếm.
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 import time
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
 from itsdangerous import BadSignature, SignatureExpired
 
 from core import config
 from core.config import SESSION_COOKIE, provider_from_owner
 from features.accounts.auth import issued_after_deletion, live_session_owner, signer
+from shared.attachments import sniff_image_mime
 from storage import airi_chats
-from storage.airi_chats import SyncError
+from storage.airi_chats import ATTACHMENT_ID, IMAGE_MIMES, MAX_ATTACHMENT_BYTES, MAX_MEDIA_PER_MESSAGE, SHA256_HEX, SyncError
 
 logger = logging.getLogger("peto_web.airi_sync")
 router = APIRouter()
@@ -57,6 +65,9 @@ CLOSE_TRY_AGAIN_LATER = 1013
 SYNC_ROLES = ("user", "assistant")
 
 _tokens = signer("peto-airi-chat-sync")
+_attachment_links = signer("peto-airi-attachment")
+LINK_MAX_AGE = 15 * 60
+MAX_LINK_CHARS = 1024
 
 
 _user_ids: dict[str, str] = {}
@@ -230,6 +241,131 @@ async def delete_chat(request: Request, chat_id: str):
     return await _rest(request, action)
 
 
+# --- Ảnh ------------------------------------------------------------------------------------------------------------
+
+def _attachment_id(value: object) -> str:
+    if not isinstance(value, str) or not ATTACHMENT_ID.fullmatch(value):
+        raise SyncError(400, "Mã ảnh không hợp lệ.")
+    return value
+
+
+def _attachment_link(request: Request, user_id: str, attachment_id: str, action: str) -> str:
+    signature = _attachment_links.dumps({"u": user_id, "a": attachment_id, "k": action})
+    base = str(request.base_url).rstrip("/")
+    return f"{base}{PREFIX}/api/v1/attachments/{attachment_id}/content?sig={signature}"
+
+
+async def _link_owner(request: Request, attachment_id: str, action: str) -> str | None:
+    """Tài khoản của một địa chỉ ảnh có chữ ký; ``None`` khi sai, hết hạn, khác ảnh hay khác việc (tải lên/tải về)."""
+    signature = request.query_params.get("sig", "")
+    if not signature or len(signature) > MAX_LINK_CHARS:
+        return None
+    try:
+        data = _attachment_links.loads(signature, max_age=LINK_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+    if not isinstance(data, dict) or data.get("a") != attachment_id or data.get("k") != action:
+        return None
+    user_id = data.get("u")
+    return await airi_chats.owner_of_user(user_id) if isinstance(user_id, str) else None
+
+
+def _image_matches(data: bytes, row: dict) -> bool:
+    return (len(data) == row["size"] and hashlib.sha256(data).hexdigest() == row["sha256"]
+            and sniff_image_mime(data) == row["mime"])
+
+
+@router.post(PREFIX + "/api/v1/attachments")
+async def create_attachment(request: Request):
+    async def action(owner, user_id):
+        body = await _json_body(request)
+        attachment_id = _attachment_id(body.get("id"))
+        mime, sha256, size = body.get("mimeType"), body.get("sha256"), body.get("size")
+        if mime not in IMAGE_MIMES:
+            raise SyncError(400, "Chỉ đồng bộ được ảnh PNG, JPEG, WebP hoặc GIF.")
+        if not isinstance(sha256, str) or not SHA256_HEX.fullmatch(sha256):
+            raise SyncError(400, "Mã băm của ảnh không hợp lệ.")
+        if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= MAX_ATTACHMENT_BYTES:
+            raise SyncError(400, "Ảnh phải nhỏ hơn 3 MB.")
+        attachment, needs_upload = await airi_chats.create_attachment(owner, user_id, attachment_id, mime, sha256, size)
+        upload = {"url": _attachment_link(request, user_id, attachment_id, "put"), "headers": {}} if needs_upload else None
+        logger.info("airi_sync create_attachment bytes=%d upload=%s", size, needs_upload)
+        return 201, {"attachment": attachment, "upload": upload}
+    return await _rest(request, action)
+
+
+@router.put(PREFIX + "/api/v1/attachments/{attachment_id}/content")
+async def upload_attachment(request: Request, attachment_id: str):
+    if not _enabled():
+        return _error(404, "Đồng bộ Companion AIRI chưa được bật trên máy chủ này.")
+    owner = await _link_owner(request, attachment_id, "put")
+    if not owner:
+        return _error(403, "Địa chỉ tải ảnh lên không hợp lệ hoặc đã hết hạn.")
+    row = await airi_chats.get_attachment(owner, attachment_id)
+    if row is None:
+        return _error(404, "Không tìm thấy ảnh này.")
+    if row["state"] == "ready":
+        # Trang AIRI coi 412 là ảnh đã có sẵn (giống S3 với If-None-Match) và đi tiếp tới finalize.
+        return _error(412, "Ảnh này đã tải lên rồi.")
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) != row["size"]:
+        return _error(400, "Ảnh tải lên không khớp kích thước đã đăng ký.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > row["size"]:
+            return _error(400, "Ảnh tải lên không khớp kích thước đã đăng ký.")
+    if not _image_matches(bytes(data), row):
+        return _error(400, "Ảnh tải lên không khớp ảnh đã đăng ký.")
+    path = Path(row["path"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(path.name + ".part")
+    partial.write_bytes(data)
+    os.replace(partial, path)
+    logger.info("airi_sync upload_attachment bytes=%d", len(data))
+    return Response(status_code=200)
+
+
+@router.post(PREFIX + "/api/v1/attachments/{attachment_id}/finalize")
+async def finalize_attachment(request: Request, attachment_id: str):
+    async def action(owner, user_id):
+        row = await airi_chats.get_attachment(owner, attachment_id)
+        if row is None:
+            raise SyncError(404, "Không tìm thấy ảnh này.")
+        if row["state"] != "ready":
+            path = Path(row["path"])
+            if not path.is_file() or not _image_matches(path.read_bytes(), row):
+                raise SyncError(409, "Ảnh chưa tải lên xong.")
+            await airi_chats.mark_attachment_ready(owner, attachment_id)
+        return 200, airi_chats.public_attachment(row)
+    return await _rest(request, action)
+
+
+@router.get(PREFIX + "/api/v1/attachments/{attachment_id}/download")
+async def download_attachment(request: Request, attachment_id: str):
+    async def action(owner, user_id):
+        row = await airi_chats.get_attachment(owner, attachment_id)
+        if row is None or row["state"] != "ready":
+            raise SyncError(404, "Không tìm thấy ảnh này.")
+        return 200, {"attachment": airi_chats.public_attachment(row), "sha256": row["sha256"],
+                     "url": _attachment_link(request, user_id, attachment_id, "get")}
+    return await _rest(request, action)
+
+
+@router.get(PREFIX + "/api/v1/attachments/{attachment_id}/content")
+async def attachment_content(request: Request, attachment_id: str):
+    if not _enabled():
+        return _error(404, "Đồng bộ Companion AIRI chưa được bật trên máy chủ này.")
+    owner = await _link_owner(request, attachment_id, "get")
+    if not owner:
+        return _error(403, "Địa chỉ tải ảnh không hợp lệ hoặc đã hết hạn.")
+    row = await airi_chats.get_attachment(owner, attachment_id)
+    if row is None or row["state"] != "ready" or not Path(row["path"]).is_file():
+        return _error(404, "Không tìm thấy ảnh này.")
+    return FileResponse(row["path"], media_type=row["mime"],
+                        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
 # --- WebSocket ------------------------------------------------------------------------------------------------------
 
 def frame(event_id: str, body: object, invoke_type: int | None = None) -> str:
@@ -311,8 +447,12 @@ def _send_request(content: object) -> tuple[str, list[dict]]:
         content_text = message.get("content")
         if not isinstance(content_text, str) or len(content_text) > MAX_MESSAGE_CHARS:
             raise SyncError(400, "Nội dung tin nhắn không hợp lệ.")
+        media_ids = message.get("mediaIds") or []
+        if (not isinstance(media_ids, list) or len(media_ids) > MAX_MEDIA_PER_MESSAGE
+                or len(set(map(str, media_ids))) != len(media_ids)):
+            raise SyncError(400, f"Mỗi tin kèm tối đa {MAX_MEDIA_PER_MESSAGE} ảnh khác nhau.")
         clean.append({"id": _text(message.get("id"), MAX_ID_CHARS, "Mã tin nhắn"), "role": message["role"],
-                      "content": content_text,
+                      "content": content_text, "mediaIds": [_attachment_id(media_id) for media_id in media_ids],
                       "replyToMessageId": _text(message.get("replyToMessageId"), MAX_ID_CHARS, "Mã tin trả lời",
                                                 optional=True)})
     return chat_id, clean

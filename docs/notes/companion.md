@@ -1115,8 +1115,8 @@ chats with its own cloud for a signed-in AIRI account; the Peto build has none, 
 the text of Companion chats is now stored on the server (before, the gateway stored nothing). The fork side is in its
 `PETO.md`, "Chat sync".
 
-- **What syncs** (AIRI's rule): the text of user and assistant messages, chat titles and the chat's character id. Not
-  images, tool calls, errors, cards, memory or settings. A chat appears on the other devices in the conversation list;
+- **What syncs** (AIRI's rule): the text of user and assistant messages, their images (since 2026-11-26, below), chat
+  titles and the chat's character id. Not tool calls, errors, cards, memory or settings. A chat appears on the other devices in the conversation list;
   its messages are pulled when it is opened, and new messages reach open devices at once. A deleted chat leaves the
   other devices at their next reconcile (a reload or a reconnect), not at once: the protocol has no deletion push, and
   upstream never removed such chats at all (fork patch since 2026-11-18).
@@ -1166,15 +1166,50 @@ the text of Companion chats is now stored on the server (before, the gateway sto
   against abuse: 1,000 live chats, 100,000 messages, about 1 GB of text (`storage/airi_chats.py`); per call 500
   messages and 1,000,000 characters per message. A full account gets "Chỗ đồng bộ hội thoại của tài khoản đã đầy…";
   editing existing messages still works. `ops/purge_guests.py` covers both tables (they have `owner`).
-- **Logs**: counts only (`airi_sync send_messages count=…`, `create_chat`, `delete_chat`, `open sockets=…`); never
-  message text (`test_logs_never_carry_message_text`).
+- **Images** (since 2026-11-26, the owner's request: "mình muốn thiết bị khác cũng thấy"; AIRI #3614,
+  `server/apps/api/src/services/domain/attachments.ts` in the fork). The page shrinks a picked image to 1920 px and
+  under 3 MB itself (`use-chat-images.ts`), then for each image: `POST /api/companion/airi-cloud/api/v1/attachments`
+  (Bearer; its own id `[A-Za-z0-9_-]{1,128}`, PNG/JPEG/WebP/GIF, SHA-256, 1 byte–3 MB; 201 with `upload: {url,
+  headers: {}}`, or `upload: null` when that id is already done; 409 when the id was registered with other bytes), a
+  `PUT` of the bytes to `upload.url`, `POST …/{id}/finalize`, then `chat:send-messages` with `mediaIds` (at most 4,
+  distinct, only the account's own finished images, else an error reply). Pulled and pushed messages carry
+  `attachments: [{id, mimeType, size}]` (finished images only, like AIRI); the other device calls `GET
+  …/{id}/download` (Bearer) for `{attachment, url, sha256}`, fetches `url` and checks the checksum. The byte routes are
+  `PUT`/`GET …/{id}/content?sig=…`: AIRI sends and fetches the bytes with a bare `XMLHttpRequest`/`fetch` (made for
+  S3), so the link carries its own key, `signer("peto-airi-attachment")` over the opaque sync user id (never the
+  owner, since URLs can reach proxy logs), the image id and the direction (`put` or `get`), valid 15 minutes
+  (`LINK_MAX_AGE`); it is built from the request's own origin (uvicorn runs with `--proxy-headers`, so `https`
+  behind the tunnel). The upload must match the registered size and SHA-256 and be a real image of the declared type
+  (`shared.attachments.sniff_image_mime`); an upload to a finished image gets 412, which AIRI reads as "already
+  there". Files go to `UPLOAD_DIR/companion/<sync user id>/<image id>.<ext>`, served with `nosniff` and `private,
+  no-store`. Table `companion_attachments` (PK owner+id; mime, sha256, size, state `pending|ready`, path, times) and
+  column `companion_chat_messages.media_ids` (JSON list, default `[]`). Unlike AIRI: an image registered but not
+  finished is removed after a day (`PENDING_MAX_AGE`, checked when the account registers another); deleting a chat
+  removes the images no other chat of the account uses (AIRI keeps them until the account goes); account deletion
+  removes the files and the folder. No per-account total, like AIRI and Chat (the owner's choice, 2026-11-26). A
+  re-send that changes only the images counts as a change. The fork change is only that attachment URLs keep the
+  server path (`PETO.md`, `attachments.ts`).
+- **Logs**: counts only (`airi_sync send_messages count=…`, `create_chat`, `delete_chat`, `open sockets=…`,
+  `create_attachment bytes=… upload=…`, `upload_attachment bytes=…`); never message text
+  (`test_logs_never_carry_message_text`).
 - **Tests**: `tests/test_airi_sync.py` (token and cookie separation, opaque id, REST life cycle and shapes, isolation
   between accounts, validation, caps, WebSocket authentication and skipped frames, send/pull/fan-out, edits, errors
   that keep the socket, delete dropping messages, no text in logs). Checked on 2026-11-17 with the real eventa 1.0.2
   library from Node and with two real browsers of one account on the mock backend (a chat made before the sync moved
   and uploaded with its history, opened on the second browser, a new message pushed live).
+  `tests/test_airi_sync_attachments.py` covers images (full trip to a second socket and download, mismatched bytes,
+  fake image, validation, conflicts, private and expiring links, `mediaIds` rules, chat and account deletion, cleanup
+  of unfinished uploads).
 
 # Dated log (newest first)
+
+## AIRI page: images sync between devices (2026-11-26)
+
+The upstream merge of 2026-11-26 brought image sync (#3614): the page uploads an image before its message. Peto Web had
+no attachment routes, so the fork first kept images on their device (`9a80340a3`). At the owner's request Peto Web now
+serves AIRI's attachment protocol ("Images" in "AIRI Companion: chat sync between devices"), with no per-account total
+(the owner chose that over a 200 MB cap). The fork patch now only joins attachment URLs under the sync server path;
+upstream's `new URL('/api/v1/…', serverUrl)` dropped `/api/companion/airi-cloud`.
 
 ## AIRI page: sync tables renamed to companion_* (2026-11-18)
 
