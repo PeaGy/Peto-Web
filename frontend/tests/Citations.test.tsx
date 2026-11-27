@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { ChatMessage } from '../src/features/chat/ChatMessage';
 import SourcesPanel from '../src/features/chat/SourcesPanel';
 import { citationIndex, safeSources } from '../src/features/chat/sourceData';
@@ -27,6 +27,9 @@ it('ánh xạ bằng ID, nhóm citation cạnh nhau và giữ nút mở bảng n
 });
 
 it('mọi điểm chia chunk đều giữ marker kín; metadata về muộn cập nhật đúng nguồn', () => {
+  // Chữ đang chạy được vẽ thưa (useStreamingText); cho đồng hồ chạy xa giữa các lần gọi để điểm chia nào cũng được vẽ.
+  let clock = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => (clock += 2000));
   const text = 'Đã xác minh [web:21]';
   const { container, rerender } = render(view('', [], true));
   for (let end = 1; end <= text.length; end++) {

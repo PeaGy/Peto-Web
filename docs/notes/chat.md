@@ -679,6 +679,52 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Streaming answers redraw less often (2026-11-27, branch `chat-markdown-throttle`)
+
+The owner asked whether https://github.com/deepseek-ai/chat-demo could help Peto Web. It is a static, browser-only
+DeepSeek chat with the API key held in the browser, which breaks our credential invariant, and most of its features we
+already have. One idea fit: `useThrottleMarkdownRender`, which waits twice the last render time between Markdown
+updates while a reply streams.
+
+- **Problem.** Every `delta` appended to `messages` (`chatTurn.ts`), and `ChatMessage` rebuilt the whole answer's
+  Markdown each time: remark, rehype, KaTeX, highlight and tables. The cost per chunk grew with the answer, so a long
+  answer cost roughly the square of its length.
+- **Measurement.** A Playwright run streamed a 40-section answer (math, a table and a code block per section) in 360
+  chunks, 25ms apart, so 9 s of streaming. Production build, PC Chromium:
+
+  | | Normal CPU | CPU throttled 4× |
+  | --- | --- | --- |
+  | Before | 44 s, main thread busy throughout | 202 s |
+  | After | 17 s (14 s of CPU) | 52 s |
+
+  The dev build was far worse (156 s before, 35 s after), mostly because of the dev-only `jsxDEV`.
+- **`useStreamingText`** (`features/chat/useStreamingText.ts`, written for Peto rather than copied):
+  - While the assistant message is `writing`, it shows the text no sooner than twice the previous render's measured
+    time (render start to the post-commit effect), capped at 1.5 s. Chunks that arrive meanwhile are merged.
+  - Light answers therefore still update on nearly every chunk.
+  - When the turn ends, stops or is not live, the full text shows at once.
+- **Supporting changes.**
+  - `ChatMessage` memoises the Markdown element on the shown text, so re-renders from the work-log clock or from
+    pending chunks skip the Markdown tree entirely.
+  - `useMarkdownPlugins` now returns stable plugin arrays, which that memo depends on.
+- **Following the bottom.** Text can now grow on a timer, and by a large step when chunks are merged, without a
+  change to `messages`, so the old follow-the-bottom effect stopped following. In the full suite this showed up as
+  `chat-turn-pin` (mobile) "…Tin mới nhất…" ending 82px from the bottom.
+  - `App.tsx` now observes the last article with a `ResizeObserver` while streaming. When it grows, the turn is not
+    pinned and the view was at the bottom, it scrolls to the bottom at once.
+  - It checks `wasStreaming` and `keepScroll`. Without that, the observer's last callback at turn end (before the
+    effect disconnects it) pulled a pinned short answer away from the question.
+- **Loop warning fixed.** The measurement also showed React's dev warning "Maximum update depth exceeded" on long
+  answers. The `App.tsx` effect on `[messages, streaming]` called `setShowJump(true)` on every chunk while "Tin mới nhất"
+  was already showing, which queued an extra `AppContent` render per chunk. It now calls it only when the button is
+  hidden.
+- **Tests.**
+  - `tests/useStreamingText.test.tsx`: fake clock; covers light renders, merging under a heavy render, the 1.5 s cap,
+    and turn end.
+  - `Citations.test.tsx` "mọi điểm chia chunk…" advances the mocked clock, so every split point still renders.
+- **Still costly.** Each chunk still re-renders `AppContent`. At 4× the stream takes 52 s against 9 s ideal, so batching
+  `delta` updates in `chatTurn.ts` (for example once per frame) is the next lever if needed.
+
 ## Live work indicator (2026-11-27, branch `chat-work-indicator`)
 
 The owner wanted the "thinking" line livelier, like Claude's animated indicators. There were two mockup rounds on the
