@@ -365,6 +365,11 @@ summary ticker, and a phase bar sized by time spent.
     | compose, tool, code, or the answer streaming | stack |
   - With motion reduced (`useReducedMotion`), Machine Love shows its first pose and Tetris a fixed T piece over a row.
     A theme change redraws.
+  - **Cost** (2026-11-27). Measured in Chromium with the CPU throttled 4× during a live turn. The baseline turn, with
+    no indicator and no shimmer, used about 0.10 s of CPU per second. Machine Love added about 0.01 s/s. Tetris added
+    about 0.40 s/s, because it redraws every animation frame although the board changes only about 10 times a second.
+    The existing "Đang làm" text shimmer added about 0.34 s/s. The owner judged this light enough to leave as is.
+    Redrawing Tetris only when the board changes is a cheap optimisation if it is ever needed.
 - **Why it moved to the server.** The client used to build the list from events. It showed only "Đã làm trong N giây",
   lost the list on reload, and dropped the whole bubble when a turn failed before any text. A timed-out Excel edit left
   nothing to show what Peto had tried.
