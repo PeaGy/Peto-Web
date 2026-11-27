@@ -347,6 +347,24 @@ server send `: ping` comments.
 On 2026-10-05 the owner asked for a timer beside "thinking" and a more useful thinking block, pointing at Claude.ai's
 "Worked for 5m 12s". They picked "Dòng thời gian" from three live variants; the others were one status line with a
 summary ticker, and a phase bar sized by time spent.
+- **Live indicator** (2026-11-27). While a turn runs, a small animated canvas replaces the head's chevron, including the
+  static head shown before the first step. The chevron returns when the turn ends. The user picks it under Cài đặt →
+  Giao diện (`frontend.md`, "Live work indicator setting"). Code: `features/chat/indicator/`.
+  - **Machine Love - 1 / 2** (`petoMark.ts`, sprite in `petoSprite.ts`): the owner's Peto pixel art (two poses, 30×31
+    cells) alternating every 250ms, like their GIF. 1 keeps the colours; 2 draws the ink in `--text`, so it is black on
+    light and light on dark. In 1 on the dark theme, black lines that do not touch the face (note, bow) are drawn in
+    `--text` so they stay visible. Scaling is "sharp": a whole-number nearest-neighbour upscale, then a smooth
+    downscale to the size.
+  - **Tetris** (`tetrisMark.ts`): a 6×6 board in Tetris colours, darker shades on light. It is based on the owner's
+    artifact "Peto – Thinking indicators". Its mode follows the latest live step (`tetrisMode`):
+    | Step | Mode |
+    | --- | --- |
+    | think or wait | autoplay |
+    | search | rain |
+    | read, page, lookup, github or chats | next |
+    | compose, tool, code, or the answer streaming | stack |
+  - With motion reduced (`useReducedMotion`), Machine Love shows its first pose and Tetris a fixed T piece over a row.
+    A theme change redraws.
 - **Why it moved to the server.** The client used to build the list from events. It showed only "Đã làm trong N giây",
   lost the list on reload, and dropped the whole bubble when a turn failed before any text. A timed-out Excel edit left
   nothing to show what Peto had tried.
@@ -655,6 +673,25 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 `backend/evals/README.md`, "Bộ `chat-core`".
 
 # Dated log (newest first)
+
+## Live work indicator (2026-11-27, branch `chat-work-indicator`)
+
+The owner wanted the "thinking" line livelier, like Claude's animated indicators. There were two mockup rounds on the
+real Chat frame, with a scripted turn: think, search, read, write.
+- **Round 1.** Their Tetris artifact in three colour treatments: one colour, colour accents, full colour. They picked
+  full colour ("nhỏ nên không sặc sỡ như mình nghĩ").
+- **Round 2.** Their own pixel art of Peto: a black-and-white GIF and two colour PNG poses, 1280px with 32px cells.
+  They liked it at 20px.
+- **Their choice.** Make the indicator a setting under Giao diện, with "Machine Love - 1", "Machine Love - 2" and
+  "Tetris" plus a size. I read 1 as colour and 2 as monochrome, following the mockup order.
+- **What was built.** See "Live indicator" under "Work log" and `frontend.md`.
+- **Tests.**
+  - `tests/workIndicator.test.tsx`: defaults, invalid stored values, the step → Tetris mapping, the chevron swap, and
+    the cross-tab redraw.
+  - `browser-tests/work-indicator.spec.ts`: the default Peto is drawn at 20px and the chevron returns. Settings switches
+    to Tetris at 24px, the mode goes autoplay → rain, and the choice survives F5. Machine Love - 2 follows `--text`.
+  - The spec's PC cases can hang on the "Loading" splash when this file runs alone, in parallel, on a cold Vite. Run
+    with one worker, or as part of the full suite, they pass. This is the same cold-start flake as `chat-turn-pin`.
 
 ## Peto knows Peto Web (2026-11-23, branch `peto-about-web`, not merged)
 

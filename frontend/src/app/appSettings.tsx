@@ -1,6 +1,7 @@
 import { Suspense, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from 'react';
 import AccountSettings from '../features/settings/AccountDeletion';
 import DiscordMemorySettings from '../features/settings/DiscordMemorySettings';
+import IndicatorSettings from '../features/settings/IndicatorSettings';
 import type { SettingsSection } from '../features/settings/SettingsDialog';
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from '../features/settings/settingsUi';
 import { isConversation, type AuthState } from '../shared/api/api';
@@ -77,6 +78,7 @@ export function renderAppSettings(section: SettingsSection, active: boolean, ctx
             desc="Hiệu ứng khi mở menu, chuyển trang, hiện câu trả lời và các phần khác. Mượt thì luôn có hiệu ứng, kể cả khi thiết bị bật giảm chuyển động.">
             <Segmented label="Chuyển động" value={motion} options={MOTIONS} onChange={setMotion} />
           </SettingsRow>
+          <IndicatorSettings />
         </SettingsGroup>
       );
     case "ho-so":
