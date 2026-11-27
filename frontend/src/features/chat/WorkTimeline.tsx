@@ -4,6 +4,7 @@ import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { GlobeIcon } from './WebSources';
 import type { WorkLog, WorkStep } from '../../shared/api/api';
 import { normalizeWeb } from './sourceActivity';
+import WorkIndicator, { tetrisMode } from './indicator/WorkIndicator';
 
 // Khối "Đang làm" kiểu Dòng thời gian (chủ dự án chọn ngày 5/10/2026 từ ba mẫu chạy được): đồng hồ chạy cạnh chữ, mỗi
 // bước một dòng có thời gian riêng, tóm tắt suy nghĩ của Grok mở ra được, câu dẫn Peto nói giữa các bước nằm xen trong
@@ -177,10 +178,13 @@ export default function WorkTimeline({ work, live, startedAt, answering }: {
   const title = live
     ? <><span className="work-shimmer">Đang làm</span><span className="work-clock" aria-hidden="true">{clock(elapsed)}</span></>
     : <span className={stopped ? 'work-stopped' : undefined}>{stopped ? `Đã dừng sau ${duration(work.ms)}` : `Đã làm trong ${duration(work.ms)}`}</span>;
-  if (!steps.length) return <div className="work-log"><div className="work-head static">{title}</div></div>;
+  // Lượt còn chạy: hình động theo Cài đặt → Giao diện đứng chỗ mũi tên (27/11/2026); xong thì mũi tên quay lại.
+  const current = steps.filter(step => step.state === 'live' && step.kind !== 'note').at(-1);
+  const indicator = live ? <WorkIndicator mode={tetrisMode(current?.kind, answering)} /> : null;
+  if (!steps.length) return <div className="work-log"><div className="work-head static">{indicator}{title}</div></div>;
   return <div className="work-log">
     <button type="button" className="work-head" aria-expanded={open} onClick={() => setChoice(!open)}>
-      <Chevron open={open} />{title}
+      {indicator ?? <Chevron open={open} />}{title}
     </button>
     {open && <ol className="work-timeline">{steps.map(step => <Step key={step.id} step={step} elapsed={elapsed} />)}</ol>}
   </div>;

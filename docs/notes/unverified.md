@@ -187,6 +187,11 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Frontend (`frontend.md`)
 
+- [ ] Live work indicator on real screens after deploy. Check that Machine Love - 1/2 at 16 and 20px still read as a
+  face on a 1x laptop screen and on a phone. Check that Tetris runs smoothly through a long turn on a phone, without
+  battery drain or heat. So far it has only been checked in Playwright Chromium at 1x and 2x — `chat.md`, "Live work
+  indicator".
+
 - [ ] G4.2: look at a real Chat answer with inline and display formulas (fractions, roots, sums) on desktop and phone after deploy; only a temporary Vite page was checked — `frontend.md`, "One KaTeX version (G4.2)".
 - [ ] Chat image viewer touch feel on physical Android/iOS — `frontend.md`, "Frontend conventions".
 - [ ] A live GitHub connection once the GitHub App and secrets are set up — `frontend.md`, "Frontend conventions".

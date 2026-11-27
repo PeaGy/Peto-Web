@@ -11,4 +11,7 @@ if (typeof Element !== 'undefined') {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   HTMLDialogElement.prototype.show = function () { this.setAttribute('open', ''); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
+  // jsdom không vẽ canvas: getContext vốn trả null kèm một dòng "Not implemented" mỗi lần gọi. Từ khi dòng "Đang làm" có
+  // chỉ báo vẽ bằng canvas (27/11/2026), mọi test có lượt đang chạy đều gọi nó; trả null thẳng để log khỏi ngập.
+  HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 }

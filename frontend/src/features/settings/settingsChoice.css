@@ -14,3 +14,7 @@
 @media (pointer: coarse) {
   .settings-choice .dropdown-trigger, .settings-choice .dropdown-list li[role="option"] { min-height: 44px; }
 }
+
+/* Chỉ báo đang làm: hình chạy thử đứng trước ô chọn. */
+.settings-indicator { display: flex; align-items: center; gap: 4px; }
+.settings-indicator-preview { display: grid; place-items: center; min-width: 32px; min-height: 32px; }

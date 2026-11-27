@@ -99,6 +99,8 @@
 }
 
 .work-chevron { flex-shrink: 0; transition: transform 160ms var(--ease-out); }
+/* Hình động của lượt đang chạy (Cài đặt → Giao diện → Chỉ báo đang làm), đứng chỗ mũi tên. */
+.work-indicator { display: block; flex-shrink: 0; }
 .work-chevron.open { transform: rotate(90deg); }
 .work-clock { font-variant-numeric: tabular-nums; font-weight: 500; }
 .work-stopped { color: var(--text); }

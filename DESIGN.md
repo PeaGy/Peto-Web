@@ -463,6 +463,10 @@ below their label while switches stay on the right.
 - **Loading**: `LoadingIndicator` (`shared/ui/LoadingIndicator.tsx`) with `variant` `screen`, `panel` or `icon`. No
   other spinner styles, no invented percentages. The full-screen splash says "Loading" (the owner's choice); everything
   else is Vietnamese, for example "Đang tải…".
+- **Chat's live work indicator** is the one exception to the rule above. While a turn runs, a small animated canvas
+  replaces the chevron of "Đang làm" (`features/chat/indicator/`). It is chosen under Cài đặt → Giao diện: Machine Love - 1
+  (the default), Machine Love - 2 or Tetris, at 16, 20, 24 or 32px. Its colours are deliberate (the owner's pixel art,
+  Tetris colours), and it stands still when motion is reduced. Do not reuse it as a generic spinner.
 - A busy action changes its label to "Đang …" with `…` ("Đang xóa…", "Đang tạo…").
 
 ### Icons

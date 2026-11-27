@@ -303,6 +303,20 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Live work indicator setting (2026-11-27, branch `chat-work-indicator`)
+
+Cài đặt → Giao diện has two new rows under Chuyển động, which the owner asked for after picking from live mockups:
+- **Chỉ báo đang làm**: a dropdown with Machine Love - 1 (default), Machine Love - 2 and Tetris. A live preview of the
+  current choice sits left of the dropdown.
+- **Kích thước chỉ báo**: a segmented control with Nhỏ, Vừa, Lớn and Rất lớn (16, 20, 24, 32px). Vừa (20) is the
+  default.
+
+The choices are kept per browser, like the theme: `peto-indicator` and `peto-indicator-size` in
+`features/chat/indicator/indicatorSettings.ts`. A `useSyncExternalStore` hook redraws every open indicator at once and
+listens to `storage`, so other tabs follow. The rows live in `features/settings/IndicatorSettings.tsx`. What is drawn is
+described in `chat.md`, "Live work indicator". `tests/setup.ts` now stubs `HTMLCanvasElement.getContext` to return
+`null`: jsdom returned `null` anyway, but logged "Not implemented" on every live turn.
+
 ## Composer menu like Claude's (2026-11-25, branch `chat-settings-submenu`)
 
 Live, the merged menu on the new-chat page (composer in the middle of the screen) needed 492px for 3 models and 6
