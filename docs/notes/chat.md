@@ -722,8 +722,14 @@ signing in, and images are off by default with a tick box to include them.
     the settings list with delete.
   - Updated snapshots for the new "Chia sẻ" menu item and "Link chia sẻ" settings entry: `sidebar-menu` (PC and
     mobile), `archived-settings` and `github-connected` (PC).
-- **Not verified.** Opening a real link on another device or browser that is not signed in; link previews in
-  Discord or Messenger (generic title).
+- **Live check (2026-11-28, after deploy).** A link was created through the `⋯` menu for the least-squares chat and
+  read without cookies: 2 messages, 8 sources, `no-store`, `noindex`, `no-referrer`, and no owner or conversation id.
+  The `/s/…` page rendered 184 formulas, 2 tables and the sources button, with no composer or sidebar. After revoking,
+  it returned 404 and showed "Không mở được link"; the test link was deleted.
+  - The check found Peto's reply calling the owner by name ("Peagy"). The dialog had promised "tên của bạn không được
+    chia sẻ", which is true only of account metadata. On branch `share-dialog-wording` it now says the link holds the
+    messages verbatim, including names or private details in them, and that memory and profile are not shared.
+- **Not verified.** Opening a link on another device; link previews in Discord or Messenger (generic title).
 
 ## One-line `$$…$$` renders as display math (2026-11-28, branch `chat-display-math`)
 

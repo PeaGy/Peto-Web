@@ -39,7 +39,8 @@ test('menu ⋯ → Chia sẻ: tạo link, chép link, kèm ảnh khi tích', asy
   await page.getByRole('dialog', { name: 'Tùy chọn hội thoại' }).getByRole('button', { name: 'Chia sẻ' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Chia sẻ cuộc trò chuyện' });
-  await expect(dialog.getByText('Trí nhớ, hồ sơ và tên của bạn không được chia sẻ.', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('Link chứa nguyên văn các tin nhắn, kể cả tên hay chi tiết riêng nếu có trong đó.', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('Trí nhớ và hồ sơ của bạn không được chia sẻ.', { exact: false })).toBeVisible();
   await expect(dialog.getByRole('checkbox', { name: 'Kèm ảnh bạn đã gửi' })).not.toBeChecked();
   await page.screenshot({ path: shot('dialog-new', isMobile) });
   await dialog.getByRole('button', { name: 'Tạo link' }).click();
