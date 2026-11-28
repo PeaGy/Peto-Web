@@ -44,6 +44,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] Rich-text copy pasted into real Word, Google Docs and Gmail: headings, lists, bordered tables and code keep their
+  form; formulas arrive as TeX text. Also the "In / lưu PDF" output of a whole chat in the real print dialog — `chat.md`,
+  "Whole-chat export and rich-text copy".
+
 - [ ] A long real answer (Grok, with math or code) streaming on a phone after deploy: text should keep flowing without
   long freezes, and the tab should stay responsive. Desktop live check passed on 2026-11-28 (before block rendering);
   the phone is untested — `chat.md`, "Streaming answers redraw less often" and "Answers render in Markdown blocks".
