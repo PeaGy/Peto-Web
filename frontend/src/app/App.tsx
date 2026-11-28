@@ -210,6 +210,8 @@ function AppContent() {
   const loadRef = useRef<AbortController | null>(null);
   const loadVersion = useRef(0);
   const nearBottom = useRef(true);
+  /** scrollTop ở sự kiện cuộn trước, để biết lần cuộn này đi lên (người dùng rời đáy) hay không. */
+  const lastScrollTop = useRef(0);
   const messagesRef = useRef<HTMLDivElement>(null);
   const pendingMessageFocus = useRef<{ conversationId: string; messageId: number } | null>(null);
   // Bấm ‹ › dưới câu trả lời (22/11/2026, như ChatGPT và Claude): chỉ câu trả lời đổi tại chỗ. Mỗi bản là một hội thoại
@@ -501,7 +503,11 @@ function AppContent() {
   // Mỗi mảnh chữ mới đổi `messages`. Nút "Tin mới nhất" đã hiện thì không gọi setShowJump(true) nữa: gọi lặp với cùng giá
   // trị vẫn xếp thêm một lượt vẽ lại AppContent sau mỗi mảnh, và câu trả lời dài thì React báo "Maximum update depth"
   // (27/11/2026). `showJump` ở đây là giá trị của lần vẽ vừa xong, đúng lúc effect chạy.
-  useEffect(() => {
+  // Layout effect (28/11/2026): chạy ngay lúc vẽ, trước sự kiện cuộn nào kịp tới. Trước đó là effect thường, chạy sau
+  // khi vẽ: lúc lượt xong, hàng nút câu trả lời (82px trên điện thoại) hiện ra, rồi một sự kiện cuộn còn treo từ lần bám
+  // đáy trước đo thấy cách đáy 82px (quá ngưỡng 80) nên coi là đã rời đáy, và khung không theo nữa (chat-turn-pin
+  // điện thoại hỏng khoảng 1/10 lần).
+  useLayoutEffect(() => {
     if (keepScroll.current) {
       keepScroll.current = false;
       return;
@@ -1045,7 +1051,13 @@ function AppContent() {
         }} onScroll={() => {
           const element = messagesRef.current;
           if (!element) return;
-          nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+          // Chỉ cuộn lên mới là rời đáy (28/11/2026). Chữ đang chạy dài ra không làm scrollTop giảm, nhưng sự kiện cuộn
+          // còn treo từ lần bám đáy trước được trình duyệt gửi trước ResizeObserver trong cùng khung hình: đo lúc đó thấy
+          // cách đáy hơn 80px vì đoạn chữ vừa gộp, và khung từng bỏ bám đáy giữa chừng (chat-turn-pin điện thoại).
+          const top = element.scrollTop;
+          const near = element.scrollHeight - top - element.clientHeight < 80;
+          nearBottom.current = near || (nearBottom.current && top >= lastScrollTop.current - 1);
+          lastScrollTop.current = top;
           setShowJump(!nearBottom.current);
           noteEnd();
         }}>

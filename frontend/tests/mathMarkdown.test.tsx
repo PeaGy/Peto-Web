@@ -79,6 +79,29 @@ với \(c_k \neq 0\).`);
     }
     expect(normalizeMath('`$~p$`')).toBe('`$~p$`');
   });
+  it('$$…$$ đứng riêng một dòng là công thức dòng riêng, như Grok viết (28/11/2026)', () => {
+    // Đúng dạng trong câu trả lời bình phương tối thiểu: cả 184 công thức từng hiện nhỏ, căn trái.
+    const text = String.raw`Nghiệm bình phương tối thiểu là
+
+$$\hat{\beta}=(X^{\top}X)^{-1}X^{\top}y,$$
+
+khi $X$ có hạng cột đầy đủ.
+Liền dòng trên:
+$$\sum_{i=1}^n x_i$$
+còn tiếp.`;
+    const el = draw(text);
+    expect(el.querySelectorAll('.katex-display')).toHaveLength(2);
+    expect(el.querySelectorAll('.katex')).toHaveLength(3);
+    expect(el.querySelector('.katex-error')).toBeNull();
+    expect(el.textContent).toContain('còn tiếp.');
+  });
+  it('$$x$$ giữa câu, trong danh sách, dòng thụt lề hay $$ $$ rỗng thì giữ nguyên', () => {
+    for (const text of ['Ta có $$x^2$$ là bình phương.', '- $$x^2$$', '  $$x^2$$', '$$ $$']) {
+      expect(normalizeMath(text)).toBe(text);
+    }
+    expect(draw('- $$x^2$$\n- $$y$$').querySelectorAll('.katex-display')).toHaveLength(0);
+    expect(normalizeMath('$$x$$')).toBe('\n\n$$\nx\n$$\n\n');
+  });
   it('không tạo hình ảnh từ lệnh LaTeX không đáng tin', () => {
     expect(draw(String.raw`$\includegraphics{https://example.com/test.png}$`).querySelector('img')).toBeNull();
   });

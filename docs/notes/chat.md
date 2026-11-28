@@ -679,6 +679,39 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## One-line `$$…$$` renders as display math (2026-11-28, branch `chat-display-math`)
+
+Found during the live check of rich-text copy. Grok writes display formulas as `$$…$$` on one line. remark-math treats
+`$$` as a block only when the fence sits alone on its line, so all 184 formulas in the least-squares answer showed as
+inline math: small, left-aligned, with Σ limits beside rather than above and below. There were 0 `.katex-display`
+elements on the page.
+
+- **Fix.** `normalizeMath` (`shared/markdown/mathMarkdown.ts`) now rewrites a `$$…$$` that fills its whole line, at the
+  left margin with only trailing whitespace after it, into a fenced block (`\n\n$$\n…\n$$\n\n`), the same form `\[…\]`
+  already gets.
+- **Left unchanged:**
+  - `$$x$$` inside a sentence;
+  - inside a list item or on an indented line, because a fence there would end the list;
+  - an empty `$$ $$`.
+- **Checked.**
+  - `tests/mathMarkdown.test.tsx`: the least-squares shape and a line directly after text with trailing spaces become
+    display math; the cases above are untouched.
+  - A mock-backed browser render on PC and mobile showed centred formulas with Σ limits above and below.
+- **Also on this branch: bottom-follow race at turn end.** `chat-turn-pin.spec.ts` (mobile) "…Tin mới nhất…" failed about
+  1 run in 10, always 82px from the bottom.
+  - 82px is the reply actions row, which appears when the turn ends. A scroll event still pending from the
+    `ResizeObserver` follow measured 82px, over the 80px threshold, and set `nearBottom` false. That happened before
+    the follow effect on `[messages, streaming]` ran, because it was a passive effect running after paint, so the view
+    stopped following.
+  - That effect is now a `useLayoutEffect` and runs before any scroll event can intervene.
+  - A second race then showed up mid-stream, as a failure 870px from the bottom. In a frame, the browser dispatches
+    scroll events before `ResizeObserver` callbacks. A pending event from the previous follow therefore measured a
+    freshly merged chunk (over 80px) and unstuck the view before the observer could follow.
+  - The messages `onScroll` now leaves the bottom only on an upward scroll: `nearBottom = near || (nearBottom &&
+    scrollTop >= lastScrollTop - 1)`. Growth never lowers `scrollTop`; explicit unsticks (pinning, jumping to a
+    message) still set `nearBottom` directly.
+  - The five `chat-turn-pin` tests then passed 10 repeats each on mobile, 50 of 50.
+
 ## Whole-chat export and rich-text copy (2026-11-28, branch `chat-export-rich-copy`)
 
 The owner picked items 2 and 3 from the chat-apps survey (`backend/features/chat/docs/chat-apps-survey-2026-11-28.md`).

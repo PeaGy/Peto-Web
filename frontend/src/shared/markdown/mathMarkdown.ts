@@ -20,6 +20,12 @@ export function tildeNegation(tex: string): string {
   return result;
 }
 
+/** Đoạn [offset, offset+length) chiếm trọn dòng: bắt đầu ở đầu dòng (không thụt lề), sau nó chỉ còn khoảng trắng. */
+function ownLine(source: string, offset: number, length: number): boolean {
+  const end = offset + length;
+  return (offset === 0 || source[offset - 1] === "\n") && /^[ \t]*(?:\n|$)/.test(source.slice(end, end + 200));
+}
+
 function escaped(source: string, offset: number): boolean {
   let slashes = 0;
   for (let i = offset - 1; i >= 0 && source[i] === "\\"; i--) slashes++;
@@ -74,6 +80,12 @@ export function normalizeMath(source: string): string {
     if (escaped(source, offset) || fence !== undefined || ticks !== undefined) result.push(whole);
     else if (display !== undefined) result.push(`\n\n$$\n${tildeNegation(display.trim())}\n$$\n\n`);
     else if (inline !== undefined) result.push(`$${tildeNegation(inline)}$`);
+    // `$$…$$` đứng riêng một dòng sát lề (Grok hay viết vậy cho công thức dòng riêng): remark-math chỉ coi là khối khi
+    // `$$` đứng riêng trên dòng, nên trước 28/11/2026 cả câu trả lời hiện công thức nhỏ, căn trái như trong dòng. Tách
+    // thành khối như \[…\]. `$$x$$` giữa câu, trong danh sách hay dòng thụt lề thì giữ nguyên.
+    else if (ownLine(source, offset, whole.length) && whole.slice(2, -2).trim()) {
+      result.push(`\n\n$$\n${tildeNegation(whole.slice(2, -2).trim())}\n$$\n\n`);
+    }
     else result.push(`$$${tildeNegation(whole.slice(2, -2))}$$`);
     cursor = offset + whole.length;
   }
