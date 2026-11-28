@@ -679,6 +679,52 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Share links (2026-11-28, branch `chat-share-links`)
+
+Item 1 of the chat-apps survey. The owner accepted both recommendations: anyone with the link can read it without
+signing in, and images are off by default with a tick box to include them.
+
+- **Storage.** `storage/shared_chats.py`, table `shared_chats`, holds at most one link per (owner, conversation).
+  - The id is `secrets.token_urlsafe(16)`. `snapshot` is JSON taken at creation or on "Cập nhật link", which keeps the
+    same id.
+  - Deleting a conversation deletes its link (`delete_conversation`). Account deletion clears it because the table has
+    an `owner` column.
+- **API** (`features/chat/sharing.py`):
+  - `GET` and `POST /api/conversations/{id}/share`: Chat conversations only, 404 otherwise. At most 100 links per
+    account, a 2 MB snapshot cap, and an empty chat gets a 400.
+  - `GET /api/shares` and `DELETE /api/shares/{id}`.
+  - Public endpoints:
+    - `GET /api/shared/{id}` returns title, `updated_at`, `include_images` and messages, never the owner or the
+      conversation id.
+    - `GET /api/shared/{id}/images/{attachment}` only for images that are in the snapshot of a link made with images.
+    - Both send `no-store`, `X-Robots-Tag: noindex` and `no-referrer`.
+- **What a snapshot holds.** `sharing.snapshot` keeps role, trimmed text, `created_at`, sources (assistant), attachment
+  names and kinds (an image id only when images are included) and generated document titles or file names.
+  - Never included: the work log, quotes, memory, profile, instructions or the sharer's name.
+  - Empty bubbles are skipped.
+- **Public page `/s/{id}`.**
+  - Backend: `core/static_files.py` serves index.html with a generic title, `noindex` and `no-referrer`, without
+    reading the database.
+  - Frontend: `main.tsx` routes the path to `features/chat/SharedChat.tsx`, which needs no login and loads no app
+    shell. Messages render with the real `ChatMessage`, so math, tables, code and the sources panel work.
+  - Other files and generated documents show as names only. A footer carries an AI disclaimer and "Trò chuyện với
+    Peto". An unknown or revoked link shows "Không mở được link".
+- **In the app.**
+  - **"Chia sẻ"** opens `ShareDialog`; it is first in the conversation `⋯` menu, as in ChatGPT. The dialog explains
+    what is shared, has the "Kèm ảnh bạn đã gửi" box, then shows the link with "Chép link", the snapshot time and count,
+    "Cập nhật link" and "Xóa link".
+  - **Cài đặt → Link chia sẻ** (`ShareLinks.tsx`) lists the links with open, copy and confirmed delete.
+- **Tests.**
+  - `backend/tests/test_sharing.py`: create, read anonymously, later messages excluded, update keeps the id, revoke,
+    other accounts are refused, deleting the conversation or the account removes the link, bad ids, images only when
+    included, snapshot fields, and the page path regex.
+  - `browser-tests/share-links.spec.ts` (PC and mobile): the dialog, the public page logged out, a revoked link, and
+    the settings list with delete.
+  - Updated snapshots for the new "Chia sẻ" menu item and "Link chia sẻ" settings entry: `sidebar-menu` (PC and
+    mobile), `archived-settings` and `github-connected` (PC).
+- **Not verified.** Opening a real link on another device or browser that is not signed in; link previews in
+  Discord or Messenger (generic title).
+
 ## One-line `$$…$$` renders as display math (2026-11-28, branch `chat-display-math`)
 
 Found during the live check of rich-text copy. Grok writes display formulas as `$$…$$` on one line. remark-math treats

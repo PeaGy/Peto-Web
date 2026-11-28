@@ -70,7 +70,8 @@ scrollspy list, and grouped cards with coloured icons.
   - It fades out for 110 ms before unmounting, with a timer fallback: jsdom and hidden windows fire no animationend.
 - **Dialog** (`SettingsDialog.tsx`, still a `<dialog>` opened with `showModal` in a layout effect). A 216px list of
   sections sits on the left and one section shows on the right. The sections are Giao diện, Hồ sơ, Trí nhớ, Tài khoản,
-  Hội thoại đã lưu trữ, Peto Agent and Kết nối. App keeps a `SettingsView` of `{open, section, page}`.
+  Mức dùng, Hội thoại đã lưu trữ, Link chia sẻ (since 2026-11-28, see `chat.md` "Share links"), Peto Agent and Kết nối.
+  App keeps a `SettingsView` of `{open, section, page}`.
   - **No Companion group since 2026-10-13.** Nhân vật, Giọng nói and Tra web moved to the Companion settings page (see
     "Companion settings page"). Trí nhớ stays here and also appears there.
   - **Opening.** "Cài đặt" in the menu opens Giao diện, "Hồ sơ" opens Hồ sơ and the account item opens Tài khoản.

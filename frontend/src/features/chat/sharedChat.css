@@ -1,0 +1,23 @@
+/* Trang công khai của link chia sẻ (28/11/2026): một cột đọc như Chat, không có thanh bên hay ô nhắn. */
+.shared-page { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); color: var(--text); }
+/* Hàng chứa cột chat và bảng nguồn, như .chat-layout trong app. */
+.shared-body { flex: 1; min-height: 0; }
+.shared-bar { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 18px; border-bottom: 1px solid var(--line);
+  color: var(--muted); font-size: 13px; flex-shrink: 0; }
+.shared-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; font-size: 15px; text-decoration: none; }
+.shared-brand img { border-radius: 8px; }
+.shared-chat { flex: 1; min-height: 0; }
+.shared-heading { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.shared-heading h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+.shared-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.shared-turn { display: flex; flex-direction: column; }
+.shared-turn.user { align-items: flex-end; }
+.shared-files { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.shared-footer { display: grid; justify-items: center; gap: 12px; margin-top: 12px; padding: 24px 0 8px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 13px; text-align: center; }
+.shared-footer p { margin: 0; }
+.shared-cta { display: inline-flex; align-items: center; min-height: 40px; padding: 0 18px; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 14px; text-decoration: none; }
+.shared-empty { display: grid; place-content: center; justify-items: center; gap: 8px; flex: 1; padding: 24px; text-align: center; }
+.shared-empty h1 { margin: 0; font-size: 20px; }
+.shared-empty p { margin: 0 0 8px; color: var(--muted); }

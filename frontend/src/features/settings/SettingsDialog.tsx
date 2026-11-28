@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type AnimationE
 import { SettingsIcon, type SettingsIconName } from "./settingsUi";
 import { isReducedMotion } from "../../shared/motion";
 
-export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "muc-dung" | "luu-tru" | "agent" | "ket-noi" | "tri-nho";
+export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "muc-dung" | "luu-tru" | "chia-se" | "agent" | "ket-noi" | "tri-nho";
 
 export interface SettingsView {
   open: boolean;
@@ -24,6 +24,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; title: string; icon: Sett
   { id: "tai-khoan", title: "Tài khoản", icon: "idcard" },
   { id: "muc-dung", title: "Mức dùng", icon: "chart" },
   { id: "luu-tru", title: "Hội thoại đã lưu trữ", icon: "archive" },
+  { id: "chia-se", title: "Link chia sẻ", icon: "share" },
   { id: "agent", title: "Peto Agent", icon: "terminal" },
   { id: "ket-noi", title: "Kết nối", icon: "connectors" },
 ];

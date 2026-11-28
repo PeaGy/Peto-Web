@@ -10,7 +10,7 @@ import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import TextEditDialog from '../shared/ui/TextEditDialog';
 import ConversationMenu from './ConversationMenu';
 import HistorySearch from './HistorySearch';
-import { AdminDashboard, Companion, CompanionSettings, Imagine } from './lazyViews';
+import { AdminDashboard, Companion, CompanionSettings, Imagine, ShareDialog } from './lazyViews';
 import { PinIcon } from './navigationIcons';
 import type { AppView } from './preferences';
 import { appPath, companionCardId, companionCardRoute, companionProviderId, companionProviderRoute, companionSettingsRoute,
@@ -68,6 +68,9 @@ export type ConversationDialogsContext = {
   /** Hội thoại đang mở: chỉ hội thoại này in được, vì bản in dựng từ các tin đã vẽ trên trang. */
   conversationId: string | null;
   exportConversation: (item: Conversation, kind: 'markdown' | 'print') => void;
+  /** Hội thoại đang mở hộp Chia sẻ (28/11/2026). */
+  shareTarget: Conversation | null;
+  setShareTarget: SetState<Conversation | null>;
 };
 
 export function renderFeatureViews(ctx: FeatureViewsContext) {
@@ -157,12 +160,16 @@ export function renderConversationDialogs(ctx: ConversationDialogsContext, proje
   const { renameTarget, renameText, setRenameText, metadataBusy, setRenameTarget, changeConversation, searchOpen,
     auth, setSearchOpen, handleUnauthorized, openConversation, conversationMenu, setConversationMenu, setMoveTarget,
     setProjectError, refreshProjects, streaming, deleting, setDeleteTarget, deleteDialogRef, deleteTarget,
-    removeConversation, conversationId, exportConversation } = ctx;
+    removeConversation, conversationId, exportConversation, shareTarget, setShareTarget } = ctx;
   const menuOpen = conversationMenu ? isConversation(conversationMenu.item, conversationId) : false;
   return <>
   {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
   {searchOpen && <HistorySearch key={`history-search:${auth.user?.id ?? 'anonymous'}`} onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); void openConversation(id);}}/>}
+  {shareTarget && <LazyBoundary><Suspense fallback={null}>
+    <ShareDialog conversation={shareTarget} onClose={() => setShareTarget(null)} onUnauthorized={handleUnauthorized} />
+  </Suspense></LazyBoundary>}
   {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
+    <button onClick={() => {setShareTarget(conversationMenu.item); setConversationMenu(null);}}><SettingsIcon name="share" />Chia sẻ</button>
     <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
     <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
     <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);void refreshProjects();}}><FolderIcon/>Chuyển vào dự án</button>

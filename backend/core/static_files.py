@@ -55,6 +55,10 @@ _COMPANION_SETTINGS = (r"companion/settings(?:/(?:modules(?:/(?:brain|voice|hear
 _APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|%s|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z" % _COMPANION_SETTINGS)
 
 
+_SHARE_PATH = re.compile(r"s/[A-Za-z0-9_-]{16,64}/?")
+_SHARE_TITLE = "Cuộc trò chuyện với Peto"
+_SHARE_DESCRIPTION = "Một cuộc trò chuyện với Peto, trợ lý AI, được chia sẻ bằng link."
+
 _DOWNLOAD_TITLE = "Tải Peto Agent · Peto"
 _DOWNLOAD_DESCRIPTION = ("Tải Peto Agent cho Windows: trợ lý đọc, sửa tệp và chạy lệnh ngay trong thư mục dự án của bạn. "
                          "Đăng nhập bằng tài khoản Peto, không cần khóa API.")
@@ -231,6 +235,15 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
             # Link /docs dán vào Discord hay Messenger cũng hiện banner og.png như trang chủ.
             page = await with_preview(page, request)
             return HTMLResponse(page, headers={'Cache-Control': 'no-cache'})
+
+        # Link chia sẻ cuộc trò chuyện (28/11/2026): trang công khai, chỉ đọc, không cho máy tìm kiếm lập chỉ mục. Tiêu đề
+        # chung chung, không đọc cơ sở dữ liệu ở đây; trang tự tải bản chụp qua /api/shared/{id}.
+        if _SHARE_PATH.fullmatch(full_path):
+            page = _public_page(await anyio.Path(index).read_text(encoding='utf-8'), _SHARE_TITLE, _SHARE_DESCRIPTION)
+            page = page.replace('</head>', '<meta name="robots" content="noindex, nofollow" />\n</head>', 1)
+            page = await with_preview(page, request)
+            return HTMLResponse(page, headers={'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow',
+                                               'Referrer-Policy': 'no-referrer'})
 
         if full_path in ('download', 'download/'):
             page = _public_page(await anyio.Path(index).read_text(encoding='utf-8'), _DOWNLOAD_TITLE, _DOWNLOAD_DESCRIPTION)

@@ -163,6 +163,7 @@ function AppContent() {
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [shareTarget, setShareTarget] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Hội thoại nhập vai cũ đang mở: chế độ nhập vai bỏ ngày 2026-10-18, các hội thoại ấy chỉ còn để xem.
   const [legacyRoleplay, setLegacyRoleplay] = useState(false);
@@ -1202,7 +1203,7 @@ function AppContent() {
       {renderConversationDialogs({ renameTarget, renameText, setRenameText, metadataBusy, setRenameTarget, changeConversation, searchOpen,
         auth, setSearchOpen, handleUnauthorized, openConversation, conversationMenu, setConversationMenu, setMoveTarget, setProjectError,
         refreshProjects, streaming, deleting, setDeleteTarget, deleteDialogRef, deleteTarget, removeConversation,
-        conversationId, exportConversation },
+        conversationId, exportConversation, shareTarget, setShareTarget },
         renderProjectDialogs(projectContext, projectHandlers, { projectState }))}
       <TooltipLayer />
     </div>
