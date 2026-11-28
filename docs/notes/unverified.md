@@ -44,6 +44,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
+- [ ] A long real answer (Grok, with math or code) streaming on a phone after deploy: text should keep flowing without
+  long freezes, and the tab should stay responsive. Only measured with a synthetic stream in Playwright — `chat.md`,
+  "Streaming answers redraw less often".
+
 - [ ] On a real phone after deploying: right after a reply, and in an old chat opened at the bottom, tapping the
   composer keeps the end of the last message just above it (Android Chrome; iPhone Safari does not resize the page for
   the keyboard, so it may differ). Only checked with a shrunk browser window — `chat.md`, "Phone keyboard keeps the end

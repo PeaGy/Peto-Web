@@ -497,18 +497,38 @@ function AppContent() {
     }
     fitTurn();
   }, [streaming, messages, fitTurn]);
+  // Mỗi mảnh chữ mới đổi `messages`. Nút "Tin mới nhất" đã hiện thì không gọi setShowJump(true) nữa: gọi lặp với cùng giá
+  // trị vẫn xếp thêm một lượt vẽ lại AppContent sau mỗi mảnh, và câu trả lời dài thì React báo "Maximum update depth"
+  // (27/11/2026). `showJump` ở đây là giá trị của lần vẽ vừa xong, đúng lúc effect chạy.
   useEffect(() => {
     if (keepScroll.current) {
       keepScroll.current = false;
       return;
     }
     if (turnPin.current) {
-      if (!nearBottom.current) setShowJump(true);
+      if (!nearBottom.current && !showJump) setShowJump(true);
       return;
     }
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
-    else setShowJump(true);
+    else if (!showJump) setShowJump(true);
   }, [messages, streaming]);
+  // Chữ đang chạy được vẽ thưa (useStreamingText, 27/11/2026): câu trả lời có khi dài ra theo hẹn giờ, không đi cùng một
+  // lần đổi `messages`, và gộp nhiều mảnh nên có thể dài thêm cả trăm px một lúc. Đang bám đáy (không ghim) thì tin cuối
+  // cao lên là kéo xuống đáy ngay, trước khi sự kiện cuộn kịp coi là đã rời đáy.
+  const replyCount = messages.length;
+  useEffect(() => {
+    const container = messagesRef.current;
+    const last = streaming ? container?.querySelectorAll<HTMLElement>(':scope > article')[replyCount - 1] : undefined;
+    if (!last || typeof ResizeObserver === 'undefined') return;
+    // Lượt vừa xong thì lần báo cuối (trước khi effect kịp gỡ) không kéo nữa: chỗ đứng sau lượt ghim phải giữ nguyên.
+    const observer = new ResizeObserver(() => {
+      if (wasStreaming.current && !turnPin.current && !keepScroll.current && nearBottom.current) {
+        bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
+      }
+    });
+    observer.observe(last);
+    return () => observer.disconnect();
+  }, [streaming, replyCount]);
   useLayoutEffect(() => {
     const pending = pendingMessageFocus.current;
     if (!pending || loadingConversation || pending.conversationId !== conversationId) return;

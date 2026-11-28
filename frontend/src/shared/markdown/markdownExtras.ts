@@ -6,7 +6,7 @@
  * Tin nhắn nào cần thì mới kéo tệp tương ứng về, mỗi tệp một lần. Lúc tệp chưa về, code hiện chữ thường và công thức
  * hiện nguyên dạng `$...$`; về xong thì chỉ những tin cần tới nó vẽ lại.
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -74,8 +74,9 @@ export function useMarkdownPlugins(text: string): { remarkPlugins: Plugins; rehy
   }, [needMath, needCode]);
   const math = ready & 1 ? loaded.math : undefined;
   const code = ready & 2 ? loaded.code : undefined;
-  return {
+  // Cùng bộ plugin thì giữ nguyên mảng, để nơi dùng (tin nhắn đang chạy) nhớ được cây Markdown giữa các lần vẽ.
+  return useMemo(() => ({
     remarkPlugins: [remarkGfm, ...(math?.remark ?? []), ...(code?.remark ?? [])],
     rehypePlugins: [...(math?.rehype ?? []), ...(code?.rehype ?? [])],
-  };
+  }), [math, code]);
 }

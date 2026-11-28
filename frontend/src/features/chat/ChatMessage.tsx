@@ -21,6 +21,7 @@ import { mergeDisplaySources } from './sourceActivity';
 import { QuoteExcerpt } from './QuotedFollowup';
 import UserPlainText from './UserPlainText';
 import UserMessageFold from './UserMessageFold';
+import { useStreamingText } from './useStreamingText';
 
 const MarkdownRuntime = createContext<{ sources: WebSource[]; writing: boolean; user: boolean }>({ sources: [], writing: false, user: false });
 
@@ -80,7 +81,9 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
   const exportSources = useMemo(() => mergeDisplaySources(message.sources, message.work?.web), [message.sources, message.work?.web]);
   const complete = message.id !== undefined && !message.local && !message.stopped && message.status !== 'incomplete'
     && (!message.turn_state || message.turn_state === 'complete');
-  const text = message.content ? normalizeMath(message.content) : "";
+  // Câu trả lời đang chạy: chữ vẽ thưa theo độ nặng (useStreamingText); xong lượt thì hiện đủ ngay.
+  const shownContent = useStreamingText(message.content, writing && !user);
+  const text = useMemo(() => shownContent ? normalizeMath(shownContent) : "", [shownContent]);
   // Peto chạy xong mà không viết gì (ví dụ được bảo "đừng trả lời"): lượt hoàn tất, chỉ ghi một dòng mờ.
   const silent = message.role === 'assistant' && complete && !live && !writing && !message.content.trim()
     && !message.artifacts?.length;
@@ -89,6 +92,11 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
     () => user ? remarkPlugins : [...remarkPlugins, [remarkCitations, { sources, writing }]],
     [remarkPlugins, sources, writing, user]);
   const runtime = useMemo(() => ({ sources, writing, user }), [sources, writing, user]);
+  // Giữ nguyên phần tử khi chữ chưa đổi: tin nhắn vẽ lại vì đồng hồ "Đang làm" hay mảnh chữ đang chờ thì React bỏ qua
+  // cả cây Markdown, không dựng lại.
+  const assistantMarkdown = useMemo(() => user ? null : <MarkdownRuntime.Provider value={runtime}>
+    <Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown>
+  </MarkdownRuntime.Provider>, [user, runtime, citationPlugins, rehypePlugins, text]);
   return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} data-message-id={message.id} data-role={message.role} data-streaming={writing || live || undefined} data-quoteable={user ? undefined : complete} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
@@ -99,7 +107,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
               {user && message.quoted_source && <QuoteExcerpt quote={message.quoted_source} onJump={onJumpQuote} />}
               {editor || (message.content ? <div ref={contentRef} className={`message-markdown${hasUserAttachments ? ' user-message-text' : ''}`} data-message-content>
                 {user ? <UserMessageFold text={message.content}><UserPlainText text={message.content} /></UserMessageFold>
-                  : <MarkdownRuntime.Provider value={runtime}><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown></MarkdownRuntime.Provider>}
+                  : assistantMarkdown}
               </div> : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} web={message.work?.web}
                 onOpen={() => onOpenSources?.(sourceIndex)} expanded={sourcesExpanded} />}
