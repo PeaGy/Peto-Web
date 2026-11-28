@@ -2,6 +2,7 @@ import type { Root, RootContent } from 'mdast';
 import type { WebSource } from '../../shared/api/api';
 import { citationIndex, safeSourceUrl } from './sourceData';
 import './citations.css';
+import { NEW_TAB } from '../../shared/ui/newTab';
 
 // Transform Markdown nodes, not HTML strings: code, link labels, images and user messages stay literal.
 const MARKER = /\[(?:web|x|src):[^\]\r\n]{0,128}\]|\ue200cite(?:\ue202[^\ue201\r\n]{1,100})+\ue201/g;
@@ -88,7 +89,7 @@ export function CitationGroup({ refs, sources, writing }: { refs: string[]; sour
       return <span key={key} className="citation-badge citation-unavailable" tabIndex={0}
         aria-label={description} data-tip={description}>{writing ? '…' : '?'}</span>;
     }
-    return <a key={key} className="citation-badge" href={source.url} target="_blank" rel="noopener noreferrer"
+    return <a key={key} className="citation-badge" href={source.url} {...NEW_TAB}
       aria-label={`Nguồn ${label}: ${source.title}`} data-tip={`${source.title}\n${source.url}`}>{label}</a>;
   })}</span>;
 }

@@ -679,6 +679,38 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Scroll and accessibility ideas from assistant-ui (2026-11-28, branch `chat-a11y-follow`)
+
+The owner asked for direction 3 of the outside-repo list: assistant-ui (`assistant-ui/assistant-ui`, MIT), its thread
+viewport auto-scroll (`packages/store/src/utils/thread-viewport-auto-scroll.ts`) and its accessibility.
+- **Already like Peto after today's fixes.** Leaving the bottom only on an upward scroll, following growth with a
+  `ResizeObserver`, and accounting for the composer overlay.
+- **Not needed.** Prepend anchoring (Peto does not paginate messages), gesture-based upward detection (Peto measures
+  `scrollTop` instead), and announcing the run duration.
+- **Taken over, three small things:**
+  1. **Pause following when the user opens something in a message.**
+     - `features/chat/disclosure.ts` `opensDisclosure` mirrors their `isOpeningDisclosure`: a button with
+       `aria-expanded="false"` (not a menu or combobox), or the `<summary>` of a closed `<details>`, inside an
+       `article`.
+     - `App.tsx`'s `onClickCapture` on the message list sets `followPaused`, so opening "Đang làm", "Xem thêm" or a
+       code block no longer yanks the view to the bottom.
+     - A plain `nearBottom=false` was not enough: when the question above grows, Chromium's scroll anchoring moves
+       the view, and that scroll event looked like "at the bottom" again (seen on mobile).
+     - `followPaused` therefore clears only when the user scrolls to the bottom themselves (`userScrolled`, set by
+       wheel, touch, keys or a pointer on the scrollbar), clicks "Tin mới nhất", or a new turn starts.
+  2. **`aria-busy` on the assistant article while it streams** (`ChatMessage`), so screen readers do not read partial
+     text. Start and end are still announced by `ChatReplyStatus`.
+  3. **New-tab links described for screen readers.**
+     - `shared/ui/newTab.ts` `NEW_TAB` adds `aria-describedby="new-tab-hint"`, pointing at one hidden
+       `<span id="new-tab-hint">Mở trong thẻ mới</span>` in `index.html`.
+     - Applied to links in answers, citation badges, link chips, the sources panel and the share-link list.
+     - Text in the link would have leaked into print, rich copy and quotes; a description does not.
+- **Tests.**
+  - `tests/chatA11y.test.tsx`: disclosure detection, `aria-busy`, and `target`/`rel`/`aria-describedby` with no visible
+    text added.
+  - `chat-turn-pin.spec.ts`: "Xem thêm" during a followed stream stops following until "Tin mới nhất".
+  - `share-links.spec.ts`: a shared answer's link has the accessible description.
+
 ## Share links (2026-11-28, branch `chat-share-links`)
 
 Item 1 of the chat-apps survey. The owner accepted both recommendations: anyone with the link can read it without

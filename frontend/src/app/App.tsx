@@ -39,6 +39,7 @@ import { useSearchShortcut } from './useSearchShortcut';
 import { useSettingsMenu } from './useSettingsMenu';
 import Composer from "../features/chat/Composer";
 import { printConversation, saveConversationMarkdown } from "../features/chat/responseExport";
+import { opensDisclosure } from "../features/chat/disclosure";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
 import { useChatPanels } from '../features/chat/useChatPanels';
@@ -213,6 +214,13 @@ function AppContent() {
   const nearBottom = useRef(true);
   /** scrollTop ở sự kiện cuộn trước, để biết lần cuộn này đi lên (người dùng rời đáy) hay không. */
   const lastScrollTop = useRef(0);
+  /**
+   * Thôi bám đáy vì người dùng vừa mở một mục trong tin nhắn (28/11/2026, như followPaused của assistant-ui). Chỉ chính
+   * người dùng cuộn về đáy (con lăn, vuốt, phím, kéo thanh cuộn: ``userScrolled``) hay bấm "Tin mới nhất" mới gỡ; lần cuộn
+   * do trình duyệt neo nội dung khi mục mở ra thì không.
+   */
+  const followPaused = useRef(false);
+  const userScrolled = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const pendingMessageFocus = useRef<{ conversationId: string; messageId: number } | null>(null);
   // Bấm ‹ › dưới câu trả lời (22/11/2026, như ChatGPT và Claude): chỉ câu trả lời đổi tại chỗ. Mỗi bản là một hội thoại
@@ -490,6 +498,7 @@ function AppContent() {
     const started = streaming && !wasStreaming.current;
     wasStreaming.current = streaming;
     if (started) {
+      followPaused.current = false;
       const index = messages.map(message => message.role).lastIndexOf('user');
       turnPin.current = index >= 0 ? { index, scrolled: false } : null;
     }
@@ -1057,11 +1066,26 @@ function AppContent() {
           // cách đáy hơn 80px vì đoạn chữ vừa gộp, và khung từng bỏ bám đáy giữa chừng (chat-turn-pin điện thoại).
           const top = element.scrollTop;
           const near = element.scrollHeight - top - element.clientHeight < 80;
-          nearBottom.current = near || (nearBottom.current && top >= lastScrollTop.current - 1);
+          if (followPaused.current && !(near && userScrolled.current)) nearBottom.current = false;
+          else {
+            followPaused.current = false;
+            nearBottom.current = near || (nearBottom.current && top >= lastScrollTop.current - 1);
+          }
           lastScrollTop.current = top;
           setShowJump(!nearBottom.current);
           noteEnd();
-        }}>
+        }} onClickCapture={event => {
+          // Mở một mục trong tin nhắn ("Đang làm", Xem thêm, khối code…) thì thôi bám đáy (28/11/2026, như assistant-ui):
+          // đang bám theo chữ mới thì phần vừa mở bị kéo tuột lên. Cuộn xuống đáy lại hay bấm "Tin mới nhất" thì bám tiếp.
+          if (opensDisclosure(event.target)) {
+            followPaused.current = true;
+            userScrolled.current = false;
+            nearBottom.current = false;
+            if (!showJump) setShowJump(true);
+          }
+        }} onWheel={() => { userScrolled.current = true; }} onTouchMove={() => { userScrolled.current = true; }}
+        onPointerDown={event => { if (event.target === event.currentTarget) userScrolled.current = true; }}
+        onKeyDown={event => { if (/^(Arrow|Page|Home|End| )/.test(event.key)) userScrolled.current = true; }}>
           {loadingConversation && <div className="loading-chat"><LoadingIndicator label="Đang mở hội thoại" /></div>}
           {loadFailed && <div className="loading-chat" role="alert">
             <p>Chưa tải được nội dung hội thoại.</p>
@@ -1100,6 +1124,7 @@ function AppContent() {
 
         {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" data-tip onClick={event => {
           turnPin.current = null;
+          followPaused.current = false;
           nearBottom.current = true;
           setShowJump(false);
           bottomRef.current?.scrollIntoView({ behavior: event.detail === 0 || isReducedMotion() ? 'instant' : 'smooth', block: "end" });

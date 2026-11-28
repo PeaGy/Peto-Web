@@ -3,6 +3,7 @@ import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { YouTubeIcon } from '../../shared/ui/YouTubeIcon';
 import { describeLink, type LinkDescription, type LinkKind } from './draftLinks';
 import { GlobeIcon } from './WebSources';
+import { NEW_TAB } from '../../shared/ui/newTab';
 
 // Tiêu đề video lấy qua địa chỉ oEmbed sẵn có của Player (máy chủ chỉ gọi YouTube với mã video đã kiểm tra, có nhớ
 // tạm). Mỗi mã chỉ hỏi một lần trong phiên; lỗi thì bỏ khỏi bộ nhớ để lần sau thử lại, thẻ vẫn hiện nhãn chung.
@@ -59,7 +60,7 @@ export function ComposerLinkChip({ url, onRemove }: { url: string; onRemove: () 
 export function MessageLink({ href }: { href: string }) {
   const link = useLinkDescription(href);
   return (
-    <a className={`message-link ${link.kind}`} href={href} target="_blank" rel="noopener noreferrer" title={href}>
+    <a className={`message-link ${link.kind}`} href={href} {...NEW_TAB} title={href}>
       <LinkIcon kind={link.kind} /><span>{link.label}</span>
     </a>
   );

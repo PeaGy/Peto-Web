@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockPeto, noPageOverflow, openSidebar, title } from './fixtures';
 
-const markdown = '## So sánh\n\nGiá thường là **$0.40**, công thức $x^2 + y^2 = 1$.\n\n'
+const markdown = '## So sánh\n\nGiá thường là **$0.40**, công thức $x^2 + y^2 = 1$. Xem [bảng giá](https://example.com/gia).\n\n'
   + '| Hạng mục | Giá |\n| --- | --- |\n| Input | $2.00 |\n| Output | $10.00 |\n\n```js\nconst greeting = "Xin chào";\n```';
 
 // Link chia sẻ cuộc trò chuyện (28/11/2026): hộp Chia sẻ từ menu ⋯, trang công khai /s/{id} và Cài đặt → Link chia sẻ.
@@ -79,6 +79,8 @@ test('trang /s/{id}: đọc được không cần đăng nhập, không có ô n
   await expect(page.getByText('Tài liệu Peto tạo: bao-cao.docx')).toBeVisible();
   await expect(page.getByLabel('Nhắn cho Peto', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Trò chuyện với Peto' })).toHaveAttribute('href', '/');
+  // Link mở thẻ mới có mô tả cho trình đọc màn hình (index.html #new-tab-hint), tên link giữ nguyên.
+  await expect(page.getByRole('link', { name: 'bảng giá', exact: true })).toHaveAccessibleDescription('Mở trong thẻ mới');
   await page.screenshot({ path: shot('page', isMobile), fullPage: false });
   await noPageOverflow(page);
 

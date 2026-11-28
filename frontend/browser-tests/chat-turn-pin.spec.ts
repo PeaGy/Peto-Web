@@ -93,6 +93,29 @@ test('câu trả lời ngắn: câu hỏi vẫn ở đỉnh sau khi xong, có ch
   await noPageOverflow(page);
 });
 
+test('đang bám đáy mà mở một mục trong tin nhắn thì khung thôi bám, "Tin mới nhất" bám lại', async ({ page }) => {
+  await setup(page, 120);
+  const composer = page.getByLabel('Nhắn cho Peto', { exact: true });
+  await composer.fill(Array.from({ length: 40 }, (_, i) => `Dòng thứ ${i + 1} của một tin rất dài.`).join('\n'));
+  await composer.press('Enter');
+  await expect.poll(async () => (await streamState(page)).sent).toBeGreaterThan(30);
+  await page.locator('.messages').evaluate(container => { container.scrollTop -= 200; });
+  await page.getByRole('button', { name: 'Tin mới nhất' }).click();
+  await expect.poll(() => page.locator('.messages').evaluate(c => c.scrollHeight - c.scrollTop - c.clientHeight)).toBeLessThan(80);
+  // Bấm "Xem thêm" của câu hỏi (bấm bằng mã để Playwright không tự cuộn tới nút).
+  await page.locator('.messages > article[data-role="user"]').last().getByRole('button', { name: 'Xem thêm' })
+    .evaluate((button: HTMLButtonElement) => button.click());
+  // Thôi bám: chữ mới chạy tiếp bên dưới mà khung không theo (scrollTop có thể đổi do neo cuộn của trình duyệt khi câu
+  // hỏi phía trên dài ra, nên đo khoảng cách tới đáy chứ không đo scrollTop).
+  await page.waitForTimeout(900);
+  expect((await streamState(page)).done).toBe(false);
+  expect(await page.locator('.messages').evaluate(c => c.scrollHeight - c.scrollTop - c.clientHeight)).toBeGreaterThan(80);
+  await expect(page.getByRole('button', { name: 'Tin mới nhất' })).toBeVisible();
+  await page.getByRole('button', { name: 'Tin mới nhất' }).click();
+  await expect.poll(async () => (await streamState(page)).done, { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => page.locator('.messages').evaluate(c => c.scrollHeight - c.scrollTop - c.clientHeight)).toBeLessThan(80);
+});
+
 test('tin rất dài gập lại như Claude: câu hỏi ghim lên đỉnh mà đầu câu trả lời vẫn trong màn hình', async ({ page }, info) => {
   await setup(page, 30);
   const composer = page.getByLabel('Nhắn cho Peto', { exact: true });

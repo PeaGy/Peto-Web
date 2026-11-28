@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { deleteShare, listShares, shareUrl, UnauthorizedError, type ShareLink } from '../../shared/api/api';
 import './archive.css';
+import { NEW_TAB } from '../../shared/ui/newTab';
 
 const day = (seconds: number) => {
   const date = new Date(seconds * 1000);
@@ -57,7 +58,7 @@ export default function ShareLinks({ open, onUnauthorized }: { open: boolean; on
     {!loading && !error && !items.length && <p className="empty-hint">Bạn chưa chia sẻ cuộc trò chuyện nào.</p>}
     <ul className="archive-list" aria-label="Danh sách link chia sẻ">
       {items.map(item => <li key={item.id}>
-        <a className="archive-open" href={shareUrl(item.id)} target="_blank" rel="noreferrer" title={item.title}>
+        <a className="archive-open" href={shareUrl(item.id)} {...NEW_TAB} title={item.title}>
           {item.title || 'Chưa có tiêu đề'}<small> · {day(item.updated_at)}{item.include_images ? ' · có ảnh' : ''}</small></a>
         {confirm === item.id ? <div className="archive-confirm" role="group" aria-label={`Xác nhận xóa link: ${item.title}`}>
           <p>Xóa link này? Ai đang giữ link sẽ không mở được nữa.</p>
