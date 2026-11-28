@@ -361,7 +361,9 @@ test('fallback của bản build giữ API, Docs và asset thiếu ngoài trang 
   expect((await request.get('/docs')).status()).toBe(200);
 });
 
-test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang; đường dẫn lạ là 404', async ({ page }, testInfo) => {
+// Bốn test dưới đây từng là một (28/11/2026): gộp cả bốn trang thì chạy 30–34 giây, quá giới hạn 30 giây của
+// Playwright, nên hay hỏng khi máy bận. Mỗi test giờ tự mở trang của mình.
+test('trang Cài đặt Companion: Nghe và Mô-đun theo link sâu, F5, Back/Forward', async ({ page }) => {
   await mockPeto(page);
   await page.goto('/companion/settings/modules/hearing');
   const settings = page.locator('main.companion-settings');
@@ -379,6 +381,11 @@ test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang
   await settings.getByRole('button', { name: 'Quay lại Companion', exact: true }).click();
   await expect(page).toHaveURL(/\/companion$/);
   await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
+});
+
+test('trang Cài đặt Companion: nhà cung cấp và Bộ não giữ link sâu qua F5', async ({ page }) => {
+  await mockPeto(page);
+  const settings = page.locator('main.companion-settings');
   // Trang một nhà cung cấp và Bộ não (13/10/2026): link sâu, F5, nút quay lại về Nhà cung cấp.
   await page.goto('/companion/settings/providers/deepseek');
   await expect(settings.getByRole('heading', { level: 1, name: 'DeepSeek' })).toBeVisible();
@@ -388,6 +395,11 @@ test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang
   await expect(page).toHaveURL(/\/companion\/settings\/providers$/);
   await page.goto('/companion/settings/modules/brain');
   await expect(settings.getByRole('heading', { level: 1, name: 'Bộ não' })).toBeVisible();
+});
+
+test('trang Cài đặt Companion: Nhân vật giữ link sâu qua F5, có sân khấu riêng', async ({ page }) => {
+  await mockPeto(page);
+  const settings = page.locator('main.companion-settings');
   // Trang Nhân vật (14/10/2026): link sâu và F5 giữ trang, có sân khấu riêng cạnh các khối, quay lại về Cài đặt.
   // (mockPeto thay renderer nhân vật bằng bản rỗng, nên chỉ kiểm khung sân khấu.)
   await page.goto('/companion/settings/character');
@@ -399,6 +411,11 @@ test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang
   await noPageOverflow(page);
   await settings.getByRole('button', { name: 'Quay lại Cài đặt', exact: true }).click();
   await expect(page).toHaveURL(/\/companion\/settings\/$/);
+});
+
+test('trang Cài đặt Companion: thẻ nhân vật giữ link sâu qua F5; đường dẫn lạ là 404', async ({ page }, testInfo) => {
+  await mockPeto(page);
+  const settings = page.locator('main.companion-settings');
   // Thẻ nhân vật (25/10/2026): link sâu tới trình sửa giữ mục đang mở qua F5; quay lại về trang thẻ rồi danh sách thẻ.
   await page.goto('/companion/settings/cards/peto/edit?section=prompt');
   await expect(settings.getByRole('heading', { level: 1, name: 'Sửa thẻ' })).toBeVisible();
