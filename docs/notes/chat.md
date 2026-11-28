@@ -679,6 +679,40 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Answers render in Markdown blocks (2026-11-28, branch `chat-markdown-blocks`)
+
+After the throttle, the live test on peto.peagy.com (a 17,090-character Grok answer with 189 formulas) still had 150–400ms
+long tasks near the end, because every update re-parsed the whole answer. The owner picked this as the first follow-up
+from a short list of outside repos. The idea comes from `vercel/streamdown` (Apache-2.0), which splits Markdown into
+blocks with `marked`; ours is written for Peto and adds no dependency.
+
+- **`splitMarkdownBlocks`** (`shared/markdown/markdownBlocks.ts`) is a line scanner. Joining its blocks always gives
+  back the input. It cuts only:
+  - after a blank line;
+  - outside ```/~~~ fences and multi-line `$$` blocks;
+  - before a line at the left margin;
+  - never between list items, or before an indented continuation.
+
+  Footnotes and link reference definitions need the whole document, so they keep it as one block, as streamdown does.
+- **`ChatMessage`** renders every assistant message as memoised `MarkdownBlock`s keyed by index, finished ones too.
+  - A new chunk re-renders only the last block, and the end of the turn re-renders only the last block as well.
+    Switching back to one tree at the end cost one full parse: 353ms at 1×, 1349ms at 4×.
+  - Only the last block gets the citation plugin with `writing: true`, because a half-written `[web:…]` marker can only
+    be at the end.
+  - The blocks are fragments, so the DOM is the same as before apart from whitespace text between block elements.
+- **Measured** in the same synthetic run as below: a production build, 40 sections, 360 chunks, 9 s ideal.
+
+  | | 1× | 4× |
+  | --- | --- | --- |
+  | Before, main with the throttle | 15.1 s, 37 long tasks, longest 286ms | 32.5 s, longest 1067ms |
+  | After | 11.3 s, 5 long tasks, longest 104ms | 25.2 s, longest 427ms |
+- **Tests.** `tests/markdownBlocks.test.tsx` checks the join invariant, fences, `$$`, loose lists, footnote and link
+  definitions, tables and quotes. It also renders the same content split and as one block, and expects equal HTML.
+  The one-block reference is forced by an unused link definition; whitespace between tags and `useId` values are
+  normalised.
+- **Next lever.** At 4× the main thread is still nearly saturated, mostly because every `delta` re-renders `AppContent`.
+  Batching deltas in `chatTurn.ts` would address that.
+
 ## Streaming answers redraw less often (2026-11-27, branch `chat-markdown-throttle`)
 
 The owner asked whether https://github.com/deepseek-ai/chat-demo could help Peto Web. It is a static, browser-only
