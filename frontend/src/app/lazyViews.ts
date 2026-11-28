@@ -14,6 +14,9 @@ const agentSettings = preloadable(() => import('../features/settings/AgentSettin
 const usageSettings = preloadable(() => import('../features/settings/UsageSettings'));
 const archiveSettings = preloadable(() => import('../features/settings/ArchivedConversations'));
 const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
+// Link chia sẻ (28/11/2026): hộp Chia sẻ và mục Cài đặt → Link chia sẻ.
+const shareDialog = preloadable(() => import('../features/chat/ShareDialog'));
+const shareSettings = preloadable(() => import('../features/settings/ShareLinks'));
 // Trang Quản trị chỉ chủ web mở; tải riêng nên người dùng thường không phải tải mã biểu đồ.
 const adminDashboard = preloadable(() => import('../features/admin/AdminDashboard'));
 
@@ -22,6 +25,7 @@ export const loadImagine = imagine.preload;
 export const loadCompanion = companion.preload;
 export const loadSettings = () => Promise.all([
   profileSettings.preload(), memorySettings.preload(), agentSettings.preload(), usageSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
+  shareSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 export const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
@@ -34,6 +38,8 @@ export const AgentSettings = agentSettings.View;
 export const UsageSettings = usageSettings.View;
 export const ArchivedConversations = archiveSettings.View;
 export const ConnectorSettings = connectorSettings.View;
+export const ShareDialog = shareDialog.View;
+export const ShareLinks = shareSettings.View;
 
 /** Ô chat đã hiện thì lúc rảnh tải sẵn Tạo ảnh, Companion và Cài đặt: lần mở đầu khỏi chờ tệp (khoảng 0,3 giây trên 4G
  * chậm, đo ngày 2026-09-27). Bỏ qua khi người dùng bật tiết kiệm dữ liệu hay mạng chỉ 2G. */

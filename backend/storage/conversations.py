@@ -311,6 +311,9 @@ async def delete_conversation(owner: str, conversation_id: str) -> bool:
                 (conversation_id,),
             )
             await db.execute("DELETE FROM companion_summaries WHERE conversation_id = ?", (conversation_id,))
+            # Link chia sẻ của hội thoại đã xóa không còn mở được (28/11/2026).
+            from storage.shared_chats import delete_for_conversation
+            await delete_for_conversation(db, conversation_id)
         await db.commit()
     if deleted:
         from shared.attachments import delete_files

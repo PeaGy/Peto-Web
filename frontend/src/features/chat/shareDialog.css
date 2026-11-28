@@ -1,0 +1,13 @@
+/* Hộp "Chia sẻ cuộc trò chuyện" (28/11/2026), dựng trên .text-edit-dialog. */
+.share-dialog .share-title { margin: -6px 0 10px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.share-dialog .share-option { display: flex; align-items: center; gap: 8px; margin: 4px 0 14px; font-size: 14px; cursor: pointer; }
+.share-dialog .share-option input { width: 16px; height: 16px; accent-color: var(--accent); }
+.share-dialog .share-link { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.share-dialog .share-link .text-field { min-width: 0; padding: 10px 12px; font-size: 14px; }
+.share-dialog .share-meta { grid-column: 1 / -1; margin: 0; font-size: 12.5px; }
+.share-dialog .share-error { color: var(--danger); }
+.share-dialog .share-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.share-dialog .share-spacer { flex: 1; }
+.share-dialog button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.share-dialog button.danger { color: var(--danger); }
+.share-dialog button:disabled { opacity: .5; cursor: not-allowed; }

@@ -29,6 +29,7 @@ from core.config import AIRI_DIR, ALLOWED_ORIGINS, CANONICAL_ORIGIN, CSP_ENFORCE
 from features.docs import api as docs_api
 from core.lifespan import lifespan
 from features.chat import api as chat_api
+from features.chat import sharing as chat_sharing
 from features.companion import api as companion_api
 from features.projects import api as project_api
 from features.connectors import api as connector_api
@@ -74,6 +75,7 @@ app.include_router(agent_install.router)
 app.include_router(docs_api.router)
 
 app.include_router(chat_api.router)
+app.include_router(chat_sharing.router)
 app.include_router(project_api.router)
 app.include_router(connector_api.router)
 app.include_router(companion_api.router)

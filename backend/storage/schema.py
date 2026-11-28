@@ -492,4 +492,6 @@ async def init_db() -> None:
         await init_airi_chat_tables(db)
         from storage.email_login import init_tables as init_email_login_tables
         await init_email_login_tables(db)
+        from storage.shared_chats import init_tables as init_shared_chat_tables
+        await init_shared_chat_tables(db)
         await db.commit()

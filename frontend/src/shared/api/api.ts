@@ -446,6 +446,43 @@ export async function getConversationPreview(id: string, signal?: AbortSignal): 
   return json(await fetch(`/api/conversations/${encodeURIComponent(id)}/preview`, { signal }));
 }
 
+/** Link chia sẻ cuộc trò chuyện (28/11/2026): bản chụp công khai, mỗi hội thoại một link (features/chat/sharing.py). */
+export interface ShareLink {
+  id: string; conversation_id: string; title: string; include_images: boolean;
+  created_at: number; updated_at: number; message_count: number;
+}
+export interface SharedMessage {
+  role: 'user' | 'assistant'; content: string; created_at?: number;
+  attachments?: { name: string; kind: 'image' | 'file'; id?: string }[];
+  documents?: { title: string; filename: string }[];
+  sources?: WebSource[];
+}
+export interface SharedChat { title: string; updated_at: number; include_images: boolean; messages: SharedMessage[] }
+
+export const shareUrl = (id: string) => `${location.origin}/s/${id}`;
+
+export async function getShare(conversationId: string): Promise<ShareLink | null> {
+  return (await json<{ share: ShareLink | null }>(await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/share`))).share;
+}
+
+export async function saveShare(conversationId: string, includeImages: boolean): Promise<ShareLink> {
+  return (await json<{ share: ShareLink }>(await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/share`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ include_images: includeImages }),
+  }))).share;
+}
+
+export async function listShares(signal?: AbortSignal): Promise<ShareLink[]> {
+  return (await json<{ shares: ShareLink[] }>(await fetch('/api/shares', { signal }))).shares;
+}
+
+export async function deleteShare(id: string): Promise<void> {
+  await json(await fetch(`/api/shares/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+}
+
+export async function getSharedChat(id: string, signal?: AbortSignal): Promise<SharedChat> {
+  return json<SharedChat>(await fetch(`/api/shared/${encodeURIComponent(id)}`, { signal, cache: 'no-store' }));
+}
+
 export async function deleteConversation(conversationId: string): Promise<void> {
   const response = await fetch(`/api/conversations/${conversationId}`, {
     method: "DELETE",

@@ -50,6 +50,7 @@ const ICONS = {
   chevronLeft: <path d="m14.5 6-6 6 6 6" />,
   close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
   external: <path d="M10 5.5H7A2.5 2.5 0 0 0 4.5 8v9A2.5 2.5 0 0 0 7 19.5h9a2.5 2.5 0 0 0 2.5-2.5v-3M14 4.5h5.5V10M19.5 4.5 11.5 12.5" />,
+  share: <><path d="M12 3.5v11M7.5 8 12 3.5 16.5 8" /><path d="M5 12.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5.5" /></>,
   monitor: <><rect x="3.5" y="4.5" width="17" height="11.5" rx="2.5" /><path d="M9 20h6M12 16v4" /></>,
   sun: <>
     <circle cx="12" cy="12" r="3.8" />
