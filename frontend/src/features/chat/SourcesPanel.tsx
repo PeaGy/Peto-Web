@@ -3,6 +3,7 @@ import type { WebSource } from '../../shared/api/api';
 import { GlobeIcon, SourceIcon, sourceHost } from './SourceIcon';
 import { mergeDisplaySources, normalizeWeb, type DisplaySource, type WebActivity, type WebCall } from './sourceActivity';
 import './sources.css';
+import { NEW_TAB } from '../../shared/ui/newTab';
 
 function evidence(source: DisplaySource, groupAccess?: DisplaySource['access']) {
   if (source.access === groupAccess && !source.partial) return '';
@@ -11,7 +12,7 @@ function evidence(source: DisplaySource, groupAccess?: DisplaySource['access']) 
 }
 
 function SourceCards({ items, showEvidence = false, groupAccess }: { items: DisplaySource[]; showEvidence?: boolean; groupAccess?: DisplaySource['access'] }) {
-  return <div className="web-source-list">{items.map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer"
+  return <div className="web-source-list">{items.map(source => <a key={source.url} href={source.url} {...NEW_TAB}
     className="web-source-card" title={source.url}>
     <span className="web-source-text"><strong>{source.title}</strong>{source.snippet && <span className="web-source-snippet">{source.snippet}</span>}</span>
     <span className="web-source-site"><span className="web-source-icon" aria-hidden="true"><SourceIcon url={source.url} /></span><span>{sourceHost(source.url)}</span></span>

@@ -23,6 +23,7 @@ import UserPlainText from './UserPlainText';
 import UserMessageFold from './UserMessageFold';
 import { useStreamingText } from './useStreamingText';
 import { splitMarkdownBlocks } from '../../shared/markdown/markdownBlocks';
+import { NEW_TAB } from '../../shared/ui/newTab';
 
 const MarkdownRuntime = createContext<{ sources: WebSource[]; writing: boolean; user: boolean }>({ sources: [], writing: false, user: false });
 
@@ -44,7 +45,7 @@ const MARKDOWN_COMPONENTS: Components = {
     const { user } = useContext(MarkdownRuntime);
     return user && href && hastText(node) === href && /^https?:\/\//i.test(href)
       ? <MessageLink href={href} />
-      : <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+      : <a href={href} {...NEW_TAB}>{children}</a>;
   },
   pre: function Pre({ node, children }) {
     const { writing } = useContext(MarkdownRuntime);
@@ -117,7 +118,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
         rehypePlugins={rehypePlugins} />)}
     </MarkdownRuntime.Provider>;
   }, [user, runtime, citationPlugins, rehypePlugins, text, writing]);
-  return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} data-message-id={message.id} data-role={message.role} data-streaming={writing || live || undefined} data-quoteable={user ? undefined : complete} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
+  return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} data-message-id={message.id} data-role={message.role} data-streaming={writing || live || undefined} aria-busy={!user && (writing || live) || undefined}data-quoteable={user ? undefined : complete} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
               )}
