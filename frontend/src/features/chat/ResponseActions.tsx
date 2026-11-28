@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent
 import { createPortal } from 'react-dom';
 import type { WebSource } from '../../shared/api/api';
 import { CheckIcon, ChevronIcon, CopyIcon, MarkdownIcon, MoreIcon, PrintIcon, RetryIcon } from './messageUtilityIcons';
-import { printResponse, saveResponseMarkdown } from './responseExport';
+import { clipboardHtml, printResponse, saveResponseMarkdown } from './responseExport';
 import { useMessageCopy } from './useMessageCopy';
 import './messageUtilities.css';
 
@@ -115,12 +115,13 @@ export default function ResponseActions({ text, sources, messageId, contentRef, 
   variants?: ResponseVariants;
   disabled?: boolean;
 }) {
-  const { state, label, copy } = useMessageCopy();
+  const { state, label, copyRich } = useMessageCopy();
   const canExport = Boolean(text.trim());
   const busy = disabled || variants?.loading;
   return <div className="message-actions response-actions" data-export-exclude>
     {canExport && <button type="button" className={`message-utility-button message-copy${state === 'done' ? ' done' : ''}`}
-      aria-label={`${label} câu trả lời`} data-tip onClick={() => void copy(text)}>{state === 'done' ? <CheckIcon /> : <CopyIcon />}</button>}
+      aria-label={`${label} câu trả lời`} data-tip
+      onClick={() => void copyRich(text, () => contentRef.current ? clipboardHtml(contentRef.current) : null)}>{state === 'done' ? <CheckIcon /> : <CopyIcon />}</button>}
     {onRetry && <button type="button" className="message-utility-button" aria-label="Thử lại" data-tip onClick={onRetry} disabled={busy}><RetryIcon /></button>}
     {onRegenerate && messageId !== undefined && <button type="button" className="message-utility-button" aria-label="Tạo lại câu trả lời" data-tip
       onClick={() => onRegenerate(messageId)} disabled={busy}><RetryIcon /></button>}

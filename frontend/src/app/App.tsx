@@ -38,6 +38,7 @@ import { useCompanionShell } from './useCompanionShell';
 import { useSearchShortcut } from './useSearchShortcut';
 import { useSettingsMenu } from './useSettingsMenu';
 import Composer from "../features/chat/Composer";
+import { printConversation, saveConversationMarkdown } from "../features/chat/responseExport";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
 import { useChatPanels } from '../features/chat/useChatPanels';
@@ -864,6 +865,33 @@ function AppContent() {
     } finally { if (session === authVersion.current) setMetadataBusy(false); }
   }
 
+  /**
+   * Menu ⋯ của hội thoại → Tải Markdown / In (28/11/2026). Hội thoại đang mở dùng tin đã có trên trang (kể cả phiên bản
+   * câu trả lời đang chọn); hội thoại khác tải tin từ máy chủ. Bản in chỉ có cho hội thoại đang mở.
+   */
+  function exportConversation(item: Conversation, kind: 'markdown' | 'print') {
+    setConversationMenu(null);
+    const open = isConversation(item, conversationIdRef.current) && !loadingConversation;
+    if (kind === 'print') {
+      if (!open || !messagesRef.current) return;
+      void printConversation(messagesRef.current, messages, item.title)
+        .catch(reason => setError(reason instanceof Error ? reason.message : 'Chưa mở được bản in.'));
+      return;
+    }
+    if (open) {
+      saveConversationMarkdown(item.title, messages);
+      return;
+    }
+    const session = authVersion.current;
+    void getMessages(item.id).then(list => {
+      if (session === authVersion.current) saveConversationMarkdown(item.title, list);
+    }).catch(err => {
+      if (session !== authVersion.current) return;
+      if (err instanceof UnauthorizedError) handleUnauthorized();
+      else setError('Chưa tải được hội thoại để xuất. Bạn thử lại nhé.');
+    });
+  }
+
   async function signOut() {
     try {
       await logout();
@@ -1161,7 +1189,8 @@ function AppContent() {
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       {renderConversationDialogs({ renameTarget, renameText, setRenameText, metadataBusy, setRenameTarget, changeConversation, searchOpen,
         auth, setSearchOpen, handleUnauthorized, openConversation, conversationMenu, setConversationMenu, setMoveTarget, setProjectError,
-        refreshProjects, streaming, deleting, setDeleteTarget, deleteDialogRef, deleteTarget, removeConversation },
+        refreshProjects, streaming, deleting, setDeleteTarget, deleteDialogRef, deleteTarget, removeConversation,
+        conversationId, exportConversation },
         renderProjectDialogs(projectContext, projectHandlers, { projectState }))}
       <TooltipLayer />
     </div>

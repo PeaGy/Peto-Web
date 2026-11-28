@@ -679,6 +679,42 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Whole-chat export and rich-text copy (2026-11-28, branch `chat-export-rich-copy`)
+
+The owner picked items 2 and 3 from the chat-apps survey (`backend/features/chat/docs/chat-apps-survey-2026-11-28.md`).
+
+- **Export from the sidebar `⋯` menu.** "Tải Markdown" and "In / lưu PDF" sit between Lưu trữ and Xóa (`appViews.tsx`,
+  `exportConversation` in `App.tsx`). Both are disabled while the open chat is streaming.
+  - **Tải Markdown**, any conversation. The open one uses the messages already on screen, including the selected reply
+    version; others are fetched with `getMessages`.
+    - `conversationMarkdown` (`responseExport.ts`) writes `# title`, `_Xuất từ Peto ngày d/m/yyyy_`, then `## Bạn` and
+      `## Peto` sections separated by `---`.
+    - Attachments and generated documents are listed by name in backticks. Each reply's sources go in a `### Nguồn`
+      list. Empty bubbles are skipped.
+    - The file name is a diacritic-free slug, e.g. `peto-kiem-tra-giao-dien-peto.md`.
+  - **In / lưu PDF**, open conversation only, because the print copy is rebuilt from rendered message DOM.
+    - `printableConversation` adds a title and date, then each article's `[data-message-content]` under a "Bạn" or
+      "Peto" label, each reply followed by its sources. The work log, actions and the long-message "Xem thêm" button
+      are left out.
+    - `printResponse` and `printConversation` share `printDocument`, which opens the popup inside the click.
+- **`ConversationMenu`** now opens in a layout effect and moves itself up when it would cross the bottom of the
+  viewport. Callers still guess its position from the old 242px height.
+- **Copy as rich text.** The reply copy button calls `copyRich` (`useMessageCopy`), which writes `text/plain` (the
+  Markdown, as before) and `text/html` from `clipboardHtml` through `ClipboardItem`. If `ClipboardItem` is missing or
+  rejected, it falls back to `writeText`. `clipboardHtml`:
+  - rebuilds safe nodes like the print copy;
+  - turns KaTeX into its TeX source (`$…$`, `$$…$$` on its own line), because Word, Docs and Gmail treat MathML
+    differently;
+  - writes citation badges as `[n]`;
+  - puts inline borders on tables and a monospace style on `pre`, and drops the code language header and all classes.
+- **Tests.**
+  - `tests/conversationExport.test.tsx`: the Markdown builder, the file name, the print structure and exclusions, the
+    clipboard HTML, and the copy button with and without `ClipboardItem`.
+  - `browser-tests/conversation-export.spec.ts` stubs anchor clicks and `window.open` inside the page, so nothing is
+    downloaded: Markdown for the open and another chat, print labels, and the menu fitting the viewport.
+  - The `sidebar-menu` snapshots in `layout.spec.ts` (PC and mobile) were updated for the two new menu items.
+- **Not verified.** Pasting into real Word, Google Docs and Gmail, and the browser print dialog itself.
+
 ## Answers render in Markdown blocks (2026-11-28, branch `chat-markdown-blocks`)
 
 After the throttle, the live test on peto.peagy.com (a 17,090-character Grok answer with 189 formulas) still had 150–400ms

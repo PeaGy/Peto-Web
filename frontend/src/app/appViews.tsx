@@ -2,7 +2,8 @@ import { Suspense, type Dispatch, type ReactNode, type RefObject, type SetStateA
 import type { Location, NavigateFunction } from 'react-router';
 import { FolderIcon } from '../features/projects/ProjectSidebar';
 import { SettingsIcon } from '../features/settings/settingsUi';
-import type { AppInfo, AuthState, Conversation, ImagineJob } from '../shared/api/api';
+import { isConversation, type AppInfo, type AuthState, type Conversation, type ImagineJob } from '../shared/api/api';
+import { MarkdownIcon, PrintIcon } from '../features/chat/messageUtilityIcons';
 import { EditIcon } from '../shared/ui/EditIcon';
 import LazyBoundary from '../shared/ui/LazyBoundary';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
@@ -64,6 +65,9 @@ export type ConversationDialogsContext = {
   deleteDialogRef: RefObject<HTMLDialogElement | null>;
   deleteTarget: Conversation | null;
   removeConversation: (id: string) => Promise<void>;
+  /** Hội thoại đang mở: chỉ hội thoại này in được, vì bản in dựng từ các tin đã vẽ trên trang. */
+  conversationId: string | null;
+  exportConversation: (item: Conversation, kind: 'markdown' | 'print') => void;
 };
 
 export function renderFeatureViews(ctx: FeatureViewsContext) {
@@ -153,7 +157,8 @@ export function renderConversationDialogs(ctx: ConversationDialogsContext, proje
   const { renameTarget, renameText, setRenameText, metadataBusy, setRenameTarget, changeConversation, searchOpen,
     auth, setSearchOpen, handleUnauthorized, openConversation, conversationMenu, setConversationMenu, setMoveTarget,
     setProjectError, refreshProjects, streaming, deleting, setDeleteTarget, deleteDialogRef, deleteTarget,
-    removeConversation } = ctx;
+    removeConversation, conversationId, exportConversation } = ctx;
+  const menuOpen = conversationMenu ? isConversation(conversationMenu.item, conversationId) : false;
   return <>
   {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
   {searchOpen && <HistorySearch key={`history-search:${auth.user?.id ?? 'anonymous'}`} onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); void openConversation(id);}}/>}
@@ -162,6 +167,10 @@ export function renderConversationDialogs(ctx: ConversationDialogsContext, proje
     <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
     <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);void refreshProjects();}}><FolderIcon/>Chuyển vào dự án</button>
     <button disabled={metadataBusy || streaming || deleting} onClick={() => {void changeConversation(conversationMenu.item, {archived:true}); setConversationMenu(null);}}><SettingsIcon name="archive"/>Lưu trữ</button>
+    <div className="popup-menu-sep" role="separator" />
+    {/* Xuất cả hội thoại (28/11/2026): Markdown cho mọi hội thoại; bản in chỉ cho hội thoại đang mở. */}
+    <button disabled={menuOpen && streaming} onClick={() => exportConversation(conversationMenu.item, 'markdown')}><MarkdownIcon />Tải Markdown</button>
+    {menuOpen && <button disabled={streaming} onClick={() => exportConversation(conversationMenu.item, 'print')}><PrintIcon />In / lưu PDF</button>}
     <div className="popup-menu-sep" role="separator" />
     <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}><SettingsIcon name="trash"/>Xóa hội thoại</button>
   </ConversationMenu>}
