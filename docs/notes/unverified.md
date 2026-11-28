@@ -44,9 +44,8 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Web Chat (`chat.md`)
 
-- [ ] Share links after deploy: create one on peto.peagy.com, open it in a private window or on a phone without
-  signing in, revoke it and see the page say "Không mở được link". Also check that a pasted link previews in Discord.
-  Only mocked browser tests so far — `chat.md`, "Share links".
+- [ ] Share links on a second device (phone, not signed in) and the link preview when pasted into Discord or
+  Messenger. Create, read signed out and revoke were checked live on 2026-11-28 — `chat.md`, "Share links".
 
 - [ ] Rich-text copy pasted into real Word, Google Docs and Gmail: headings, lists, bordered tables and code keep their
   form; formulas arrive as TeX text. Also the "In / lưu PDF" output of a whole chat in the real print dialog — `chat.md`,

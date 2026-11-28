@@ -65,8 +65,10 @@ export default function ShareDialog({ conversation, onClose, onUnauthorized }: {
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     <h2 id={titleId}>Chia sẻ cuộc trò chuyện</h2>
     <p className="share-title">{conversation.title || 'Chưa có tiêu đề'}</p>
+    {/* Thử thật 28/11/2026: câu trả lời gọi chủ web bằng tên, nên không hứa "tên không bị chia sẻ"; link giữ nguyên văn. */}
     <p>Ai có link đều xem được cuộc trò chuyện như lúc bạn tạo link, không cần đăng nhập. Tin nhắn gửi sau không có
-      trong link. Trí nhớ, hồ sơ và tên của bạn không được chia sẻ.</p>
+      trong link. Link chứa nguyên văn các tin nhắn, kể cả tên hay chi tiết riêng nếu có trong đó. Trí nhớ và hồ sơ của
+      bạn không được chia sẻ.</p>
     <label className="share-option">
       <input type="checkbox" checked={includeImages} disabled={loading || busy} onChange={event => setIncludeImages(event.target.checked)} />
       Kèm ảnh bạn đã gửi
