@@ -22,6 +22,7 @@ import { QuoteExcerpt } from './QuotedFollowup';
 import UserPlainText from './UserPlainText';
 import UserMessageFold from './UserMessageFold';
 import { useStreamingText } from './useStreamingText';
+import { splitMarkdownBlocks } from '../../shared/markdown/markdownBlocks';
 
 const MarkdownRuntime = createContext<{ sources: WebSource[]; writing: boolean; user: boolean }>({ sources: [], writing: false, user: false });
 
@@ -56,6 +57,15 @@ const MARKDOWN_COMPONENTS: Components = {
   },
 };
 
+type MarkdownPlugins = NonNullable<import('react-markdown').Options['remarkPlugins']>;
+
+/** Một khối Markdown của câu trả lời đang chạy: chữ và plugin không đổi thì không dựng lại. */
+const MarkdownBlock = memo(function MarkdownBlock({ text, remarkPlugins, rehypePlugins }: {
+  text: string; remarkPlugins: MarkdownPlugins; rehypePlugins: MarkdownPlugins;
+}) {
+  return <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown>;
+});
+
 function UserMessageCopy({ text }: { text: string }) {
   const { state, label, copy } = useMessageCopy();
   return <button type="button" className={`user-message-copy${state === 'done' ? ' done' : ''}`}
@@ -88,15 +98,25 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
   const silent = message.role === 'assistant' && complete && !live && !writing && !message.content.trim()
     && !message.artifacts?.length;
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
-  const citationPlugins = useMemo<NonNullable<import('react-markdown').Options['remarkPlugins']>>(
-    () => user ? remarkPlugins : [...remarkPlugins, [remarkCitations, { sources, writing }]],
-    [remarkPlugins, sources, writing, user]);
+  // Marker nguồn còn dở chỉ có thể nằm ở cuối chữ, tức khối cuối: chỉ khối đó nhận `writing`. Các khối trước giữ nguyên
+  // plugin khi lượt xong, nên không phải dựng lại.
+  const citationPlugins = useMemo(() => ({
+    done: [...remarkPlugins, [remarkCitations, { sources, writing: false }]] as MarkdownPlugins,
+    live: [...remarkPlugins, [remarkCitations, { sources, writing: true }]] as MarkdownPlugins,
+  }), [remarkPlugins, sources]);
   const runtime = useMemo(() => ({ sources, writing, user }), [sources, writing, user]);
-  // Giữ nguyên phần tử khi chữ chưa đổi: tin nhắn vẽ lại vì đồng hồ "Đang làm" hay mảnh chữ đang chờ thì React bỏ qua
-  // cả cây Markdown, không dựng lại.
-  const assistantMarkdown = useMemo(() => user ? null : <MarkdownRuntime.Provider value={runtime}>
-    <Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown>
-  </MarkdownRuntime.Provider>, [user, runtime, citationPlugins, rehypePlugins, text]);
+  // Câu trả lời chia khối (28/11/2026, ý từ vercel/streamdown): mỗi khối giữ nguyên khi chữ của nó không đổi, nên mảnh chữ
+  // mới chỉ dựng lại khối cuối, và lúc xong lượt cũng chỉ khối cuối đổi. Tin nhắn vẽ lại vì đồng hồ "Đang làm" hay mảnh
+  // chữ đang chờ thì React bỏ qua cả phần Markdown.
+  const assistantMarkdown = useMemo(() => {
+    if (user) return null;
+    const blocks = splitMarkdownBlocks(text);
+    return <MarkdownRuntime.Provider value={runtime}>
+      {blocks.map((block, index) => <MarkdownBlock key={index} text={block}
+        remarkPlugins={writing && index === blocks.length - 1 ? citationPlugins.live : citationPlugins.done}
+        rehypePlugins={rehypePlugins} />)}
+    </MarkdownRuntime.Provider>;
+  }, [user, runtime, citationPlugins, rehypePlugins, text, writing]);
   return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} data-message-id={message.id} data-role={message.role} data-streaming={writing || live || undefined} data-quoteable={user ? undefined : complete} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
