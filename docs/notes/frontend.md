@@ -304,6 +304,40 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Flaky browser tests cleaned up (2026-11-28, branch `fix-flaky-browser-tests`)
+
+Every full Playwright run had 4–13 failures that passed when rerun alone, so a red run told nothing. The causes:
+- **Cold Vite.** The dev server compiles modules only when a page asks for them, and on the first visit it also
+  optimizes dependencies and reloads. With two workers, the first page of a heavy area (the main app, Companion with
+  Live2D and three.js, Companion settings, Docs) took more than 8 s. Tests then failed at their first wait: the
+  "Loading" splash hung, a settings heading never appeared, and archive or attachment views were missing.
+  - Fix: `browser-tests/global-setup.ts` (`globalSetup` in `playwright.config.ts`) opens those pages once with
+    `mockPeto` before any test runs. It takes about 20 s per run.
+- **One test was simply too long.** The `routing.spec.ts` test "trang Cài đặt Companion…" walked four settings areas
+  in a single test and ran 29–34 s against the 30 s limit, so it failed even when run alone.
+  - Fix: it is now four tests: Nghe and Mô-đun with Back/Forward, nhà cung cấp and Bộ não, Nhân vật, and thẻ
+    nhân vật with the 404 checks.
+- **`mockPeto`'s `route.fetch`** for the stage stub sometimes got `ECONNRESET` from a busy Vite.
+  - Fix: it retries twice.
+
+- **Slow first page loads under load.** Even when warm, dev mode serves hundreds of separate module files on each
+  page load. With two workers on a busy machine, the first wait after a `goto` sometimes exceeded 8 s.
+  - The second run after the fixes above still had 4 such failures, all at that first wait, in different tests from
+    the first run: projects, profile, recovery Companion, routing Nghe.
+  - Fix: `playwright.config.ts` raises the expect timeout from 8 to 15 s and the test timeout from 30 to 45 s. Real
+    failures still fail, a few seconds later.
+
+Results:
+
+| Run | Passed | Failed |
+| --- | --- | --- |
+| Before | 349–363 | 3–13 |
+| Warm-up and split | 377 | 1 (the `ECONNRESET`) |
+| Plus retry | 374 | 4 (first waits) |
+| Plus longer timeouts | 378 | 0 (twice in a row) |
+
+A single spec run alone in parallel also gets the warm-up, so it no longer hangs on "Loading".
+
 ## Live work indicator setting (2026-11-27, branch `chat-work-indicator`)
 
 Cài đặt → Giao diện has two new rows under Chuyển động, which the owner asked for after picking from live mockups:

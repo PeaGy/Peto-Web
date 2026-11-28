@@ -40,7 +40,12 @@ export async function mockPeto(page: Page, options: { long?: boolean; broken?: b
     if (url.origin !== 'http://127.0.0.1:5179') return route.abort();
     // Chỉ thay renderer nhân vật; các component và CSS bố cục dùng mã sản phẩm thật.
     if (/\/characters\/(Live2DStage|VRMStage)\.tsx/.test(url.pathname)) {
-      const source = await (await route.fetch()).text();
+      // Vite đang bận (hai worker) đôi khi ngắt kết nối giữa chừng (ECONNRESET, 28/11/2026): thử lại vài lần.
+      let source = '';
+      for (let attempt = 0; ; attempt++) {
+        try { source = await (await route.fetch()).text(); break; }
+        catch (error) { if (attempt >= 2) throw error; await new Promise(resolve => setTimeout(resolve, 300)); }
+      }
       const reactUrl = source.match(/["'](\/node_modules\/\.vite\/deps\/react\.js[^"']*)["']/)?.[1];
       if (!reactUrl) throw new Error('Chưa tìm thấy module React dùng chung cho sân khấu giả.');
       return route.fulfill({ contentType: 'text/javascript', body: `import React from ${JSON.stringify(reactUrl)}; export default function Stage({onStatusChange}) { React.useEffect(() => { onStatusChange?.('ready'); }, [onStatusChange]); return null; }` });
